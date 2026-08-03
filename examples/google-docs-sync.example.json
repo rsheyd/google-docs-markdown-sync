@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "pairings": [
+    {
+      "documentId": "GOOGLE_DOCUMENT_ID",
+      "documentUrl": "https://docs.google.com/document/d/GOOGLE_DOCUMENT_ID/edit",
+      "markdownPath": "notes/example.md",
+      "name": "Example"
+    },
+    {
+      "type": "spreadsheet",
+      "spreadsheetId": "GOOGLE_SPREADSHEET_ID",
+      "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/GOOGLE_SPREADSHEET_ID/edit",
+      "directoryPath": "data/example-spreadsheet",
+      "name": "Example Spreadsheet"
+    }
+  ]
+}

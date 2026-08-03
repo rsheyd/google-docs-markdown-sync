@@ -1,0 +1,28 @@
+{
+  "name": "google-docs-markdown-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "auth": "node src/cli.js auth",
+    "cli": "node src/cli.js",
+    "sync": "node src/cli.js daemon",
+    "sync:once": "node src/cli.js sync-once",
+    "install-service": "node src/cli.js install-service",
+    "heartbeat": "node src/cli.js heartbeat",
+    "install-heartbeat": "node src/cli.js install-heartbeat",
+    "build:raycast": "npm --prefix raycast-extension run build",
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --test && npm --prefix raycast-extension run typecheck"
+  },
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "googleapis": "^160.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5"
+  }
+}

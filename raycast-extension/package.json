@@ -1,0 +1,68 @@
+{
+  "name": "google-docs-markdown-sync-raycast",
+  "title": "Google Docs and Sheets Sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pair the active Google Doc or Sheet with a Codex workspace",
+  "author": "Roman",
+  "license": "MIT",
+  "icon": "icon.png",
+  "main": "src/pair-google-doc.tsx",
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@raycast/api": "^1.104.5",
+    "@raycast/utils": "^1.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  },
+  "commands": [
+    {
+      "name": "pair-google-doc",
+      "title": "Pair Google Doc or Sheet",
+      "description": "Pair the active Chrome Google Doc with Markdown or Sheet with CSV files",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "devRoot",
+      "title": "Codex Workspaces Root",
+      "description": "Folder containing Codex workspaces",
+      "type": "directory",
+      "required": true,
+      "default": "/Users/roman/dev"
+    },
+    {
+      "name": "serviceRoot",
+      "title": "Sync Service Root",
+      "description": "Folder containing this project's src/cli.js",
+      "type": "directory",
+      "required": true,
+      "default": "/Users/roman/dev/google-docs-markdown-sync"
+    },
+    {
+      "name": "oauthClientPath",
+      "title": "Google OAuth Client JSON",
+      "description": "OAuth desktop client JSON stored outside Git",
+      "type": "file",
+      "required": true,
+      "default": "/Users/roman/Library/Application Support/google-docs-markdown-sync/oauth-client.json"
+    },
+    {
+      "name": "nodePath",
+      "title": "Node Executable",
+      "description": "Absolute path to Node.js",
+      "type": "textfield",
+      "required": true,
+      "default": "/opt/homebrew/bin/node"
+    }
+  ]
+}
