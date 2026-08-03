@@ -187,6 +187,7 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
     return {
       type: "listItem",
       ordered,
+      nestingLevel: bullet.nestingLevel ?? 0,
       text,
       styles,
       startIndex: element.startIndex,
@@ -296,7 +297,7 @@ function comparableBlock(block) {
     type: block.type,
     ...(block.type === "text"
       ? { paragraphStyle: block.paragraphStyle }
-      : { ordered: block.ordered }),
+      : { ordered: block.ordered, nestingLevel: block.nestingLevel ?? 0 }),
     text: block.text,
     styles: block.styles,
   };
@@ -558,7 +559,11 @@ export function planHeadingLinkUpdate(document, markdown) {
 
 function insertionRequests(startIndex, blocks, { append = false } = {}) {
   const prefix = append && blocks.length ? "\n" : "";
-  const text = `${prefix}${blocks.map((block) => `${block.text}\n`).join("")}`;
+  const rendered = blocks.map((block) => ({
+    block,
+    prefix: block.type === "listItem" ? "\t".repeat(block.nestingLevel ?? 0) : "",
+  }));
+  const text = `${prefix}${rendered.map(({ block, prefix: blockPrefix }) => `${blockPrefix}${block.text}\n`).join("")}`;
   if (!text) return [];
   const requests = [
     { insertText: { location: { index: startIndex }, text } },
@@ -581,14 +586,21 @@ function insertionRequests(startIndex, blocks, { append = false } = {}) {
     },
   ];
   let offset = prefix.length;
-  for (const block of blocks) {
+  const positioned = rendered.map(({ block, prefix: blockPrefix }) => {
     const blockStart = startIndex + offset;
-    const blockEnd = blockStart + block.text.length + 1;
-    requests.push(...inlineStyleRequests(blockStart, block.styles));
+    const visibleStart = blockStart + blockPrefix.length;
+    const blockEnd = visibleStart + block.text.length + 1;
+    offset += blockPrefix.length + block.text.length + 1;
+    return { block, blockStart, visibleStart, blockEnd };
+  });
+  // Google Docs removes leading tabs when it creates nested bullets. Work from
+  // the end so those removals cannot invalidate the remaining request indexes.
+  for (const { block, blockStart, visibleStart, blockEnd } of positioned.reverse()) {
+    requests.push(...inlineStyleRequests(visibleStart, block.styles));
     if (block.type === "text") {
       requests.push({
         updateParagraphStyle: {
-          range: { startIndex: blockStart, endIndex: blockEnd },
+          range: { startIndex: visibleStart, endIndex: blockEnd },
           paragraphStyle: { namedStyleType: block.paragraphStyle },
           fields: "namedStyleType",
         },
@@ -603,7 +615,6 @@ function insertionRequests(startIndex, blocks, { append = false } = {}) {
         },
       });
     }
-    offset += block.text.length + 1;
   }
   return requests;
 }

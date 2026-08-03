@@ -207,6 +207,26 @@ test("distinguishes unordered Google Docs bullets from numbering", () => {
     },
   };
   assert.equal(blocksFromDocument(document)[0].ordered, false);
+  assert.equal(blocksFromDocument(document)[0].nestingLevel, 0);
+});
+
+test("plans nested list insertion without dropping child items", () => {
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [paragraph(1, "Before\n")] },
+  };
+  const plan = planIncrementalUpdate(
+    document,
+    "Before\n\n* parent\n  * child",
+  );
+  const insertion = plan.requests.find((request) => request.insertText);
+  const bullets = plan.requests.filter((request) => request.createParagraphBullets);
+  assert.equal(insertion.insertText.text, "\nparent\n\tchild\n");
+  assert.equal(bullets.length, 2);
+  assert.deepEqual(bullets[0].createParagraphBullets.range, {
+    startIndex: 15,
+    endIndex: 22,
+  });
 });
 
 test("finds a focused paragraph replacement", () => {

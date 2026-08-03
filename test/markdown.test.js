@@ -22,12 +22,17 @@ test("parses headings and inline formatting", () => {
 test("parses ordered and unordered list items", () => {
   const blocks = parseMarkdown("- One\n- Two\n\n1. First\n2. Second");
   assert.deepEqual(
-    blocks.map(({ type, ordered, text }) => ({ type, ordered, text })),
+    blocks.map(({ type, ordered, nestingLevel, text }) => ({
+      type,
+      ordered,
+      nestingLevel,
+      text,
+    })),
     [
-      { type: "listItem", ordered: false, text: "One" },
-      { type: "listItem", ordered: false, text: "Two" },
-      { type: "listItem", ordered: true, text: "First" },
-      { type: "listItem", ordered: true, text: "Second" },
+      { type: "listItem", ordered: false, nestingLevel: 0, text: "One" },
+      { type: "listItem", ordered: false, nestingLevel: 0, text: "Two" },
+      { type: "listItem", ordered: true, nestingLevel: 0, text: "First" },
+      { type: "listItem", ordered: true, nestingLevel: 0, text: "Second" },
     ],
   );
 });
@@ -40,6 +45,7 @@ test("preserves links nested in heading-styled list items", () => {
     {
       type: "listItem",
       ordered: false,
+      nestingLevel: 0,
       text: "Purpose and priorities",
       styles: [
         {
@@ -50,6 +56,20 @@ test("preserves links nested in heading-styled list items", () => {
       ],
     },
   ]);
+});
+
+test("preserves nested list items and their depth", () => {
+  const blocks = parseMarkdown(
+    "* arctiq linkedin job email\n  * found that the job no longer exists\n* next item",
+  );
+  assert.deepEqual(
+    blocks.map(({ text, ordered, nestingLevel }) => ({ text, ordered, nestingLevel })),
+    [
+      { text: "arctiq linkedin job email", ordered: false, nestingLevel: 0 },
+      { text: "found that the job no longer exists", ordered: false, nestingLevel: 1 },
+      { text: "next item", ordered: false, nestingLevel: 0 },
+    ],
+  );
 });
 
 test("treats native Google Docs heading anchors as sync metadata", () => {

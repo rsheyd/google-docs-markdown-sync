@@ -8,6 +8,7 @@ import {
   chooseSyncAction,
   createSingleFlight,
   createWatcherManager,
+  pullDocument,
 } from "../src/sync.js";
 
 const previous = { localHash: "old", remoteRevisionId: "old-revision" };
@@ -72,6 +73,40 @@ test("uses modification timestamps when both sides changed", () => {
     }),
     "pull",
   );
+});
+
+test("does not write a pulled local file before the remote status update succeeds", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdocs-sync-pull-"));
+  const filePath = path.join(directory, "paired.md");
+  await fs.writeFile(filePath, "original\n");
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: {
+        revisionId: "remote-1",
+        body: { content: [{ startIndex: 1, endIndex: 2, paragraph: { elements: [] } }] },
+      } }),
+      batchUpdate: async () => {
+        throw new Error("required revision no longer matches");
+      },
+    } },
+    drive: { files: {
+      export: async () => {
+        throw new Error("export must not run after a failed status update");
+      },
+    } },
+  };
+  const pairing = {
+    documentId: "document",
+    markdownPath: "paired.md",
+    absolutePath: filePath,
+  };
+
+  await assert.rejects(
+    pullDocument(services, pairing, { revisionId: "remote-1" }),
+    /required revision no longer matches/,
+  );
+  assert.equal(await fs.readFile(filePath, "utf8"), "original\n");
+  await fs.rm(directory, { recursive: true, force: true });
 });
 
 test("serializes overlapping sync operations", async () => {

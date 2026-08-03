@@ -89,6 +89,19 @@ function appendTextLines(blocks, inline, properties) {
   }
 }
 
+function appendList(blocks, list, nestingLevel = 0) {
+  for (const item of list.children ?? []) {
+    appendTextLines(blocks, listItemInline(item), {
+      type: "listItem",
+      ordered: Boolean(list.ordered),
+      nestingLevel,
+    });
+    for (const child of item.children ?? []) {
+      if (child.type === "list") appendList(blocks, child, nestingLevel + 1);
+    }
+  }
+}
+
 function headingInline(node) {
   const inline = renderInlineNodes(node.children);
   const match = inline.text.match(/\s+\{#([^}]+)\}$/);
@@ -139,12 +152,7 @@ export function parseMarkdown(markdown) {
         paragraphStyle: "NORMAL_TEXT",
       });
     } else if (node.type === "list") {
-      for (const item of node.children) {
-        appendTextLines(blocks, listItemInline(item), {
-          type: "listItem",
-          ordered: Boolean(node.ordered),
-        });
-      }
+      appendList(blocks, node);
     } else if (node.type === "table") {
       blocks.push({
         type: "table",

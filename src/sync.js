@@ -55,19 +55,22 @@ async function localSnapshot(filePath) {
   }
 }
 
-async function pull(services, pairing, remote) {
-  const content = await exportMarkdown(services, pairing.documentId);
+export async function pullDocument(services, pairing, remote) {
   const status = {
-    content,
     lastWriter: "google-docs",
     lastSuccessfulSync: new Date().toISOString(),
   };
-  await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
+  // Complete the fallible remote write before touching the local file. If a
+  // collaborator wins the revision race, the pull can retry without leaving a
+  // daemon-authored local change behind with stale sync state.
   const updatedRemote = await updateDocumentStatus(
     services,
     pairing.documentId,
     remoteDocumentStatusMarkdown(pairing, status),
   );
+  const content = await exportMarkdown(services, pairing.documentId);
+  status.content = content;
+  await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
   const local = await localSnapshot(pairing.absolutePath);
   return {
     localHash: local.hash,
@@ -220,7 +223,7 @@ export async function syncPairing(
       pairing: effectivePairing,
       state: spreadsheet
         ? await pullSheet(services, effectivePairing, remote)
-        : await pull(services, effectivePairing, remote),
+        : await pullDocument(services, effectivePairing, remote),
     };
   }
   if (action === "none") {
