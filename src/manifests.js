@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readJson, writeJsonAtomic } from "./files.js";
+import { hasMarkdownStatus } from "./status.js";
 import {
   DEFAULT_DEV_ROOT,
   INDEX_PATH,
@@ -164,6 +165,18 @@ async function pathsReferToSameFile(firstPath, secondPath) {
   }
 }
 
+async function managedFileBelongsToDocument(filePath, documentId) {
+  const markdown = await fs.readFile(filePath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  return Boolean(
+    markdown &&
+      hasMarkdownStatus(markdown) &&
+      markdown.includes(`docs.google.com/document/d/${documentId}/`),
+  );
+}
+
 async function findPathsByIdentity(directory, identity, results = []) {
   let entries;
   try {
@@ -271,30 +284,6 @@ export async function applyRemoteTitle(pairing, remoteTitle) {
     : pairing.markdownPath;
   const nextAbsolutePath = path.resolve(pairing.workspace, nextRelativePath);
   const pathChanged = nextAbsolutePath !== pairing.absolutePath;
-  const sourceExists = await fs
-    .access(pairing.absolutePath)
-    .then(() => true)
-    .catch((error) => {
-      if (error.code === "ENOENT") return false;
-      throw error;
-    });
-
-  if (
-    pathChanged &&
-    (await fs
-      .access(nextAbsolutePath)
-      .then(() => true)
-      .catch((error) => {
-        if (error.code === "ENOENT") return false;
-        throw error;
-      })) &&
-    !(await pathsReferToSameFile(pairing.absolutePath, nextAbsolutePath))
-  ) {
-    throw new Error(
-      `Cannot rename ${pairing.markdownPath}: ${nextRelativePath} already exists.`,
-    );
-  }
-
   const manifest = await readJson(pairing.manifestPath);
   const index = manifest.pairings.findIndex(
     (item) => item.documentId === pairing.documentId,
@@ -303,18 +292,51 @@ export async function applyRemoteTitle(pairing, remoteTitle) {
     throw new Error(`Pairing ${pairing.documentId} is missing from its manifest.`);
   }
 
-  const renamed = pathChanged && sourceExists;
-  if (renamed) await fs.rename(pairing.absolutePath, nextAbsolutePath);
-  manifest.pairings[index] = {
-    ...manifest.pairings[index],
-    markdownPath: nextRelativePath,
-    name: title,
+  const updatedManifest = {
+    ...manifest,
+    pairings: manifest.pairings.map((item, itemIndex) =>
+      itemIndex === index
+        ? { ...item, markdownPath: nextRelativePath, name: title }
+        : item,
+    ),
   };
-  manifest.pairings.sort((a, b) =>
-    a.markdownPath.localeCompare(b.markdownPath),
-  );
+  updatedManifest.pairings.sort(comparePairingLocalPaths);
+  validateManifest(updatedManifest, pairing.manifestPath);
+
+  const [sourceExists, destinationExists, sameFile] = await Promise.all([
+    fs.access(pairing.absolutePath).then(() => true).catch((error) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }),
+    fs.access(nextAbsolutePath).then(() => true).catch((error) => {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }),
+    pathChanged
+      ? pathsReferToSameFile(pairing.absolutePath, nextAbsolutePath)
+      : true,
+  ]);
+  const recoveringInterruptedRename =
+    pathChanged &&
+    !sourceExists &&
+    destinationExists &&
+    (await managedFileBelongsToDocument(nextAbsolutePath, pairing.documentId));
+
+  if (
+    pathChanged &&
+    destinationExists &&
+    !sameFile &&
+    !recoveringInterruptedRename
+  ) {
+    throw new Error(
+      `Cannot rename ${pairing.markdownPath}: ${nextRelativePath} already exists.`,
+    );
+  }
+
+  const renamed = pathChanged && sourceExists && !sameFile;
   try {
-    await writeJsonAtomic(pairing.manifestPath, manifest);
+    if (renamed) await fs.rename(pairing.absolutePath, nextAbsolutePath);
+    await writeJsonAtomic(pairing.manifestPath, updatedManifest);
   } catch (error) {
     if (renamed) await fs.rename(nextAbsolutePath, pairing.absolutePath);
     throw error;

@@ -4,15 +4,31 @@ A personal macOS tool for pairing native Google Docs with Markdown files and
 Google Sheets with CSV directories in local Codex workspaces.
 
 - [Google Docs ↔ Markdown Sync](#google-docs--markdown-sync)
+  - [Features](#features)
   - [Intended experience](#intended-experience)
-  - [Version-one behavior](#version-one-behavior)
+  - [Behavior and limitations](#behavior-and-limitations)
   - [Components](#components)
   - [Pairing files](#pairing-files)
   - [Synchronization semantics](#synchronization-semantics)
   - [Google authorization](#google-authorization)
   - [Commands](#commands)
+    - [Service management](#service-management)
   - [Product principles](#product-principles)
 
+## Features
+
+- Two-way Google Docs ↔ Markdown synchronization.
+- Google Sheets ↔ per-tab CSV synchronization, including formulas.
+- Explicit pairing through a global Raycast shortcut and project search.
+- Automatic local change detection and remote polling.
+- Automatic pairing updates when Markdown files move within a workspace or a
+  paired Google Doc is renamed.
+- Human-readable status showing the last successful sync time and direction,
+  with links between local files and their paired Google documents.
+- Incremental Google Docs updates that preserve unchanged document ranges.
+- Native heading links and Google Docs tables of contents preserved where the
+  APIs support them.
+- Launch-at-login support and an independent weekly health heartbeat.
 
 ## Intended experience
 
@@ -42,7 +58,7 @@ last successful sync time and direction, are excluded from content comparison,
 and are recreated on a later sync pass if deleted. Removing a status artifact
 does not unpair its document or spreadsheet.
 
-## Version-one behavior
+## Behavior and limitations
 
 Google Docs' native Markdown export defines the Google Docs → Markdown subset.
 The service saves that export without applying its own placeholder or
@@ -236,6 +252,53 @@ npm run sync
 
 # Install and start the per-user LaunchAgent
 npm run install-service
+```
+
+### Service management
+
+The installed LaunchAgent runs the source files from this checkout directly.
+After changing anything under `src/`, restart the daemon so it loads the new
+code:
+
+```sh
+npm run install-service
+```
+
+The same command handles both initial installation and restart: it rewrites the
+LaunchAgent configuration, stops the existing daemon if present, and starts it
+again. Existing Google authorization and document pairings are preserved. No
+restart is needed for changes limited to documentation, tests, examples, or
+paired Markdown and CSV content.
+
+For temporary foreground operation instead of the LaunchAgent, run:
+
+```sh
+npm run sync
+```
+
+Stop a foreground daemon with <kbd>Control</kbd>+<kbd>C</kbd>, then run the same
+command again to restart it. Avoid running the foreground daemon alongside the
+installed LaunchAgent.
+
+Confirm that the daemon is running and that every paired Google document is
+readable through the APIs:
+
+```sh
+npm run heartbeat
+```
+
+Service output and errors are stored in:
+
+```text
+~/Library/Application Support/google-docs-markdown-sync/service.log
+~/Library/Application Support/google-docs-markdown-sync/service-error.log
+```
+
+For example, inspect the latest messages with:
+
+```sh
+tail -n 50 "$HOME/Library/Application Support/google-docs-markdown-sync/service.log"
+tail -n 50 "$HOME/Library/Application Support/google-docs-markdown-sync/service-error.log"
 ```
 
 ## Weekly health heartbeat

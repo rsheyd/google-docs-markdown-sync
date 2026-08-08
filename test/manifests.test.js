@@ -239,6 +239,62 @@ test("refuses a title rename that would overwrite another file", async () => {
   }
 });
 
+test("recovers a completed title rename whose manifest update was interrupted", async () => {
+  const workspace = await fs.mkdtemp(
+    path.join(os.tmpdir(), "gdocs-sync-interrupted-rename-"),
+  );
+  const manifestPath = path.join(workspace, "google-docs-sync.json");
+  const destinationPath = path.join(workspace, "new-title.md");
+  const manifest = {
+    version: 1,
+    pairings: [
+      { documentId: "abc", markdownPath: "old-title.md", name: "Old Title" },
+      {
+        type: "spreadsheet",
+        spreadsheetId: "sheet-123",
+        directoryPath: "data/sheet",
+      },
+    ],
+  };
+  await fs.writeFile(
+    destinationPath,
+    [
+      "content",
+      "",
+      "<!-- google-docs-sync:status:start -->",
+      "---",
+      "*↔ Markdown sync status*",
+      "*[Google Doc](https://docs.google.com/document/d/abc/edit) · Local file: `old-title.md`*",
+      "<!-- google-docs-sync:status:end -->",
+      "",
+    ].join("\n"),
+  );
+  await fs.writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+  try {
+    const [pairing] = validateManifest(manifest, manifestPath);
+    const updated = await applyRemoteTitle(pairing, "New Title");
+
+    assert.equal(updated.markdownPath, "new-title.md");
+    assert.equal(await fs.readFile(destinationPath, "utf8"), [
+      "content",
+      "",
+      "<!-- google-docs-sync:status:start -->",
+      "---",
+      "*↔ Markdown sync status*",
+      "*[Google Doc](https://docs.google.com/document/d/abc/edit) · Local file: `old-title.md`*",
+      "<!-- google-docs-sync:status:end -->",
+      "",
+    ].join("\n"));
+    const stored = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    const document = stored.pairings.find((item) => item.documentId === "abc");
+    assert.equal(document.markdownPath, "new-title.md");
+    assert.equal(document.name, "New Title");
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("adopts the new title path when a missing local file must be pulled", async () => {
   const workspace = await fs.mkdtemp(
     path.join(os.tmpdir(), "gdocs-sync-missing-"),

@@ -20,6 +20,31 @@ ranges are not represented in CSV.
 Add or update tests for behavior changes. The synchronization planner can be
 tested without writing to a live Google Doc.
 
+## Bump the version
+
+The synchronization service and Raycast extension currently share one semantic
+version. Choose the next patch, minor, or major version and update both packages
+without creating an automatic Git commit or tag:
+
+```sh
+release_version=0.2.0
+npm version "$release_version" --no-git-tag-version
+npm --prefix raycast-extension version "$release_version" --no-git-tag-version
+```
+
+These commands update `package.json` and `package-lock.json` in both the project
+root and `raycast-extension/`. Confirm that the package versions agree:
+
+```sh
+npm pkg get version
+npm --prefix raycast-extension pkg get version
+```
+
+Review the resulting diff and include all four package and lock files in the
+version-bump commit. Do not change the numeric `version` fields in
+`google-docs-sync.json`, `.google-sheets-sync.json`, or their examples; those
+are data-format schema versions, not application release versions.
+
 ## Validate the change
 
 Run the complete project check:
