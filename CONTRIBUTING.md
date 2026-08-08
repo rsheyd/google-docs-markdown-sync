@@ -1,5 +1,13 @@
 # Contributing
 
+- [Contributing](#contributing)
+  - [Before making a change](#before-making-a-change)
+  - [Bump the version](#bump-the-version)
+  - [Validate the change](#validate-the-change)
+  - [Make the change affect future syncing](#make-the-change-affect-future-syncing)
+  - [Confirm the service is running](#confirm-the-service-is-running)
+
+
 ## Before making a change
 
 Install dependencies with Node.js 22 or newer:
