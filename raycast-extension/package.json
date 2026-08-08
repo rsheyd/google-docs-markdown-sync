@@ -1,7 +1,7 @@
 {
   "name": "google-docs-markdown-sync-raycast",
   "title": "Google Docs and Sheets Sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Pair the active Google Doc or Sheet with a Codex workspace",
   "author": "Roman",
