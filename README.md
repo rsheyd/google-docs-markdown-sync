@@ -1,7 +1,11 @@
 # Google Docs/Sheets ↔ Markdown/CSV Sync
 
 A personal macOS tool for pairing native Google Docs with Markdown files and
-Google Sheets with CSV directories in local Codex workspaces.
+Google Sheets with CSV directories in local Codex workspaces. The project name
+is shortened to **GDMS** throughout the human-facing documentation and UI.
+
+See the [project roadmap](ROADMAP.md) for planned work, including
+[two-way inline image synchronization](IMAGE-SYNC.md).
 
 - [Google Docs ↔ Markdown Sync](#google-docs--markdown-sync)
   - [Features](#features)
@@ -12,6 +16,7 @@ Google Sheets with CSV directories in local Codex workspaces.
   - [Synchronization semantics](#synchronization-semantics)
   - [Google authorization](#google-authorization)
   - [Commands](#commands)
+    - [Finder Quick Action](#finder-quick-action)
     - [Service management](#service-management)
   - [Product principles](#product-principles)
 
@@ -20,6 +25,8 @@ Google Sheets with CSV directories in local Codex workspaces.
 - Two-way Google Docs ↔ Markdown synchronization.
 - Google Sheets ↔ per-tab CSV synchronization, including formulas.
 - Explicit pairing through a global Raycast shortcut and project search.
+- Create and pair a Google Doc from a local-only Markdown file through a Finder
+  Quick Action.
 - Automatic local change detection and remote polling.
 - Automatic pairing updates when Markdown files move within a workspace or a
   paired Google Doc is renamed.
@@ -75,6 +82,59 @@ and are not inserted as visible document text. When a changed sync pass creates
 new headings, the service applies content first and then resolves the
 Google-assigned heading IDs in a second atomic batch.
 
+Inline PNG, JPEG, and GIF images in Google Docs are downloaded into a sibling
+`<markdown-name>.assets/` directory and represented by portable relative
+Markdown image links. Asset filenames are content-addressed, unchanged bytes
+are deduplicated, and the Markdown file plus its asset directory move together.
+The local watcher includes referenced asset bytes in change detection.
+
+Standalone image paragraphs synchronize in both directions. Local image bytes
+are compared with the current Google inline objects; additions and replacements
+are staged briefly in a private Cloudflare R2 bucket and deleted after Google
+copies them. An HMAC-authenticated Worker exposes only random staging keys for
+15 minutes while the bucket itself remains private. Deletions
+need no staging. Replacement requests preserve the existing display dimensions.
+Mixed text-and-image paragraphs remain unsupported and fail safely.
+
+Images that Google exports as numbered placeholders are matched one-to-one with
+Docs API inline objects, and a mismatch aborts the pull before rewriting
+Markdown. If both the local Markdown/assets and Google Doc changed since their
+shared baseline, image synchronization stops with a conflict instead of using
+the normal later-modification-wins policy.
+
+### Cloudflare R2 image staging
+
+Create a private R2 bucket and an R2 API token restricted to object read/write
+for that bucket. Do not enable permanent public bucket access. Direct S3
+presigned URLs are insufficient for Google Docs; deploy the included
+HMAC-authenticated Worker with an R2 binding and configure its URL. Store the
+non-secret settings locally:
+
+```sh
+npm run cli -- configure-r2 --account-id ACCOUNT_ID --bucket BUCKET_NAME \
+  --gateway-url https://WORKER.ACCOUNT.workers.dev
+```
+
+Store each credential in macOS Keychain. Putting `-w` last makes `security`
+prompt without placing the value in shell history or process arguments:
+
+```sh
+security add-generic-password -U \
+  -s com.roman.google-docs-markdown-sync.r2-access-key -a r2 -w
+
+security add-generic-password -U \
+  -s com.roman.google-docs-markdown-sync.r2-secret-key -a r2 -w
+
+security add-generic-password -U \
+  -s com.roman.google-docs-markdown-sync.r2-gateway-secret -a r2 -w
+```
+
+In the R2 bucket settings, add a lifecycle rule for the
+`google-docs-image-staging/` prefix that deletes objects after one day. Eager
+cleanup normally removes an object immediately; the lifecycle rule handles
+process crashes and interrupted requests. Restart the service afterward with
+`npm run install-service`.
+
 Native Google Docs tables of contents round-trip through the Markdown export
 without being rebuilt or duplicated. Their exported Markdown range is
 preserved as read-only because the Docs API does not expose a request for
@@ -83,8 +143,11 @@ represented instead as ordinary text or list items with working native heading
 links.
 
 A single blank line separates Markdown blocks without creating an empty Google
-Docs paragraph. Each additional consecutive blank line becomes one explicit
-empty paragraph. Markdown hard breaks become adjacent Google Docs paragraphs.
+Docs paragraph. GDMS renders ordinary Markdown paragraphs with 8 pt of visual
+space after them in Google Docs. Each additional consecutive blank line becomes
+one explicit empty paragraph. Markdown hard breaks become adjacent Google Docs
+paragraphs without added spacing between the broken lines. Headings, lists,
+tables, and the managed status footer keep their native spacing.
 
 Comments and suggestions are not represented in Markdown. Content that Google
 omits from its Markdown export can be lost if its surrounding Markdown range is
@@ -252,7 +315,22 @@ npm run sync
 
 # Install and start the per-user LaunchAgent
 npm run install-service
+
+# Install “Sync with Google Docs (GDMS)” in Finder's Quick Actions menu
+npm run install-finder-action
 ```
+
+### Finder Quick Action
+
+Run `npm run install-finder-action` once, then Control-click or right-click a
+local `.md` file in Finder and choose **Quick Actions → Sync with Google Docs
+(GDMS)**. GDMS creates a Google Doc from the file, uses the file's containing
+directory as its workspace, and registers the pair for ongoing two-way sync.
+
+The action also accepts multiple selected Markdown files and creates one Google
+Doc per file. It rejects non-Markdown selections. Re-run the installer after
+moving this checkout or changing the Node executable, because the workflow
+stores their absolute paths.
 
 ### Service management
 
@@ -356,8 +434,8 @@ Raycast extensions cannot declare a default global hotkey / shortcut. Assign one
 
 1. Open Raycast Settings.
 2. Select **Extensions**.
-3. Search for **Google Docs and Sheets Sync** or **Pair Google Doc or Sheet**.
-4. Select **Pair Google Doc or Sheet**.
+3. Search for **GDMS** or **Pair Google Doc or Sheet with GDMS**.
+4. Select **Pair Google Doc or Sheet with GDMS**.
 5. Record a hotkey in the **Hotkey** field.
 
 Recommended hotkey: **Command–Shift-M**.

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseMarkdown } from "../src/markdown.js";
+import { INLINE_IMAGE_MARKER, parseMarkdown } from "../src/markdown.js";
 
 test("parses headings and inline formatting", () => {
   const blocks = parseMarkdown(
@@ -110,4 +110,46 @@ test("parses a simple GFM table", () => {
   assert.equal(blocks[0].type, "table");
   assert.equal(blocks[0].rows[1][1].text, "B");
   assert.deepEqual(blocks[0].rows[1][1].styles[0].style, { bold: true });
+});
+
+test("represents inline images structurally instead of flattening alt text", () => {
+  const [block] = parseMarkdown(
+    "Before ![Login screen](project.assets/login.png \"Current login\") after.",
+  );
+  assert.equal(block.text, `Before ${INLINE_IMAGE_MARKER} after.`);
+  assert.deepEqual(block.images, [
+    {
+      offset: 7,
+      url: "project.assets/login.png",
+      alt: "Login screen",
+      title: "Current login",
+    },
+  ]);
+});
+
+test("retains image offsets when splitting Markdown hard breaks", () => {
+  const blocks = parseMarkdown(
+    "First ![one](assets/one.png)  \nSecond ![two](assets/two.png)",
+  );
+  assert.deepEqual(
+    blocks.map((block) => ({ text: block.text, images: block.images })),
+    [
+      {
+        text: `First ${INLINE_IMAGE_MARKER}`,
+        images: [{ offset: 6, url: "assets/one.png", alt: "one" }],
+      },
+      {
+        text: `Second ${INLINE_IMAGE_MARKER}`,
+        images: [{ offset: 7, url: "assets/two.png", alt: "two" }],
+      },
+    ],
+  );
+});
+
+test("recognizes unresolved Google Docs image references as image placeholders", () => {
+  const [block] = parseMarkdown("![][image1]");
+  assert.equal(block.text, INLINE_IMAGE_MARKER);
+  assert.deepEqual(block.images, [
+    { offset: 0, alt: "", reference: "image1" },
+  ]);
 });

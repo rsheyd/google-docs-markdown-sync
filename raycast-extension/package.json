@@ -1,7 +1,7 @@
 {
   "name": "google-docs-markdown-sync-raycast",
-  "title": "Google Docs and Sheets Sync",
-  "version": "0.2.2",
+  "title": "GDMS",
+  "version": "0.3.0",
   "private": true,
   "description": "Pair the active Google Doc or Sheet with a Codex workspace",
   "author": "Roman",
@@ -26,7 +26,7 @@
   "commands": [
     {
       "name": "pair-google-doc",
-      "title": "Pair Google Doc or Sheet",
+      "title": "Pair Google Doc or Sheet with GDMS",
       "description": "Pair the active Chrome Google Doc with Markdown or Sheet with CSV files",
       "mode": "view"
     }

@@ -10,6 +10,7 @@ export const APP_SUPPORT_DIR = path.join(
   "google-docs-markdown-sync",
 );
 export const STATE_PATH = path.join(APP_SUPPORT_DIR, "state.json");
+export const R2_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "r2.json");
 export const INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");
 export const LOG_PATH = path.join(APP_SUPPORT_DIR, "service.log");
 export const ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "service-error.log");

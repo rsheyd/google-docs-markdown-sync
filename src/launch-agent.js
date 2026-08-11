@@ -30,6 +30,17 @@ export async function installLaunchAgent() {
   const oauthClient =
     process.env.GOOGLE_DOCS_SYNC_OAUTH_CLIENT ??
     path.join(APP_SUPPORT_DIR, "oauth-client.json");
+  const optionalEnvironment = [
+    "GOOGLE_DOCS_SYNC_R2_ACCOUNT_ID",
+    "GOOGLE_DOCS_SYNC_R2_BUCKET",
+  ].flatMap((name) =>
+    process.env[name]
+      ? [
+          `    <key>${name}</key>`,
+          `    <string>${xmlEscape(process.env[name])}</string>`,
+        ]
+      : [],
+  ).join("\n");
   await ensureDirectory(path.dirname(LAUNCH_AGENT_PATH));
   await ensureDirectory(APP_SUPPORT_DIR);
 
@@ -51,6 +62,7 @@ export async function installLaunchAgent() {
   <dict>
     <key>GOOGLE_DOCS_SYNC_OAUTH_CLIENT</key>
     <string>${xmlEscape(oauthClient)}</string>
+${optionalEnvironment}
   </dict>
   <key>RunAtLoad</key>
   <true/>

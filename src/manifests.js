@@ -3,6 +3,10 @@ import path from "node:path";
 import { readJson, writeJsonAtomic } from "./files.js";
 import { hasMarkdownStatus } from "./status.js";
 import {
+  relocateAssetDirectory,
+  rollbackAssetRelocation,
+} from "./images.js";
+import {
   DEFAULT_DEV_ROOT,
   INDEX_PATH,
   MANIFEST_NAME,
@@ -264,7 +268,16 @@ export async function applyLocalMove(pairing, identity) {
   manifest.pairings.sort((a, b) =>
     a.markdownPath.localeCompare(b.markdownPath),
   );
-  await writeJsonAtomic(pairing.manifestPath, manifest);
+  const assetRelocation = await relocateAssetDirectory(
+    pairing.absolutePath,
+    nextAbsolutePath,
+  );
+  try {
+    await writeJsonAtomic(pairing.manifestPath, manifest);
+  } catch (error) {
+    await rollbackAssetRelocation(assetRelocation);
+    throw error;
+  }
   return {
     ...pairing,
     markdownPath: nextRelativePath,
@@ -334,10 +347,18 @@ export async function applyRemoteTitle(pairing, remoteTitle) {
   }
 
   const renamed = pathChanged && sourceExists && !sameFile;
+  let assetRelocation;
   try {
     if (renamed) await fs.rename(pairing.absolutePath, nextAbsolutePath);
+    if (pathChanged) {
+      assetRelocation = await relocateAssetDirectory(
+        pairing.absolutePath,
+        nextAbsolutePath,
+      );
+    }
     await writeJsonAtomic(pairing.manifestPath, updatedManifest);
   } catch (error) {
+    await rollbackAssetRelocation(assetRelocation);
     if (renamed) await fs.rename(nextAbsolutePath, pairing.absolutePath);
     throw error;
   }

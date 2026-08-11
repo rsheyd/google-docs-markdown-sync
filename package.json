@@ -1,6 +1,6 @@
 {
   "name": "google-docs-markdown-sync",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,6 +12,7 @@
     "sync": "node src/cli.js daemon",
     "sync:once": "node src/cli.js sync-once",
     "install-service": "node src/cli.js install-service",
+    "install-finder-action": "node src/cli.js install-finder-action",
     "heartbeat": "node src/cli.js heartbeat",
     "install-heartbeat": "node src/cli.js install-heartbeat",
     "build:raycast": "npm --prefix raycast-extension run build",
@@ -19,6 +20,7 @@
     "check": "node --check src/cli.js && node --test && npm --prefix raycast-extension run typecheck"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1107.0",
     "@google-cloud/local-auth": "^3.0.1",
     "googleapis": "^160.0.0",
     "remark-gfm": "^4.0.1",

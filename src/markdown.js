@@ -3,10 +3,22 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 
 const parser = unified().use(remarkParse).use(remarkGfm);
+export const INLINE_IMAGE_MARKER = "\uFFFC";
+export const PARAGRAPH_SPACE_BELOW_PT = 8;
+const GOOGLE_IMAGE_REFERENCE_PREFIX = "gdocs-image-reference:";
+
+function normalizeGoogleImageReferences(markdown) {
+  return markdown.replace(
+    /!\[([^\]]*)\]\[(image\d+)\]/gi,
+    (_match, alt, identifier) =>
+      `![${alt}](${GOOGLE_IMAGE_REFERENCE_PREFIX}${identifier})`,
+  );
+}
 
 function renderInlineNodes(nodes, inherited = {}) {
   let text = "";
   const styles = [];
+  const images = [];
 
   function append(value, style) {
     const start = text.length;
@@ -27,15 +39,29 @@ function renderInlineNodes(nodes, inherited = {}) {
       append(node.value, merged);
     } else if (node.type === "break") {
       append("\n", merged);
-    } else if (node.type === "image") {
-      append(node.alt ? `[${node.alt}]` : "", merged);
+    } else if (node.type === "image" || node.type === "imageReference") {
+      const offset = text.length;
+      append(INLINE_IMAGE_MARKER, {});
+      images.push({
+        offset,
+        alt: node.alt ?? "",
+        ...(node.type === "image"
+          ? node.url.startsWith(GOOGLE_IMAGE_REFERENCE_PREFIX)
+            ? { reference: node.url.slice(GOOGLE_IMAGE_REFERENCE_PREFIX.length) }
+            : {
+                url: node.url,
+                ...(node.title ? { title: node.title } : {}),
+              }
+          : { reference: node.identifier ?? node.label }),
+        ...(merged.link ? { link: merged.link } : {}),
+      });
     } else if (node.children) {
       for (const child of node.children) visit(child, merged);
     }
   }
 
   for (const node of nodes ?? []) visit(node, inherited);
-  return { text, styles };
+  return { text, styles, ...(images.length ? { images } : {}) };
 }
 
 function listItemInline(item) {
@@ -48,6 +74,7 @@ function listItemInline(item) {
   if (!parts.length) return { text: "", styles: [] };
   let text = "";
   const styles = [];
+  const images = [];
   for (const [index, part] of parts.entries()) {
     if (index) text += "\n";
     const offset = text.length;
@@ -59,8 +86,14 @@ function listItemInline(item) {
         end: range.end + offset,
       })),
     );
+    images.push(
+      ...(part.images ?? []).map((image) => ({
+        ...image,
+        offset: image.offset + offset,
+      })),
+    );
   }
-  return { text, styles };
+  return { text, styles, ...(images.length ? { images } : {}) };
 }
 
 function splitInlineLines(inline) {
@@ -68,6 +101,9 @@ function splitInlineLines(inline) {
   let start = 0;
   for (const text of inline.text.split("\n")) {
     const end = start + text.length;
+    const images = (inline.images ?? [])
+      .filter((image) => image.offset >= start && image.offset < end)
+      .map((image) => ({ ...image, offset: image.offset - start }));
     lines.push({
       text,
       styles: inline.styles
@@ -77,6 +113,7 @@ function splitInlineLines(inline) {
           start: Math.max(range.start, start) - start,
           end: Math.min(range.end, end) - start,
         })),
+      ...(images.length ? { images } : {}),
     });
     start = end + 1;
   }
@@ -84,8 +121,15 @@ function splitInlineLines(inline) {
 }
 
 function appendTextLines(blocks, inline, properties) {
-  for (const line of splitInlineLines(inline)) {
-    blocks.push({ ...properties, ...line });
+  const lines = splitInlineLines(inline);
+  for (const [index, line] of lines.entries()) {
+    blocks.push({
+      ...properties,
+      ...line,
+      ...(properties.managedParagraphSpacing && index === lines.length - 1
+        ? { paragraphSpaceBelow: PARAGRAPH_SPACE_BELOW_PT }
+        : {}),
+    });
   }
 }
 
@@ -116,13 +160,18 @@ function headingInline(node) {
           ...range,
           end: Math.min(range.end, text.length),
         })),
+      ...(inline.images?.length
+        ? {
+            images: inline.images.filter((image) => image.offset < text.length),
+          }
+        : {}),
     },
     headingFragment: `#${match[1]}`,
   };
 }
 
 export function parseMarkdown(markdown) {
-  const tree = parser.parse(markdown);
+  const tree = parser.parse(normalizeGoogleImageReferences(markdown));
   const blocks = [];
   let previousEndLine = 0;
   for (const node of tree.children) {
@@ -150,6 +199,7 @@ export function parseMarkdown(markdown) {
       appendTextLines(blocks, renderInlineNodes(node.children), {
         type: "text",
         paragraphStyle: "NORMAL_TEXT",
+        managedParagraphSpacing: true,
       });
     } else if (node.type === "list") {
       appendList(blocks, node);

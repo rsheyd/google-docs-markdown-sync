@@ -31,6 +31,13 @@ export async function writeTextAtomic(filePath, value) {
   await fs.rename(temporaryPath, filePath);
 }
 
+export async function writeFileAtomic(filePath, value) {
+  await ensureDirectory(path.dirname(filePath));
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, value);
+  await fs.rename(temporaryPath, filePath);
+}
+
 export function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }

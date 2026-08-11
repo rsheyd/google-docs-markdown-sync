@@ -4,9 +4,18 @@ import path from "node:path";
 import { getAuthClient } from "./auth.js";
 import { sha256, writeTextAtomic } from "./files.js";
 import {
+  assetDirectoryPath,
+  hashMarkdownWithAssets,
+  hasImagesForSync,
+  materializeRemoteImages,
+  prepareImagePush,
+} from "./images.js";
+import { createR2Stager, loadR2Configuration } from "./r2.js";
+import {
   createGoogleServices,
   exportMarkdown,
   getRemoteInfo,
+  updateDocumentParagraphSpacing,
   updateDocumentFromMarkdown,
   updateDocumentStatus,
 } from "./google.js";
@@ -46,7 +55,7 @@ async function localSnapshot(filePath) {
       exists: true,
       text,
       content,
-      hash: sha256(content),
+      hash: await hashMarkdownWithAssets(filePath, content),
       modifiedTime: stat.mtimeMs,
     };
   } catch (error) {
@@ -68,7 +77,13 @@ export async function pullDocument(services, pairing, remote) {
     pairing.documentId,
     remoteDocumentStatusMarkdown(pairing, status),
   );
-  const content = await exportMarkdown(services, pairing.documentId);
+  const exported = await exportMarkdown(services, pairing.documentId);
+  const content = await materializeRemoteImages(
+    services,
+    pairing,
+    updatedRemote.document,
+    exported,
+  );
   status.content = content;
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
   const local = await localSnapshot(pairing.absolutePath);
@@ -82,18 +97,32 @@ export async function pullDocument(services, pairing, remote) {
   };
 }
 
-async function push(services, pairing, local) {
+async function push(services, pairing, local, before) {
   const status = {
     content: local.content,
     lastWriter: "markdown",
     lastSuccessfulSync: new Date().toISOString(),
   };
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
-  await updateDocumentFromMarkdown(
-    services,
-    pairing.documentId,
-    local.content,
-  );
+  const imageSync = hasImagesForSync(before.document, local.content)
+    ? await prepareImagePush(
+        services,
+        pairing.absolutePath,
+        local.content,
+        before.document,
+        createR2Stager(loadR2Configuration()),
+      )
+    : undefined;
+  try {
+    await updateDocumentFromMarkdown(
+      services,
+      pairing.documentId,
+      local.content,
+      { imageSync },
+    );
+  } finally {
+    await imageSync?.cleanup();
+  }
   const remote = await updateDocumentStatus(
     services,
     pairing.documentId,
@@ -173,6 +202,16 @@ export function chooseSyncAction({ local, remote, previous }) {
   return local.modifiedTime > Date.parse(remote.modifiedTime) ? "push" : "pull";
 }
 
+export function hasImageConflict({ local, remote, previous }) {
+  return Boolean(
+    previous &&
+    local.exists &&
+    local.hash !== previous.localHash &&
+    remote.revisionId !== previous.remoteRevisionId &&
+    hasImagesForSync(remote.document, local.content),
+  );
+}
+
 export async function syncPairing(
   services,
   pairing,
@@ -217,6 +256,12 @@ export async function syncPairing(
       };
     }
   }
+  if (!spreadsheet && hasImageConflict({ local, remote, previous })) {
+    throw new Error(
+      "Image conflict: both Markdown/assets and Google Docs changed since " +
+        "the last synchronized baseline. Resolve one side before syncing.",
+    );
+  }
   if (action === "pull") {
     return {
       action: "pull",
@@ -227,6 +272,25 @@ export async function syncPairing(
     };
   }
   if (action === "none") {
+    if (!spreadsheet) {
+      const styledRemote = await updateDocumentParagraphSpacing(
+        services,
+        effectivePairing.documentId,
+        remote.document,
+        local.content,
+      );
+      if (styledRemote) {
+        return {
+          action: "style",
+          pairing: effectivePairing,
+          state: {
+            ...previous,
+            remoteRevisionId: styledRemote.revisionId,
+            remoteModifiedTime: styledRemote.modifiedTime,
+          },
+        };
+      }
+    }
     const localStatusPath = spreadsheet
       ? path.join(effectivePairing.absolutePath, SHEET_STATUS_FILE)
       : effectivePairing.absolutePath;
@@ -257,7 +321,7 @@ export async function syncPairing(
     pairing: effectivePairing,
     state: spreadsheet
       ? await pushSheet(services, effectivePairing, local, remote)
-      : await push(services, effectivePairing, local),
+      : await push(services, effectivePairing, local, remote),
   };
 }
 
@@ -349,6 +413,21 @@ export function createWatcherManager({ onChange, logger }) {
             if (entry.name !== SHEET_STATUS_FILE) {
               watchEntries.push({ watchPath: `${pairing.absolutePath}/${entry.name}`, pairing });
             }
+          }
+        }
+      } else {
+        const assetDirectory = assetDirectoryPath(pairing.absolutePath);
+        watchEntries.push({ watchPath: assetDirectory, pairing });
+        const entries = await fs.readdir(assetDirectory, { withFileTypes: true }).catch((error) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        });
+        for (const entry of entries) {
+          if (entry.isFile()) {
+            watchEntries.push({
+              watchPath: path.join(assetDirectory, entry.name),
+              pairing,
+            });
           }
         }
       }

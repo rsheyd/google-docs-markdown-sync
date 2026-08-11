@@ -116,8 +116,14 @@ test("renames Markdown and updates its pairing after a remote title change", asy
   );
   const manifestPath = path.join(workspace, "google-docs-sync.json");
   const oldPath = path.join(workspace, "notes", "old-title.md");
+  const oldAssets = path.join(workspace, "notes", "old-title.assets");
   await fs.mkdir(path.dirname(oldPath));
-  await fs.writeFile(oldPath, "content\n");
+  await fs.mkdir(oldAssets);
+  await fs.writeFile(path.join(oldAssets, "image.png"), "image");
+  await fs.writeFile(
+    oldPath,
+    "content\n\n![Screenshot](old-title.assets/image.png)\n",
+  );
   await fs.writeFile(
     manifestPath,
     `${JSON.stringify({
@@ -139,8 +145,19 @@ test("renames Markdown and updates its pairing after a remote title change", asy
     );
     const updated = await applyRemoteTitle(pairing, "New Title");
     assert.equal(updated.markdownPath, "notes/new-title.md");
-    assert.equal(await fs.readFile(updated.absolutePath, "utf8"), "content\n");
+    assert.equal(
+      await fs.readFile(updated.absolutePath, "utf8"),
+      "content\n\n![Screenshot](new-title.assets/image.png)\n",
+    );
     await assert.rejects(fs.access(oldPath));
+    await assert.rejects(fs.access(oldAssets));
+    assert.equal(
+      await fs.readFile(
+        path.join(workspace, "notes", "new-title.assets", "image.png"),
+        "utf8",
+      ),
+      "image",
+    );
     const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
     assert.equal(manifest.pairings[0].markdownPath, "notes/new-title.md");
     assert.equal(manifest.pairings[0].name, "New Title");
@@ -156,11 +173,14 @@ test("adopts a paired Markdown file moved into a subfolder", async () => {
   const manifestPath = path.join(workspace, "google-docs-sync.json");
   const oldPath = path.join(workspace, "note.md");
   const newPath = path.join(workspace, "archive", "note.md");
+  const oldAssets = path.join(workspace, "note.assets");
   const manifest = {
     version: 1,
     pairings: [{ documentId: "abc", markdownPath: "note.md", name: "Note" }],
   };
-  await fs.writeFile(oldPath, "content\n");
+  await fs.mkdir(oldAssets);
+  await fs.writeFile(path.join(oldAssets, "image.png"), "image");
+  await fs.writeFile(oldPath, "![Screenshot](note.assets/image.png)\n");
   await fs.writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
 
   try {
@@ -172,6 +192,14 @@ test("adopts a paired Markdown file moved into a subfolder", async () => {
 
     assert.equal(updated.markdownPath, path.join("archive", "note.md"));
     assert.equal(updated.absolutePath, newPath);
+    assert.equal(
+      await fs.readFile(
+        path.join(workspace, "archive", "note.assets", "image.png"),
+        "utf8",
+      ),
+      "image",
+    );
+    await assert.rejects(fs.access(oldAssets));
     const stored = JSON.parse(await fs.readFile(manifestPath, "utf8"));
     assert.equal(stored.pairings[0].markdownPath, path.join("archive", "note.md"));
   } finally {

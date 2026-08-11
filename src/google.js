@@ -1,6 +1,9 @@
 import { google } from "googleapis";
 import { googleRequestTimeoutMs } from "./config.js";
-import { parseMarkdown } from "./markdown.js";
+import {
+  INLINE_IMAGE_MARKER,
+  parseMarkdown,
+} from "./markdown.js";
 import { DOC_STATUS_TITLE, stripRemoteDocumentStatus } from "./status.js";
 
 export function createGoogleServices(
@@ -8,6 +11,7 @@ export function createGoogleServices(
   { timeout = googleRequestTimeoutMs() } = {},
 ) {
   return {
+    auth,
     docs: google.docs({ version: "v1", auth, timeout }),
     drive: google.drive({ version: "v3", auth, timeout }),
     sheets: google.sheets({ version: "v4", auth, timeout }),
@@ -76,6 +80,11 @@ function bodyOf(document) {
 function bodyEndIndex(document) {
   const content = bodyOf(document).content ?? [];
   return Math.max(1, ...content.map((element) => element.endIndex ?? 1));
+}
+
+function inlineObjectsOf(document) {
+  if (document.inlineObjects) return document.inlineObjects;
+  return document.tabs?.[0]?.documentTab?.inlineObjects ?? {};
 }
 
 function paragraphText(element) {
@@ -157,7 +166,31 @@ function normalizedTextStyle(style = {}, idToFragment = new Map()) {
 function paragraphFromDocument(element, document, idToFragment = new Map()) {
   let text = "";
   const styles = [];
+  const images = [];
   for (const content of element.paragraph.elements ?? []) {
+    const inlineObjectId = content.inlineObjectElement?.inlineObjectId;
+    if (inlineObjectId) {
+      const offset = text.length;
+      const embeddedObject = inlineObjectsOf(document)[inlineObjectId]
+        ?.inlineObjectProperties?.embeddedObject ?? {};
+      text += INLINE_IMAGE_MARKER;
+      images.push({
+        offset,
+        objectId: inlineObjectId,
+        ...(embeddedObject.title ? { title: embeddedObject.title } : {}),
+        ...(embeddedObject.description
+          ? { description: embeddedObject.description }
+          : {}),
+        ...(embeddedObject.size ? { size: embeddedObject.size } : {}),
+        ...(embeddedObject.imageProperties?.sourceUri
+          ? { sourceUri: embeddedObject.imageProperties.sourceUri }
+          : {}),
+        ...(embeddedObject.imageProperties?.contentUri
+          ? { contentUri: embeddedObject.imageProperties.contentUri }
+          : {}),
+      });
+      continue;
+    }
     const value = content.textRun?.content ?? "";
     const start = text.length;
     text += value;
@@ -190,16 +223,21 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
       nestingLevel: bullet.nestingLevel ?? 0,
       text,
       styles,
+      ...(images.length ? { images } : {}),
       startIndex: element.startIndex,
       endIndex: element.endIndex,
     };
   }
+  const paragraphSpaceBelow =
+    element.paragraph.paragraphStyle?.spaceBelow?.magnitude;
   return {
     type: "text",
     paragraphStyle:
       element.paragraph.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT",
+    ...(paragraphSpaceBelow === undefined ? {} : { paragraphSpaceBelow }),
     text,
     styles,
+    ...(images.length ? { images } : {}),
     startIndex: element.startIndex,
     endIndex: element.endIndex,
   };
@@ -229,7 +267,20 @@ function tableFromDocument(element, document, idToFragment = new Map()) {
             })),
           );
         }
-        return { text, styles };
+        const images = paragraphs.flatMap((paragraph, paragraphIndex) => {
+          const prefixLength = paragraphs
+            .slice(0, paragraphIndex)
+            .reduce((total, item) => total + item.text.length + 1, 0);
+          return (paragraph.images ?? []).map((image) => ({
+            ...image,
+            offset: image.offset + prefixLength,
+          }));
+        });
+        return {
+          text,
+          styles,
+          ...(images.length ? { images } : {}),
+        };
       }),
     ),
     startIndex: element.startIndex,
@@ -284,12 +335,21 @@ export function blocksFromDocument(document, desiredBlocks = []) {
   return blocks;
 }
 
-function comparableBlock(block) {
+function comparableBlock(block, imageHashes = new Map()) {
   if (block.type === "table") {
     return {
       type: "table",
       rows: block.rows.map((row) =>
-        row.map((cell) => ({ text: cell.text, styles: cell.styles })),
+        row.map((cell) => ({
+          text: cell.text,
+          styles: cell.styles,
+          images: (cell.images ?? []).map((image) => ({
+            offset: image.offset,
+            ...(imageHashes.has(image.objectId ?? image.url)
+              ? { contentHash: imageHashes.get(image.objectId ?? image.url) }
+              : {}),
+          })),
+        })),
       ),
     };
   }
@@ -300,16 +360,103 @@ function comparableBlock(block) {
       : { ordered: block.ordered, nestingLevel: block.nestingLevel ?? 0 }),
     text: block.text,
     styles: block.styles,
+    images: (block.images ?? []).map((image) => ({
+      offset: image.offset,
+      ...(imageHashes.has(image.objectId ?? image.url)
+        ? { contentHash: imageHashes.get(image.objectId ?? image.url) }
+        : {}),
+    })),
   };
 }
 
-function fingerprint(block) {
-  return JSON.stringify(comparableBlock(block));
+function blockHasImages(block) {
+  if (block.type === "table") {
+    return block.rows.some((row) =>
+      row.some((cell) => (cell.images ?? []).length > 0),
+    );
+  }
+  return (block.images ?? []).length > 0;
 }
 
-export function diffBlockHunks(current, desired) {
-  const currentKeys = current.map(fingerprint);
-  const desiredKeys = desired.map(fingerprint);
+function standaloneImage(block) {
+  return (
+    block.type === "text" &&
+    block.text === INLINE_IMAGE_MARKER &&
+    block.images?.length === 1 &&
+    block.images[0].offset === 0
+  );
+}
+
+function assertSupportedImageMutation(current, desired, hunks, imageUris) {
+  const changesImages = hunks.some((hunk) =>
+    [
+      ...current.slice(hunk.currentStart, hunk.currentEnd),
+      ...desired.slice(hunk.desiredStart, hunk.desiredEnd),
+    ].some(blockHasImages),
+  );
+  if (changesImages && !imageUris) {
+    throw new Error(
+      "Inline images cannot be added, removed, replaced, or edited from " +
+        "Markdown yet. Leave the image-bearing paragraph unchanged or edit " +
+        "the image in Google Docs.",
+    );
+  }
+
+  if (changesImages) {
+    const changedBlocks = hunks.flatMap((hunk) => [
+      ...current.slice(hunk.currentStart, hunk.currentEnd),
+      ...desired.slice(hunk.desiredStart, hunk.desiredEnd),
+    ]).filter(blockHasImages);
+    if (changedBlocks.some((block) => !standaloneImage(block))) {
+      throw new Error(
+        "Only standalone image paragraphs can be changed from Markdown. " +
+          "Mixed text-and-image paragraphs are not supported yet.",
+      );
+    }
+    for (const block of desired) {
+      for (const image of block.images ?? []) {
+        if (!imageUris.has(image.url)) {
+          throw new Error(`No staged image URL is available for ${image.url}.`);
+        }
+      }
+    }
+  }
+
+  if (imageUris) return;
+  for (let index = 0; index < desired.length; index += 1) {
+    const desiredImages = desired[index].images ?? [];
+    const currentImages = current[index]?.images ?? [];
+    for (let imageIndex = 0; imageIndex < desiredImages.length; imageIndex += 1) {
+      const desiredImage = desiredImages[imageIndex];
+      const currentImage = currentImages[imageIndex];
+      const remoteSource = currentImage?.sourceUri ?? currentImage?.contentUri;
+      const desiredIsExportReference = Boolean(desiredImage.reference);
+      const desiredIsRemoteUrl = /^https?:\/\//i.test(desiredImage.url ?? "");
+      if (
+        !desiredIsExportReference &&
+        (!desiredIsRemoteUrl || (remoteSource && desiredImage.url !== remoteSource))
+      ) {
+        throw new Error(
+          "Inline image sources cannot be changed from Markdown yet. Leave " +
+            "the exported remote image reference unchanged or edit the image " +
+            "in Google Docs.",
+        );
+      }
+    }
+  }
+}
+
+function fingerprint(block, imageHashes) {
+  return JSON.stringify(comparableBlock(block, imageHashes));
+}
+
+export function diffBlockHunks(
+  current,
+  desired,
+  { currentImageHashes, desiredImageHashes } = {},
+) {
+  const currentKeys = current.map((block) => fingerprint(block, currentImageHashes));
+  const desiredKeys = desired.map((block) => fingerprint(block, desiredImageHashes));
   const matrix = Array.from(
     { length: current.length + 1 },
     () => new Uint32Array(desired.length + 1),
@@ -557,7 +704,103 @@ export function planHeadingLinkUpdate(document, markdown) {
   return requests;
 }
 
-function insertionRequests(startIndex, blocks, { append = false } = {}) {
+export function planParagraphSpacingUpdate(document, markdown) {
+  const desired = parseMarkdown(markdown);
+  const current = withoutManagedStatusBlocks(
+    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
+  );
+
+  const requests = [];
+  let currentIndex = 0;
+  for (const desiredBlock of desired) {
+    const desiredFingerprint = fingerprint(desiredBlock);
+    while (
+      currentIndex < current.length &&
+      fingerprint(current[currentIndex]) !== desiredFingerprint
+    ) {
+      currentIndex += 1;
+    }
+    if (currentIndex >= current.length) break;
+    const currentBlock = current[currentIndex];
+    currentIndex += 1;
+    if (
+      desiredBlock.type !== "text" ||
+      desiredBlock.paragraphStyle !== "NORMAL_TEXT" ||
+      currentBlock.type !== "text" ||
+      currentBlock.nativeTableOfContents ||
+      currentBlock.text !== desiredBlock.text
+    ) {
+      continue;
+    }
+    const target = desiredBlock.paragraphSpaceBelow ?? 0;
+    if ((currentBlock.paragraphSpaceBelow ?? 0) === target) continue;
+    requests.push({
+      updateParagraphStyle: {
+        range: {
+          startIndex: currentBlock.startIndex,
+          endIndex: currentBlock.endIndex,
+        },
+        paragraphStyle: {
+          spaceBelow: { magnitude: target, unit: "PT" },
+        },
+        fields: "spaceBelow",
+      },
+    });
+  }
+  return requests;
+}
+
+function insertionRequests(
+  startIndex,
+  blocks,
+  {
+    append = false,
+    imageUris,
+    imageSizes = new Map(),
+    retainedTerminalParagraph = false,
+    applyParagraphSpacing = true,
+  } = {},
+) {
+  if (blocks.some(blockHasImages)) {
+    if (!imageUris) throw new Error("Inline image insertion is not configured.");
+    const requests = [];
+    for (let index = blocks.length - 1; index >= 0; index -= 1) {
+      const block = blocks[index];
+      const blockAppend = append && index === 0;
+      if (!blockHasImages(block)) {
+        requests.push(
+          ...insertionRequests(startIndex, [block], { append: blockAppend }),
+        );
+        continue;
+      }
+      if (!standaloneImage(block)) {
+        throw new Error("Only standalone image paragraphs can be inserted.");
+      }
+      const image = block.images[0];
+      const leadingSeparation = blockAppend ? "\n" : "";
+      const reuseParagraph = retainedTerminalParagraph && index === blocks.length - 1;
+      if (!reuseParagraph) {
+        requests.push({
+          insertText: {
+            location: { index: startIndex },
+            text: `${leadingSeparation}\n`,
+          },
+        });
+      }
+      requests.push({
+        insertInlineImage: {
+          location: {
+            index: startIndex + (reuseParagraph ? 0 : leadingSeparation.length),
+          },
+          uri: imageUris.get(image.url),
+          ...(imageSizes.get(image.url)
+            ? { objectSize: imageSizes.get(image.url) }
+            : {}),
+        },
+      });
+    }
+    return requests;
+  }
   const prefix = append && blocks.length ? "\n" : "";
   const rendered = blocks.map((block) => ({
     block,
@@ -598,11 +841,20 @@ function insertionRequests(startIndex, blocks, { append = false } = {}) {
   for (const { block, blockStart, visibleStart, blockEnd } of positioned.reverse()) {
     requests.push(...inlineStyleRequests(visibleStart, block.styles));
     if (block.type === "text") {
+      const paragraphStyle = { namedStyleType: block.paragraphStyle };
+      const fields = ["namedStyleType"];
+      if (applyParagraphSpacing && block.paragraphStyle === "NORMAL_TEXT") {
+        paragraphStyle.spaceBelow = {
+          magnitude: block.paragraphSpaceBelow ?? 0,
+          unit: "PT",
+        };
+        fields.push("spaceBelow");
+      }
       requests.push({
         updateParagraphStyle: {
           range: { startIndex: visibleStart, endIndex: blockEnd },
-          paragraphStyle: { namedStyleType: block.paragraphStyle },
-          fields: "namedStyleType",
+          paragraphStyle,
+          fields: fields.join(","),
         },
       });
     } else {
@@ -624,6 +876,7 @@ function statusInsertionRequests(startIndex, statusMarkdown) {
   const requests = insertionRequests(
     startIndex,
     parseMarkdown(statusMarkdown),
+    { applyParagraphSpacing: false },
   );
   const insertion = requests.find((request) => request.insertText);
   if (!insertion) return requests;
@@ -660,7 +913,12 @@ function statusInsertionRequests(startIndex, statusMarkdown) {
 export function planIncrementalUpdate(
   document,
   markdown,
-  { ignoreManagedStatus = false } = {},
+  {
+    ignoreManagedStatus = false,
+    currentImageHashes,
+    desiredImageHashes,
+    imageUris,
+  } = {},
 ) {
   const desired = parseMarkdown(markdown);
   assertResolvableHeadingLinks(desired);
@@ -670,7 +928,11 @@ export function planIncrementalUpdate(
   if (ignoreManagedStatus) {
     current = withoutManagedStatusBlocks(current);
   }
-  const hunks = diffBlockHunks(current, desired);
+  const hunks = diffBlockHunks(current, desired, {
+    currentImageHashes,
+    desiredImageHashes,
+  });
+  assertSupportedImageMutation(current, desired, hunks, imageUris);
   const firstNativeToc = current.findIndex(
     (block) => block.nativeTableOfContents,
   );
@@ -717,9 +979,11 @@ export function planIncrementalUpdate(
       hunk.currentStart < current.length
         ? current[hunk.currentStart].startIndex
         : endIndex - 1;
+    let retainedTerminalParagraph = false;
     if (hunk.currentStart < hunk.currentEnd) {
       const rawEnd = current[hunk.currentEnd - 1].endIndex;
       const deletionEnd = Math.min(rawEnd, endIndex - 1);
+      retainedTerminalParagraph = rawEnd > deletionEnd;
       if (deletionEnd > insertionIndex) {
         requests.push({
           deleteContentRange: {
@@ -729,12 +993,25 @@ export function planIncrementalUpdate(
       }
     }
     const desiredBlocks = desired.slice(hunk.desiredStart, hunk.desiredEnd);
+    const imageSizes = new Map();
+    const currentImages = current
+      .slice(hunk.currentStart, hunk.currentEnd)
+      .flatMap((block) => block.images ?? []);
+    const desiredImages = desiredBlocks.flatMap((block) => block.images ?? []);
+    if (currentImages.length === 1 && desiredImages.length === 1) {
+      if (currentImages[0].size) {
+        imageSizes.set(desiredImages[0].url, currentImages[0].size);
+      }
+    }
     requests.push(
       ...insertionRequests(insertionIndex, desiredBlocks, {
         append:
           current.length > 0 &&
           hunk.currentStart === current.length &&
           hunk.currentStart === hunk.currentEnd,
+        imageUris,
+        imageSizes,
+        retainedTerminalParagraph,
       }),
     );
   }
@@ -850,7 +1127,10 @@ async function currentDocument(services, documentId) {
 
 async function reconcileHeadingLinks(services, documentId, markdown) {
   const document = await currentDocument(services, documentId);
-  const requests = planHeadingLinkUpdate(document, markdown);
+  const requests = [
+    ...planHeadingLinkUpdate(document, markdown),
+    ...planParagraphSpacingUpdate(document, markdown),
+  ];
   if (requests.length) {
     await services.docs.documents.batchUpdate({
       documentId,
@@ -866,10 +1146,10 @@ export async function updateDocumentFromMarkdown(
   services,
   documentId,
   markdown,
-  { onProgress } = {},
+  { onProgress, imageSync } = {},
 ) {
   const document = await currentDocument(services, documentId);
-  const plan = planIncrementalUpdate(document, markdown);
+  const plan = planIncrementalUpdate(document, markdown, imageSync);
   if (plan.mode === "full-rebuild") {
     return replaceDocumentFromMarkdown(services, documentId, markdown, {
       onProgress,
@@ -885,6 +1165,24 @@ export async function updateDocumentFromMarkdown(
     });
   }
   await reconcileHeadingLinks(services, documentId, markdown);
+  return getRemoteInfo(services, documentId);
+}
+
+export async function updateDocumentParagraphSpacing(
+  services,
+  documentId,
+  document,
+  markdown,
+) {
+  const requests = planParagraphSpacingUpdate(document, markdown);
+  if (!requests.length) return undefined;
+  await services.docs.documents.batchUpdate({
+    documentId,
+    requestBody: {
+      requests,
+      writeControl: { requiredRevisionId: document.revisionId },
+    },
+  });
   return getRemoteInfo(services, documentId);
 }
 
@@ -1034,6 +1332,11 @@ export async function replaceDocumentFromMarkdown(
   { onProgress } = {},
 ) {
   const blocks = parseMarkdown(markdown);
+  if (blocks.some(blockHasImages)) {
+    throw new Error(
+      "A full document rebuild containing inline images is not supported yet.",
+    );
+  }
   const tableCount = blocks.filter((block) => block.type === "table").length;
   let tableNumber = 0;
   const document = await currentDocument(services, documentId);

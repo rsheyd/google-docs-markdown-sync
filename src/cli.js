@@ -2,7 +2,15 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { authorize, getAuthClient } from "./auth.js";
-import { writeTextAtomic, sha256 } from "./files.js";
+import { writeJsonAtomic, writeTextAtomic, sha256 } from "./files.js";
+import {
+  hashMarkdownWithAssets,
+  hasImagesForSync,
+  materializeRemoteImages,
+  prepareImagePush,
+} from "./images.js";
+import { createR2Stager, loadR2Configuration } from "./r2.js";
+import { R2_CONFIG_PATH } from "./paths.js";
 import {
   createDocumentFromMarkdown,
   createGoogleServices,
@@ -26,6 +34,7 @@ import {
 import { registerSpreadsheetPairing } from "./manifests.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import { runDaemon, runSyncPass } from "./sync.js";
+import { installFinderQuickAction } from "./finder-quick-action.js";
 import {
   getSpreadsheetInfo,
   writeSpreadsheetStatus,
@@ -63,10 +72,16 @@ async function pair(options) {
   });
   const auth = await getAuthClient();
   const services = createGoogleServices(auth);
-  const [markdown, remote] = await Promise.all([
+  const [exportedMarkdown, remote] = await Promise.all([
     exportMarkdown(services, pairing.documentId),
     getRemoteInfo(services, pairing.documentId),
   ]);
+  const markdown = await materializeRemoteImages(
+    services,
+    pairing,
+    remote.document,
+    exportedMarkdown,
+  );
   const status = {
     content: markdown,
     lastWriter: "google-docs",
@@ -83,7 +98,7 @@ async function pair(options) {
   );
   const state = await loadState();
   state.documents[stateKey(pairing)] = {
-    localHash: sha256(markdown),
+    localHash: await hashMarkdownWithAssets(pairing.absolutePath, markdown),
     localModifiedTime: stat.mtimeMs,
     remoteRevisionId: finalRemote.revisionId,
     remoteModifiedTime: finalRemote.modifiedTime,
@@ -312,11 +327,26 @@ async function push(options) {
   };
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
   const services = createGoogleServices(auth);
-  await updateDocumentFromMarkdown(
-    services,
-    pairing.documentId,
-    content,
-  );
+  const before = await getRemoteInfo(services, pairing.documentId);
+  const imageSync = hasImagesForSync(before.document, content)
+    ? await prepareImagePush(
+        services,
+        pairing.absolutePath,
+        content,
+        before.document,
+        createR2Stager(loadR2Configuration()),
+      )
+    : undefined;
+  try {
+    await updateDocumentFromMarkdown(
+      services,
+      pairing.documentId,
+      content,
+      { imageSync },
+    );
+  } finally {
+    await imageSync?.cleanup();
+  }
   const remote = await updateDocumentStatus(
     services,
     pairing.documentId,
@@ -325,7 +355,7 @@ async function push(options) {
   const refreshedStat = await fs.stat(pairing.absolutePath);
   const state = await loadState();
   state.documents[stateKey(pairing)] = {
-    localHash: sha256(content),
+    localHash: await hashMarkdownWithAssets(pairing.absolutePath, content),
     localModifiedTime: refreshedStat.mtimeMs,
     remoteRevisionId: remote.revisionId,
     remoteModifiedTime: remote.modifiedTime,
@@ -370,6 +400,19 @@ async function cleanupSpacing(options) {
   );
 }
 
+async function configureR2(options) {
+  if (!options["account-id"] || !options.bucket || !options["gateway-url"]) {
+    throw new Error("configure-r2 requires --account-id, --bucket, and --gateway-url.");
+  }
+  await writeJsonAtomic(R2_CONFIG_PATH, {
+    accountId: options["account-id"],
+    bucket: options.bucket,
+    gatewayUrl: options["gateway-url"],
+  });
+  console.log(`Stored non-secret R2 settings in ${R2_CONFIG_PATH}`);
+  console.log("Store the R2 access and secret keys in Keychain, then restart the service.");
+}
+
 async function main() {
   const { command, options } = parseArguments(process.argv.slice(2));
   if (command === "auth") {
@@ -387,6 +430,8 @@ async function main() {
     await push(options);
   } else if (command === "cleanup-spacing") {
     await cleanupSpacing(options);
+  } else if (command === "configure-r2") {
+    await configureR2(options);
   } else if (command === "sync-once") {
     const results = await runSyncPass();
     if (!results.length) console.log("No pairing files found.");
@@ -395,6 +440,9 @@ async function main() {
   } else if (command === "install-service") {
     const installedPath = await installLaunchAgent();
     console.log(`Installed and started ${installedPath}`);
+  } else if (command === "install-finder-action") {
+    const installedPath = await installFinderQuickAction();
+    console.log(`Installed Finder Quick Action ${installedPath}`);
   } else if (command === "heartbeat") {
     await runHeartbeat({
       recipient: options.to ?? process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO,
@@ -416,9 +464,11 @@ async function main() {
   node src/cli.js plan --document-id ID
   node src/cli.js push (--document-id ID | --spreadsheet-id ID)
   node src/cli.js cleanup-spacing --document-id ID
+  node src/cli.js configure-r2 --account-id ID --bucket NAME --gateway-url URL
   node src/cli.js sync-once
   node src/cli.js daemon
   node src/cli.js install-service
+  node src/cli.js install-finder-action
   node src/cli.js heartbeat --to EMAIL [--from SENDER]
   node src/cli.js install-heartbeat [--to EMAIL] [--from SENDER]`);
     process.exitCode = command ? 1 : 0;
