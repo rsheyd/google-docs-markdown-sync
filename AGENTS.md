@@ -29,6 +29,7 @@
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
 - `.gitignore`: Generated dependency/build output exclusions.
+- `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.
 - `package-lock.json`: Locked Node service dependency graph.
 - `src/`: Synchronization service, Google API integration, pairing registry,

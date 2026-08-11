@@ -1,4 +1,26 @@
 node_modules/
 raycast-extension/node_modules/
 raycast-extension/dist/
+
+# Generated output and local tooling state
+coverage/
+*.log
+.npm/
+.eslintcache
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+client_secret*.json
+oauth-client.json
+credentials.json
+token.json
+*.pem
+*.key
+
+# Editors and macOS
+.idea/
+.vscode/
+*.swp
 .DS_Store

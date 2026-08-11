@@ -21,6 +21,7 @@ scope and safety boundaries.
     - [Finder Quick Action](#finder-quick-action)
     - [Service management](#service-management)
   - [Product principles](#product-principles)
+  - [License](#license)
 
 ## Features
 
@@ -471,3 +472,7 @@ Sheet, confirm the directory that will contain one CSV file per tab.
   Codex-friendly local representation.
 - Pairing configuration should be visible to Codex and portable with the
   workspace; credentials and runtime bookkeeping should not be.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
