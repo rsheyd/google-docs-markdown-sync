@@ -465,6 +465,18 @@ test("replaces only the managed status suffix", async () => {
     updates[0].requestBody.requests[1].insertText.location.index,
     separator.startIndex,
   );
+  assert.match(
+    updates[0].requestBody.requests[1].insertText.text,
+    /^\n\n---\n↔ Markdown sync status\n/,
+  );
+  const mutedStyle = updates[0].requestBody.requests.find(
+    (request) => request.updateTextStyle?.fields === "foregroundColor",
+  );
+  assert.deepEqual(mutedStyle.updateTextStyle.textStyle, {
+    foregroundColor: {
+      color: { rgbColor: { red: 0.35, green: 0.35, blue: 0.35 } },
+    },
+  });
 });
 
 test("ignores the required extra Google Docs paragraph before a table", () => {

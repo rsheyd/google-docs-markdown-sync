@@ -21,6 +21,7 @@
 - `README.md`: Product concept, intended workflow, scope, and design principles.
 - `CONTRIBUTING.md`: Development, validation, and post-change service restart
   instructions.
+- `CHANGELOG.md`: User-visible changes organized by application release.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
 - `.gitignore`: Generated dependency/build output exclusions.

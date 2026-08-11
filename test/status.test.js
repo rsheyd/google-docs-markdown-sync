@@ -48,6 +48,32 @@ test("strips the visible Google Docs status section from native Markdown export"
   assert.match(remoteDocumentStatusMarkdown(documentPairing, state), /Local file/);
 });
 
+test("shows document paths relative to the shared development root", () => {
+  const pairing = {
+    ...documentPairing,
+    absolutePath: "/Users/roman/dev/willinet/credentials/comms.md",
+  };
+  assert.match(
+    remoteDocumentStatusMarkdown(pairing, state),
+    /Local file: `willinet\/credentials\/comms\.md`/,
+  );
+  assert.doesNotMatch(
+    remoteDocumentStatusMarkdown(pairing, state),
+    /Users\/roman\/dev/,
+  );
+});
+
+test("keeps the portable workspace path outside the shared development root", () => {
+  const pairing = {
+    ...documentPairing,
+    absolutePath: "/private/tmp/example/notes/example.md",
+  };
+  assert.match(
+    remoteDocumentStatusMarkdown(pairing, state),
+    /Local file: `notes\/example\.md`/,
+  );
+});
+
 test("removes a leaked remote footer before regenerating the managed local footer", () => {
   const leaked = `Body\n\n\\---  \n${DOC_STATUS_TITLE}  \nLast successful sync: old\n`;
   const rendered = documentStatusMarkdown(documentPairing, { ...state, content: leaked });

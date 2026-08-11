@@ -619,6 +619,44 @@ function insertionRequests(startIndex, blocks, { append = false } = {}) {
   return requests;
 }
 
+function statusInsertionRequests(startIndex, statusMarkdown) {
+  const leadingSeparation = "\n\n";
+  const requests = insertionRequests(
+    startIndex,
+    parseMarkdown(statusMarkdown),
+  );
+  const insertion = requests.find((request) => request.insertText);
+  if (!insertion) return requests;
+
+  insertion.insertText.text = leadingSeparation + insertion.insertText.text;
+  for (const request of requests) {
+    const range =
+      request.updateTextStyle?.range ??
+      request.deleteParagraphBullets?.range ??
+      request.updateParagraphStyle?.range ??
+      request.createParagraphBullets?.range;
+    if (range) {
+      range.startIndex += leadingSeparation.length;
+      range.endIndex += leadingSeparation.length;
+    }
+  }
+  requests.push({
+    updateTextStyle: {
+      range: {
+        startIndex: startIndex + leadingSeparation.length,
+        endIndex: startIndex + insertion.insertText.text.length,
+      },
+      textStyle: {
+        foregroundColor: {
+          color: { rgbColor: { red: 0.35, green: 0.35, blue: 0.35 } },
+        },
+      },
+      fields: "foregroundColor",
+    },
+  });
+  return requests;
+}
+
 export function planIncrementalUpdate(
   document,
   markdown,
@@ -888,7 +926,7 @@ export async function updateDocumentStatus(
       });
     }
   }
-  requests.push(...insertionRequests(insertionIndex, parseMarkdown(statusMarkdown)));
+  requests.push(...statusInsertionRequests(insertionIndex, statusMarkdown));
   if (requests.length) {
     await services.docs.documents.batchUpdate({
       documentId,

@@ -1,3 +1,6 @@
+import path from "node:path";
+import { DEFAULT_DEV_ROOT } from "./paths.js";
+
 export const MARKDOWN_STATUS_START = "<!-- google-docs-sync:status:start -->";
 export const MARKDOWN_STATUS_END = "<!-- google-docs-sync:status:end -->";
 export const DOC_STATUS_TITLE = "↔ Markdown sync status";
@@ -18,6 +21,15 @@ function directionLabel(writer, spreadsheet = false) {
   if (writer === "csv") return "CSV → Google Sheets";
   if (writer === "google-sheets") return "Google Sheets → CSV";
   return spreadsheet ? "Google Sheets ↔ CSV" : "Google Docs ↔ Markdown";
+}
+
+function documentLocalPath(pairing) {
+  if (!pairing.absolutePath) return pairing.markdownPath;
+  const relative = path.relative(DEFAULT_DEV_ROOT, pairing.absolutePath);
+  if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
+    return relative;
+  }
+  return pairing.markdownPath;
 }
 
 export function stripMarkdownStatus(markdown) {
@@ -47,7 +59,7 @@ export function documentStatusMarkdown(pairing, state) {
     "---",
     `*${DOC_STATUS_TITLE}*`,
     `*Last successful sync: ${displayTime(state.lastSuccessfulSync)} · ${directionLabel(state.lastWriter)}*`,
-    `*[Google Doc](${url}) · Local file: \`${pairing.markdownPath}\`*`,
+    `*[Google Doc](${url}) · Local file: \`${documentLocalPath(pairing)}\`*`,
     MARKDOWN_STATUS_END,
   ].join("\n");
   return `${content}${content ? "\n\n" : ""}${status}\n`;
@@ -58,7 +70,7 @@ export function remoteDocumentStatusMarkdown(pairing, state) {
     "---",
     `*${DOC_STATUS_TITLE}*`,
     `*Last successful sync: ${displayTime(state.lastSuccessfulSync)} · ${directionLabel(state.lastWriter)}*`,
-    `*Local file: \`${pairing.markdownPath}\`*`,
+    `*Local file: \`${documentLocalPath(pairing)}\`*`,
   ].join("\n");
 }
 
