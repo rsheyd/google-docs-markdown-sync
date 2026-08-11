@@ -37,24 +37,21 @@
       "title": "Codex Workspaces Root",
       "description": "Folder containing Codex workspaces",
       "type": "directory",
-      "required": true,
-      "default": "/Users/roman/dev"
+      "required": true
     },
     {
       "name": "serviceRoot",
       "title": "Sync Service Root",
       "description": "Folder containing this project's src/cli.js",
       "type": "directory",
-      "required": true,
-      "default": "/Users/roman/dev/google-docs-markdown-sync"
+      "required": true
     },
     {
       "name": "oauthClientPath",
       "title": "Google OAuth Client JSON",
       "description": "OAuth desktop client JSON stored outside Git",
       "type": "file",
-      "required": true,
-      "default": "/Users/roman/Library/Application Support/google-docs-markdown-sync/oauth-client.json"
+      "required": true
     },
     {
       "name": "nodePath",

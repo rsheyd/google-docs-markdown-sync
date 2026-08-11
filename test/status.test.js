@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { DEFAULT_DEV_ROOT } from "../src/paths.js";
 import {
   DOC_STATUS_TITLE,
   documentStatusMarkdown,
@@ -51,15 +53,15 @@ test("strips the visible Google Docs status section from native Markdown export"
 test("shows document paths relative to the shared development root", () => {
   const pairing = {
     ...documentPairing,
-    absolutePath: "/Users/roman/dev/willinet/credentials/comms.md",
+    absolutePath: path.join(DEFAULT_DEV_ROOT, "example", "credentials/comms.md"),
   };
   assert.match(
     remoteDocumentStatusMarkdown(pairing, state),
-    /Local file: `willinet\/credentials\/comms\.md`/,
+    /Local file: `example\/credentials\/comms\.md`/,
   );
   assert.doesNotMatch(
     remoteDocumentStatusMarkdown(pairing, state),
-    /Users\/roman\/dev/,
+    new RegExp(DEFAULT_DEV_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
 });
 

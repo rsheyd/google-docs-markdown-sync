@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Derive the default workspace root from the current user's home directory,
+  remove personal Raycast preference defaults, and require an explicit weekly
+  heartbeat recipient.
+- Use portable paths and example addresses throughout the public README.
+
 ## [0.3.0] - 2026-08-11
 
 ### Added
@@ -49,7 +58,7 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Show Google Docs sync-status local file paths relative to `/Users/roman/dev`
+- Show Google Docs sync-status local file paths relative to the user's `~/dev`
   when the paired file is under that shared development root.
 
 ## [0.2.1] - 2026-08-11

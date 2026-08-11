@@ -450,7 +450,7 @@ async function main() {
     });
   } else if (command === "install-heartbeat") {
     const installedPath = await installHeartbeatLaunchAgent({
-      recipient: options.to ?? "s.roman@gmail.com",
+      recipient: options.to ?? process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO,
       sender:
         options.from ?? "Google Docs Sync <onboarding@resend.dev>",
     });

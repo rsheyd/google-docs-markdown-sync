@@ -103,9 +103,12 @@ ${optionalEnvironment}
 }
 
 export async function installHeartbeatLaunchAgent({
-  recipient = "s.roman@gmail.com",
+  recipient,
   sender = "Google Docs Sync <onboarding@resend.dev>",
 } = {}) {
+  if (!recipient) {
+    throw new Error("A heartbeat recipient is required. Pass --to EMAIL.");
+  }
   const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",

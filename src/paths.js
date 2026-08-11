@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-export const DEFAULT_DEV_ROOT = "/Users/roman/dev";
+export const DEFAULT_DEV_ROOT = path.join(os.homedir(), "dev");
 export const MANIFEST_NAME = "google-docs-sync.json";
 export const APP_SUPPORT_DIR = path.join(
   os.homedir(),

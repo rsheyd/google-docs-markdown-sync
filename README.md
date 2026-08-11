@@ -1,13 +1,15 @@
-# Google Docs/Sheets ↔ Markdown/CSV Sync
+# GDMS — Google Docs/Sheets ↔ Markdown/CSV Sync
 
 A personal macOS tool for pairing native Google Docs with Markdown files and
 Google Sheets with CSV directories in local Codex workspaces. The project name
 is shortened to **GDMS** throughout the human-facing documentation and UI.
+The current release is **0.3.0**.
 
-See the [project roadmap](ROADMAP.md) for planned work, including
-[two-way inline image synchronization](IMAGE-SYNC.md).
+See the [project roadmap](ROADMAP.md) for planned work and the completed
+[two-way inline image synchronization design](IMAGE-SYNC.md) for its supported
+scope and safety boundaries.
 
-- [Google Docs ↔ Markdown Sync](#google-docs--markdown-sync)
+- [GDMS](#gdms--google-docssheets--markdowncsv-sync)
   - [Features](#features)
   - [Intended experience](#intended-experience)
   - [Behavior and limitations](#behavior-and-limitations)
@@ -23,6 +25,8 @@ See the [project roadmap](ROADMAP.md) for planned work, including
 ## Features
 
 - Two-way Google Docs ↔ Markdown synchronization.
+- Two-way synchronization of standalone PNG, JPEG, and GIF images through
+  sibling content-addressed asset directories.
 - Google Sheets ↔ per-tab CSV synchronization, including formulas.
 - Explicit pairing through a global Raycast shortcut and project search.
 - Create and pair a Google Doc from a local-only Markdown file through a Finder
@@ -33,6 +37,8 @@ See the [project roadmap](ROADMAP.md) for planned work, including
 - Human-readable status showing the last successful sync time and direction,
   with links between local files and their paired Google documents.
 - Incremental Google Docs updates that preserve unchanged document ranges.
+- Consistent Google Docs paragraph spacing without inserting Markdown-visible
+  blank paragraphs.
 - Native heading links and Google Docs tables of contents preserved where the
   APIs support them.
 - Launch-at-login support and an independent weekly health heartbeat.
@@ -41,10 +47,14 @@ See the [project roadmap](ROADMAP.md) for planned work, including
 
 1. Create and edit a document with `docs.new`.
 2. Press a global keyboard shortcut.
-3. Search for a project folder under `/Users/roman/dev` with autocomplete.
+3. Search for a project folder under `~/dev` with autocomplete.
 4. Confirm or edit the suggested Markdown filename.
 5. The tool creates the `.md` file and remembers the pairing.
 6. Later edits automatically synchronize in both directions.
+
+Alternatively, start from a local Markdown file: use Finder's **Sync with
+Google Docs (GDMS)** Quick Action to create the Google Doc and register the
+pairing in one step.
 
 Only explicitly paired documents are synchronized. Repositories, source files,
 and dependencies are not copied to Google Drive.
@@ -129,6 +139,13 @@ security add-generic-password -U \
   -s com.roman.google-docs-markdown-sync.r2-gateway-secret -a r2 -w
 ```
 
+Deploy `cloudflare/image-gateway-worker.js` as a module Worker. Bind the private
+bucket as `IMAGE_BUCKET`, store the same gateway secret as the encrypted Worker
+binding `GATEWAY_SECRET`, enable its `workers.dev` or custom-domain route, and
+keep Worker preview URLs disabled. The runtime R2 token needs only **Workers R2
+Storage Bucket Item Write** on this one bucket; do not use an account-wide R2
+admin token.
+
 In the R2 bucket settings, add a lifecycle rule for the
 `google-docs-image-staging/` prefix that deletes objects after one day. Eager
 cleanup normally removes an object immediately; the lifecycle rule handles
@@ -159,15 +176,15 @@ Changed table structure currently falls back to a full-document rebuild because
 Google Docs table indexes cannot be safely patched with the paragraph differ.
 Unchanged tables are preserved during edits elsewhere.
 
-For the first version, simultaneous-edit conflict handling is deliberately out
-of scope. The implementation should nevertheless record synchronization
-metadata so conflict handling can be added later without changing the pairing
-model.
+General simultaneous text-edit conflicts still use the later modification
+timestamp. Image-bearing documents are stricter: if both the local
+Markdown/assets and Google Doc changed from their shared baseline, GDMS stops
+and reports an image conflict instead of choosing a winner.
 
 ## Components
 
 - A personal Raycast extension provides the global shortcut, reads the active
-  Chrome Google Doc or Sheet URL, searches folders below `/Users/roman/dev`,
+  Chrome Google Doc or Sheet URL, searches folders below `~/dev`,
   and registers the chosen Markdown filename or CSV directory.
 - A Node background service watches paired Markdown files locally and polls
   paired Google Docs.
@@ -242,7 +259,8 @@ OAuth refresh tokens are stored in the macOS Keychain.
 - A local-only change incrementally updates changed ranges in the same Google
   Doc.
 - If both sides changed, the side with the later filesystem/Drive modification
-  timestamp wins.
+  timestamp wins unless the pairing contains images, in which case GDMS stops
+  with an explicit conflict.
 - Writes are hashed and revision-tracked to avoid feedback loops.
 - Conflict copies and interactive conflict resolution are deferred.
 
@@ -288,13 +306,13 @@ npm run cli -- create \
 # Register the active document after obtaining its URL
 npm run cli -- pair \
   --url "https://docs.google.com/document/d/DOCUMENT_ID/edit" \
-  --workspace "/Users/roman/dev/example-project" \
+  --workspace "$HOME/dev/example-project" \
   --file "notes/example.md"
 
 # Pair a spreadsheet as one CSV file per tab
 npm run cli -- pair-sheet \
   --url "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" \
-  --workspace "/Users/roman/dev/example-project" \
+  --workspace "$HOME/dev/example-project" \
   --directory "data/budget"
 
 # Run one synchronization pass
@@ -392,13 +410,13 @@ in the repository or LaunchAgent plist. Install the Monday 9:00 AM local-time
 heartbeat with:
 
 ```sh
-npm run install-heartbeat -- --to "s.roman@gmail.com"
+npm run install-heartbeat -- --to "you@example.com"
 ```
 
 Run an immediate health check and send a test email with:
 
 ```sh
-npm run heartbeat -- --to "s.roman@gmail.com"
+npm run heartbeat -- --to "you@example.com"
 ```
 
 The default sender is `Google Docs Sync <onboarding@resend.dev>`. If Resend
