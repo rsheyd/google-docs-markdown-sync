@@ -1,7 +1,7 @@
 {
   "name": "google-docs-markdown-sync-raycast",
   "title": "GDMS",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Pair the active Google Doc or Sheet with a Codex workspace",
   "author": "Roman",

@@ -3,7 +3,7 @@
 A personal macOS tool for pairing native Google Docs with Markdown files and
 Google Sheets with CSV directories in local Codex workspaces. The project name
 is shortened to **GDMS** throughout the human-facing documentation and UI.
-The current release is **0.3.0**.
+The current release is **0.3.1**.
 
 See the [project roadmap](ROADMAP.md) for planned work and the completed
 [two-way inline image synchronization design](IMAGE-SYNC.md) for its supported

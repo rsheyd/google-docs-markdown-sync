@@ -2,9 +2,6 @@
 
 ## Project guidance
 
-- Keep the first version focused on reliable two-way synchronization using
-  Google Docs' native Markdown export as the supported-subset boundary.
-- Preserve the paired Google Doc ID and URL when pushing Markdown changes.
 - Prefer atomic paragraph/list range patches; preserve unchanged document
   ranges, and use full rebuild only for changed table structure.
 - Keep local-change handling debounced and all sync passes single-flight; use
@@ -15,6 +12,7 @@
 - Prefer a standard Markdown AST and explicit, testable Google Docs update
   requests over ad hoc text replacement.
 - Update this file map whenever durable project files are added or renamed.
+- Increase the version for user-visible changes and record them under that exact version in `CHANGELOG.md`; do not use an Unreleased section. Minor documentation, planning, template-copy, test-only, and internal-maintenance changes do not require a version bump unless they accompany a release. 
 
 ## File map
 
