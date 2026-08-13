@@ -52,8 +52,6 @@ All notable changes to this project are documented in this file.
 
 ### Safety
 
-- Refuse mixed same-paragraph image edits and image-bearing full rebuilds until
-  those layouts have dedicated Google Docs request planning.
 - Require a one-to-one match between native Markdown image placeholders and
   Docs API inline objects before materializing a pull.
 - Refuse mixed text-and-image paragraph mutations and image-bearing full

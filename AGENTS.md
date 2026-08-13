@@ -17,6 +17,10 @@
 ## File map
 
 - `README.md`: Product concept, intended workflow, scope, and design principles.
+- `INSTALL.md`: Prerequisites, Google authorization, first pairing, Finder and
+  Raycast setup, R2 image staging, and pairing manifest reference.
+- `OPERATIONS.md`: Service management, logs, heartbeat, timing, recovery, and
+  troubleshooting guidance.
 - `CONTRIBUTING.md`: Development, validation, and post-change service restart
   instructions.
 - `CHANGELOG.md`: User-visible changes organized by application release.

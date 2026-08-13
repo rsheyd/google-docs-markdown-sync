@@ -35,7 +35,7 @@ version. Choose the next patch, minor, or major version and update both packages
 without creating an automatic Git commit or tag:
 
 ```sh
-release_version=0.2.0
+release_version=NEXT_VERSION
 npm version "$release_version" --no-git-tag-version
 npm --prefix raycast-extension version "$release_version" --no-git-tag-version
 ```

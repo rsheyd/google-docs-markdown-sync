@@ -1,4 +1,12 @@
-# Two-way image synchronization plan
+# Two-way image synchronization
+
+## Status
+
+Phases 1–3 shipped in version 0.3.0 and were live-validated on August 11, 2026.
+Google Docs → Markdown extraction, portable local assets, private R2 staging,
+the authenticated Worker gateway, and standalone-image add, replace, and
+delete round trips are complete. Phase 4 operational hardening remains in
+progress.
 
 ## Goal
 
@@ -156,14 +164,14 @@ release. When no managed Markdown reference uses an asset, move it to an
 untracked recovery area or report it as orphaned. Add explicit garbage
 collection only after live use establishes safe retention rules.
 
-## Implementation phases
+## Implementation status
 
-Current status: Phases 1 and 2 are live and covered by automated tests.
+Phases 1 and 2 are live and covered by automated tests.
 Native export uses unresolved numbered image references such as
 `![][image1]`; the pull path recognizes those placeholders, pairs them in order
 with Docs API inline objects, downloads authenticated image bytes, and writes
 content-addressed relative assets. Placeholder/object count mismatches fail
-safely. Phase 3 is implemented locally for standalone image paragraphs,
+safely. Phase 3 is live for standalone image paragraphs,
 including R2 staging, byte-level comparison, replacement-size preservation,
 deletion, and coarse two-sided conflict detection. The private bucket, lifecycle
 rule, authenticated Worker gateway, and live add/replace/delete round trip are
@@ -211,14 +219,20 @@ configured and validated.
 
 ### Phase 4: conflicts and operational hardening
 
-- Detect incompatible two-sided image changes from a common baseline.
-- Add actionable logs and health checks without leaking signed URLs or secrets.
-- Test retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
-- Validate the complete workflow against live screenshot-heavy documents.
+- [x] Detect incompatible two-sided image changes from the shared
+  document-level baseline and stop instead of overwriting either side.
+- [ ] Refine conflict detection to per-image baselines if the document-level
+  stop proves too restrictive in routine use.
+- [ ] Add actionable logs and health checks without leaking signed URLs or
+  secrets.
+- [ ] Test retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
+- [ ] Validate repeated use against live screenshot-heavy documents.
+- [ ] Add safe request planning for mixed text-and-image paragraphs and
+  image-bearing full rebuilds.
 
-## Acceptance criteria
+## Operational-hardening criteria
 
-Image synchronization is ready for routine use when:
+Image synchronization will be considered operationally hardened when:
 
 - adding, replacing, or deleting a supported inline image on either side
   converges on the other side;

@@ -3,39 +3,49 @@
 This roadmap describes the intended direction of the project. It is ordered by
 dependency and risk rather than by promised release dates.
 
-## Now: reliable core synchronization
+## Completed foundation
+
+- Keep registered Google Docs/Markdown and Google Sheets/CSV pairings
+  synchronized through the background service.
+- Apply routine paragraph, list, link, table, status, and standalone-image
+  changes while preserving unchanged document ranges.
+- Download remote inline images into portable sibling asset directories and
+  push local standalone images through short-lived private R2 staging.
+- Create and pair Google Docs from Markdown and Google Sheets from one or more
+  CSV files through Finder Quick Actions.
+
+The image implementation, storage convention, safety rules, live-validation
+results, and remaining work are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
+
+## Now: operational hardening
 
 - Keep Google Docs and Markdown pairings convergent under routine local and
   remote edits.
-- Add explicit unpairing and a command that lists every registered pairing.
-- Improve conflict visibility while retaining the current
-  later-modification-wins policy.
+- Add actionable image-sync logs and health checks without exposing secrets or
+  signed staging URLs.
+- Exercise retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
+- Continue live validation with screenshot-heavy documents containing both
+  text paragraphs and supported standalone-image paragraphs.
 - Continue live validation of incremental paragraph, list, link, table, and
   status updates.
 
-## Next: two-way inline image synchronization
+## Next: safer conflicts and pairing controls
 
-Synchronize screenshots and other inline images alongside each Markdown file.
-Remote images will be downloaded into a portable sibling asset directory;
-local images will be staged briefly in Cloudflare R2 so the Google Docs API can
-fetch and copy them into the paired document.
-
-Google Docs → Markdown image extraction and local asset management are live.
-R2 staging and image-aware Markdown → Google Docs requests are implemented for
-standalone image paragraphs. The private bucket, lifecycle rule, authenticated
-Worker fetch gateway, and live add/replace/delete round trip are complete.
-
-The implementation plan, storage convention, safety rules, and rollout phases
-are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
-
-## Later: safer conflicts and broader fidelity
-
+- Add explicit unpairing and a command that lists every registered pairing.
+- Improve conflict visibility while retaining the current
+  later-modification-wins policy for text-only documents.
 - Create recoverable conflict copies and user-visible notifications when both
   sides change incompatibly.
+- Refine the current document-level image conflict stop into per-image
+  baselines if routine use shows that the coarse check is too restrictive.
+
+## Later: broader fidelity
+
 - Add explicit orphaned-asset review and cleanup tooling.
 - Evaluate support for floating images, cropping, rotation, drawings, and
   linked charts after inline image synchronization is reliable.
-- Improve operational diagnostics, health reporting, and recovery guidance.
+- Support safe mutations of mixed text-and-image paragraphs and image-bearing
+  full document rebuilds.
 
 ## Out of scope for the current roadmap
 
