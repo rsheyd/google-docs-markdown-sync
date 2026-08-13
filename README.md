@@ -9,7 +9,6 @@ See the [project roadmap](ROADMAP.md) for planned work and the completed
 [two-way inline image synchronization design](IMAGE-SYNC.md) for its supported
 scope and safety boundaries.
 
-- [GDMS](#gdms--google-docssheets--markdowncsv-sync)
   - [Features](#features)
   - [Intended experience](#intended-experience)
   - [Behavior and limitations](#behavior-and-limitations)
