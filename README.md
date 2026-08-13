@@ -32,6 +32,8 @@ scope and safety boundaries.
 - Explicit pairing through a global Raycast shortcut and project search.
 - Create and pair a Google Doc from a local-only Markdown file through a Finder
   Quick Action.
+- Create and pair a Google Sheet from one or more local CSV files through a
+  Finder Quick Action.
 - Automatic local change detection and remote polling.
 - Automatic pairing updates when Markdown files move within a workspace or a
   paired Google Doc is renamed.
@@ -56,6 +58,11 @@ scope and safety boundaries.
 Alternatively, start from a local Markdown file: use Finder's **Sync with
 Google Docs (GDMS)** Quick Action to create the Google Doc and register the
 pairing in one step.
+
+You can also select one or more CSV files from the same Finder directory and
+choose **Sync with Google Sheets (GDMS)**. After you name the spreadsheet, GDMS
+creates a collision-safe sibling directory, moves the selected CSVs into it,
+uses each file as a tab, and registers the directory for two-way sync.
 
 Only explicitly paired documents are synchronized. Repositories, source files,
 and dependencies are not copied to Google Drive.
@@ -304,6 +311,13 @@ npm run cli -- create \
   --file "notes/example.md" \
   --name "Example"
 
+# Create and pair a Google Sheet from one or more CSV tabs. Selected files must
+# share a parent directory; GDMS moves them into a new paired subdirectory.
+npm run cli -- create-sheet \
+  --file "Summary.csv" \
+  --file "Transactions.csv" \
+  --name "Budget"
+
 # Register the active document after obtaining its URL
 npm run cli -- pair \
   --url "https://docs.google.com/document/d/DOCUMENT_ID/edit" \
@@ -335,21 +349,29 @@ npm run sync
 # Install and start the per-user LaunchAgent
 npm run install-service
 
-# Install “Sync with Google Docs (GDMS)” in Finder's Quick Actions menu
+# Install the Google Docs and Google Sheets Finder Quick Actions
 npm run install-finder-action
 ```
 
 ### Finder Quick Action
 
-Run `npm run install-finder-action` once, then Control-click or right-click a
-local `.md` file in Finder and choose **Quick Actions → Sync with Google Docs
-(GDMS)**. GDMS creates a Google Doc from the file, uses the file's containing
-directory as its workspace, and registers the pair for ongoing two-way sync.
+Run `npm run install-finder-action` once. For Markdown, Control-click or
+right-click a local `.md` file in Finder and choose **Quick Actions → Sync with
+Google Docs (GDMS)**. GDMS creates a Google Doc from the file, uses the file's
+containing directory as its workspace, and registers the pair for ongoing
+two-way sync.
 
 The action also accepts multiple selected Markdown files and creates one Google
 Doc per file. It rejects non-Markdown selections. Re-run the installer after
 moving this checkout or changing the Node executable, because the workflow
 stores their absolute paths.
+
+For spreadsheets, select one or more `.csv` files in the same directory and
+choose **Quick Actions → Sync with Google Sheets (GDMS)**. Enter a name for the
+spreadsheet and its local directory. GDMS validates every selection, creates a
+collision-safe sibling directory, moves the CSV files into it, and creates one
+Google Sheets tab per CSV. If the remote creation fails, the files remain
+together in the new directory and the reported path can be used to retry.
 
 ### Service management
 

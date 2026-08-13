@@ -10,6 +10,82 @@ import {
 
 export const SHEETS_METADATA = ".google-sheets-sync.json";
 
+function safeDirectoryName(value) {
+  return String(value)
+    .trim()
+    .replace(/[/:\\\u0000-\u001f]+/g, "-")
+    .replace(/^\.+|\.+$/g, "") || "spreadsheet";
+}
+
+async function availableDirectory(parent, preferredName) {
+  const base = safeDirectoryName(preferredName);
+  for (let suffix = 1; ; suffix += 1) {
+    const candidate = path.join(parent, suffix === 1 ? base : `${base}-${suffix}`);
+    try {
+      await fs.access(candidate);
+    } catch (error) {
+      if (error.code === "ENOENT") return candidate;
+      throw error;
+    }
+  }
+}
+
+export async function organizeCsvFiles(files, name) {
+  const absoluteFiles = files.map((file) => path.resolve(file));
+  if (!absoluteFiles.length) throw new Error("create-sheet requires at least one --file.");
+  const parents = new Set(absoluteFiles.map((file) => path.dirname(file)));
+  if (parents.size !== 1) throw new Error("Selected CSV files must be in the same directory.");
+  if (new Set(absoluteFiles).size !== absoluteFiles.length) {
+    throw new Error("The same CSV file was selected more than once.");
+  }
+  for (const file of absoluteFiles) {
+    if (path.extname(file).toLowerCase() !== ".csv") throw new Error(`Not a CSV file: ${file}`);
+    const stat = await fs.stat(file);
+    if (!stat.isFile()) throw new Error(`Not a file: ${file}`);
+  }
+  const workspace = path.dirname(absoluteFiles[0]);
+  const fallbackName = path.basename(absoluteFiles[0], path.extname(absoluteFiles[0]));
+  const directory = await availableDirectory(workspace, name || fallbackName);
+  await fs.mkdir(directory);
+  const moved = [];
+  try {
+    for (const source of absoluteFiles) {
+      const destination = path.join(directory, path.basename(source));
+      await fs.rename(source, destination);
+      moved.push({ source, destination });
+    }
+  } catch (error) {
+    for (const move of moved.reverse()) await fs.rename(move.destination, move.source);
+    await fs.rmdir(directory);
+    throw error;
+  }
+  return { workspace, directory, files: moved.map((move) => move.destination) };
+}
+
+export function initialSheetTitle(filename) {
+  const title = path.basename(filename, path.extname(filename))
+    .replace(/[\\/:?*\[\]]+/g, "-")
+    .replace(/^'+|'+$/g, "")
+    .trim()
+    .slice(0, 100);
+  return title || "Sheet";
+}
+
+export async function createSpreadsheet(services, title, sheets) {
+  const response = await services.sheets.spreadsheets.create({
+    requestBody: {
+      properties: { title },
+      sheets: sheets.map((sheet) => ({ properties: { title: sheet.title } })),
+    },
+  });
+  const spreadsheetId = response.data.spreadsheetId;
+  if (!spreadsheetId) throw new Error("Google Sheets did not return a spreadsheet ID.");
+  return {
+    spreadsheetId,
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+  };
+}
+
 export function parseCsv(text) {
   const rows = [];
   let row = [];

@@ -5,7 +5,9 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const FINDER_QUICK_ACTION_NAME = "Sync with Google Docs (GDMS)";
+export const CSV_FINDER_QUICK_ACTION_NAME = "Sync with Google Sheets (GDMS)";
 export const MARKDOWN_UTI = "net.daringfireball.markdown";
+export const CSV_UTI = "public.comma-separated-values-text";
 
 function xmlEscape(value) {
   return String(value)
@@ -29,8 +31,37 @@ for markdown_file in "$@"; do
 done`;
 }
 
-export function finderQuickActionWorkflow({ nodePath, cliPath }) {
-  const command = finderQuickActionShellCommand({ nodePath, cliPath });
+export function csvFinderQuickActionShellCommand({ nodePath, cliPath }) {
+  return `set -e
+if (( $# == 0 )); then
+  echo "GDMS requires at least one CSV file." >&2
+  exit 64
+fi
+csv_arguments=()
+source_directory="$(/usr/bin/dirname "$1")"
+for csv_file in "$@"; do
+  case "$csv_file" in
+    *.[cC][sS][vV]) ;;
+    *) echo "GDMS only accepts CSV (.csv) files: $csv_file" >&2; exit 64 ;;
+  esac
+  if [[ "$(/usr/bin/dirname "$csv_file")" != "$source_directory" ]]; then
+    echo "GDMS requires selected CSV files to share a directory." >&2
+    exit 64
+  fi
+  csv_arguments+=(--file "$csv_file")
+done
+default_name="$(/usr/bin/basename "$1")"
+default_name="${"${default_name%.*}"}"
+spreadsheet_name="$(/usr/bin/osascript \
+  -e 'on run argv' \
+  -e 'display dialog "Name the new Google Sheet and local directory:" default answer (item 1 of argv) buttons {"Cancel", "Create"} default button "Create"' \
+  -e 'text returned of result' \
+  -e 'end run' \
+  "$default_name")"
+${shellQuote(nodePath)} ${shellQuote(cliPath)} create-sheet "${"${csv_arguments[@]}"}" --name "$spreadsheet_name"`;
+}
+
+function quickActionWorkflow(command) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -117,7 +148,15 @@ export function finderQuickActionWorkflow({ nodePath, cliPath }) {
 `;
 }
 
-export function finderQuickActionInfoPlist() {
+export function finderQuickActionWorkflow({ nodePath, cliPath }) {
+  return quickActionWorkflow(finderQuickActionShellCommand({ nodePath, cliPath }));
+}
+
+export function csvFinderQuickActionWorkflow({ nodePath, cliPath }) {
+  return quickActionWorkflow(csvFinderQuickActionShellCommand({ nodePath, cliPath }));
+}
+
+function quickActionInfoPlist(name, uti) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -127,15 +166,38 @@ export function finderQuickActionInfoPlist() {
     <dict>
       <key>NSBackgroundColorName</key><string>background</string>
       <key>NSIconName</key><string>NSActionTemplate</string>
-      <key>NSMenuItem</key><dict><key>default</key><string>${FINDER_QUICK_ACTION_NAME}</string></dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>${name}</string></dict>
       <key>NSMessage</key><string>runWorkflowAsService</string>
       <key>NSRequiredContext</key><dict><key>NSApplicationIdentifier</key><string>com.apple.finder</string></dict>
-      <key>NSSendFileTypes</key><array><string>${MARKDOWN_UTI}</string></array>
+      <key>NSSendFileTypes</key><array><string>${uti}</string></array>
     </dict>
   </array>
 </dict>
 </plist>
 `;
+}
+
+
+export function finderQuickActionInfoPlist() {
+  return quickActionInfoPlist(FINDER_QUICK_ACTION_NAME, MARKDOWN_UTI);
+}
+
+export function csvFinderQuickActionInfoPlist() {
+  return quickActionInfoPlist(CSV_FINDER_QUICK_ACTION_NAME, CSV_UTI);
+}
+
+async function writeQuickAction(homeDirectory, name, workflow, info) {
+  const workflowDirectory = path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    `${name}.workflow`,
+    "Contents",
+  );
+  await fs.mkdir(workflowDirectory, { recursive: true });
+  await fs.writeFile(path.join(workflowDirectory, "document.wflow"), workflow, { mode: 0o644 });
+  await fs.writeFile(path.join(workflowDirectory, "Info.plist"), info, { mode: 0o644 });
+  return path.dirname(workflowDirectory);
 }
 
 export async function installFinderQuickAction({
@@ -144,26 +206,20 @@ export async function installFinderQuickAction({
 } = {}) {
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const cliPath = path.join(projectRoot, "src", "cli.js");
-  const workflowDirectory = path.join(
+  const markdownPath = await writeQuickAction(
     homeDirectory,
-    "Library",
-    "Services",
-    `${FINDER_QUICK_ACTION_NAME}.workflow`,
-    "Contents",
-  );
-  await fs.mkdir(workflowDirectory, { recursive: true });
-  await fs.writeFile(
-    path.join(workflowDirectory, "document.wflow"),
+    FINDER_QUICK_ACTION_NAME,
     finderQuickActionWorkflow({ nodePath: process.execPath, cliPath }),
-    { mode: 0o644 },
-  );
-  await fs.writeFile(
-    path.join(workflowDirectory, "Info.plist"),
     finderQuickActionInfoPlist(),
-    { mode: 0o644 },
+  );
+  await writeQuickAction(
+    homeDirectory,
+    CSV_FINDER_QUICK_ACTION_NAME,
+    csvFinderQuickActionWorkflow({ nodePath: process.execPath, cliPath }),
+    csvFinderQuickActionInfoPlist(),
   );
   if (refreshServices) {
     execFileSync("/System/Library/CoreServices/pbs", ["-update"]);
   }
-  return path.dirname(workflowDirectory);
+  return markdownPath;
 }

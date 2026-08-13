@@ -36,7 +36,11 @@ import { loadState, saveState, stateKey } from "./state.js";
 import { runDaemon, runSyncPass } from "./sync.js";
 import { installFinderQuickAction } from "./finder-quick-action.js";
 import {
+  createSpreadsheet,
   getSpreadsheetInfo,
+  initialSheetTitle,
+  organizeCsvFiles,
+  parseCsv,
   writeSpreadsheetStatus,
   pullSpreadsheet,
   pushSpreadsheet,
@@ -54,10 +58,17 @@ function parseArguments(values) {
   for (let index = 0; index < rest.length; index += 1) {
     const value = rest[index];
     if (!value.startsWith("--")) continue;
-    options[value.slice(2)] = rest[index + 1];
+    const key = value.slice(2);
+    const next = rest[index + 1];
+    if (options[key] === undefined) options[key] = next;
+    else options[key] = Array.isArray(options[key]) ? [...options[key], next] : [options[key], next];
     index += 1;
   }
   return { command, options };
+}
+
+function optionValues(value) {
+  return value === undefined ? [] : Array.isArray(value) ? value : [value];
 }
 
 async function pair(options) {
@@ -112,7 +123,7 @@ async function pair(options) {
 }
 
 async function create(options) {
-  if (!options.file) throw new Error("create requires --file.");
+  if (!options.file || Array.isArray(options.file)) throw new Error("create requires exactly one --file.");
   const absolutePath = options.workspace
     ? path.resolve(options.workspace, options.file)
     : path.resolve(options.file);
@@ -181,6 +192,69 @@ async function create(options) {
   console.log(`Created ${created.documentUrl}`);
   console.log(`Paired ${absolutePath}`);
   console.log(`Updated ${path.join(workspace, "google-docs-sync.json")}`);
+}
+
+async function createSheet(options) {
+  const files = optionValues(options.file);
+  if (!files.length) throw new Error("create-sheet requires at least one --file.");
+  const title = options.name ?? path.basename(files[0], path.extname(files[0]));
+  if (Array.isArray(title) || !String(title).trim()) throw new Error("create-sheet requires one non-empty --name.");
+
+  const titles = files.map((file) => initialSheetTitle(file));
+  const foldedTitles = new Set(titles.map((value) => value.toLocaleLowerCase()));
+  if (foldedTitles.size !== titles.length) {
+    throw new Error("Selected CSV filenames must produce unique Google Sheets tab names.");
+  }
+
+  console.log("Reading CSV files…");
+  const values = (await Promise.all(files.map((file) => fs.readFile(path.resolve(file), "utf8"))))
+    .map((text) => parseCsv(text));
+  const auth = await getAuthClient();
+  const organized = await organizeCsvFiles(files, title);
+  console.log(`Moved CSV files into ${organized.directory}`);
+  const local = {
+    sheets: organized.files.map((file, index) => ({
+      title: titles[index],
+      file: path.basename(file),
+      values: values[index],
+    })),
+  };
+  const services = createGoogleServices(auth);
+  console.log("Creating Google Sheet…");
+  const created = await createSpreadsheet(services, String(title).trim(), local.sheets);
+  const pairing = await registerSpreadsheetPairing({
+    workspace: organized.workspace,
+    spreadsheetUrl: created.spreadsheetUrl,
+    directoryPath: path.relative(organized.workspace, organized.directory),
+    name: String(title).trim(),
+  });
+  const before = await getSpreadsheetInfo(services, pairing.spreadsheetId);
+  const createdIds = new Map(
+    (before.spreadsheet.sheets ?? []).map((sheet) => [
+      sheet.properties?.title,
+      sheet.properties?.sheetId,
+    ]),
+  );
+  for (const sheet of local.sheets) sheet.sheetId = createdIds.get(sheet.title);
+  const remote = await pushSpreadsheet(services, pairing, local, before);
+  const refreshed = await readLocalSpreadsheet(pairing.absolutePath);
+  const status = {
+    localHash: refreshed.hash,
+    localModifiedTime: refreshed.modifiedTime,
+    lastWriter: "csv",
+    lastSuccessfulSync: new Date().toISOString(),
+  };
+  const finalRemote = await writeSpreadsheetStatus(services, pairing, status, remote);
+  const state = await loadState();
+  state.documents[stateKey(pairing)] = {
+    ...status,
+    remoteRevisionId: finalRemote.revisionId,
+    remoteModifiedTime: finalRemote.modifiedTime,
+  };
+  await saveState(state);
+  console.log(`Created ${created.spreadsheetUrl}`);
+  console.log(`Paired ${organized.directory}`);
+  console.log(`Updated ${path.join(organized.workspace, "google-docs-sync.json")}`);
 }
 
 async function pairSheet(options) {
@@ -422,6 +496,8 @@ async function main() {
     await pair(options);
   } else if (command === "create") {
     await create(options);
+  } else if (command === "create-sheet") {
+    await createSheet(options);
   } else if (command === "pair-sheet") {
     await pairSheet(options);
   } else if (command === "plan") {
@@ -442,7 +518,7 @@ async function main() {
     console.log(`Installed and started ${installedPath}`);
   } else if (command === "install-finder-action") {
     const installedPath = await installFinderQuickAction();
-    console.log(`Installed Finder Quick Action ${installedPath}`);
+    console.log(`Installed Finder Quick Actions under ${path.dirname(installedPath)}`);
   } else if (command === "heartbeat") {
     await runHeartbeat({
       recipient: options.to ?? process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO,
@@ -459,6 +535,7 @@ async function main() {
     console.log(`Usage:
   node src/cli.js auth
   node src/cli.js create --file RELATIVE.md [--workspace PATH] [--name NAME]
+  node src/cli.js create-sheet --file FILE.csv [--file TAB.csv ...] [--name NAME]
   node src/cli.js pair --url URL --workspace PATH --file RELATIVE.md [--name NAME]
   node src/cli.js pair-sheet --url URL --workspace PATH --directory RELATIVE_DIRECTORY [--name NAME]
   node src/cli.js plan --document-id ID

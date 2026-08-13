@@ -4,13 +4,39 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  CSV_FINDER_QUICK_ACTION_NAME,
+  CSV_UTI,
   FINDER_QUICK_ACTION_NAME,
   MARKDOWN_UTI,
+  csvFinderQuickActionInfoPlist,
+  csvFinderQuickActionShellCommand,
+  csvFinderQuickActionWorkflow,
   finderQuickActionInfoPlist,
   finderQuickActionShellCommand,
   finderQuickActionWorkflow,
   installFinderQuickAction,
 } from "../src/finder-quick-action.js";
+
+test("CSV Finder Quick Action groups selected files into one create-sheet command", () => {
+  const command = csvFinderQuickActionShellCommand({
+    nodePath: "/path with spaces/node",
+    cliPath: "/project/src/cli.js",
+  });
+  assert.match(command, /for csv_file in "\$@"/);
+  assert.match(command, /csv_arguments\+=\(--file "\$csv_file"\)/);
+  assert.match(command, /create-sheet/);
+  assert.match(command, /osascript/);
+  assert.match(command, /-e 'end run'/);
+  assert.match(command, /--name "\$spreadsheet_name"/);
+});
+
+test("CSV Finder Quick Action is restricted to CSV files", () => {
+  const workflow = csvFinderQuickActionWorkflow({ nodePath: "/node", cliPath: "/cli" });
+  assert.match(workflow, /create-sheet/);
+  const info = csvFinderQuickActionInfoPlist();
+  assert.match(info, new RegExp(CSV_FINDER_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")));
+  assert.match(info, new RegExp(CSV_UTI.replaceAll(".", "\\.")));
+});
 
 test("Finder Quick Action passes selected Markdown paths to GDMS create", () => {
   const command = finderQuickActionShellCommand({
@@ -57,4 +83,12 @@ test("installer writes the named workflow under Library Services", async () => {
   assert.match(workflow, /src\/cli\.js/);
   const info = await fs.readFile(path.join(installed, "Contents", "Info.plist"), "utf8");
   assert.match(info, /net\.daringfireball\.markdown/);
+  const csvInstalled = path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    `${CSV_FINDER_QUICK_ACTION_NAME}.workflow`,
+  );
+  const csvInfo = await fs.readFile(path.join(csvInstalled, "Contents", "Info.plist"), "utf8");
+  assert.match(csvInfo, /public\.comma-separated-values-text/);
 });

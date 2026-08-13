@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Add a CSV Finder Quick Action that prompts for a spreadsheet name, safely
+  groups same-directory CSV selections into a new collision-resistant local
+  directory, creates one Google Sheets tab per file, and registers the result
+  for ongoing two-way synchronization.
+- Add a `create-sheet` CLI command for the same CSV-to-Google-Sheets workflow.
+
 ## [0.3.0] - 2026-08-11
 
 ### Added

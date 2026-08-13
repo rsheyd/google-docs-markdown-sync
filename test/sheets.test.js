@@ -4,6 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  createSpreadsheet,
+  initialSheetTitle,
+  organizeCsvFiles,
   parseCsv,
   pullSpreadsheet,
   pushSpreadsheet,
@@ -11,6 +14,62 @@ import {
   sheetFilename,
   stringifyCsv,
 } from "../src/sheets.js";
+
+test("sanitizes CSV filenames into valid initial tab names", () => {
+  assert.equal(initialSheetTitle("Q1: Sales?.csv"), "Q1- Sales-");
+  assert.equal(initialSheetTitle("'.csv"), "Sheet");
+});
+
+test("creates a spreadsheet with one tab per CSV", async () => {
+  let requestBody;
+  const services = { sheets: { spreadsheets: { create: async (request) => {
+    requestBody = request.requestBody;
+    return { data: { spreadsheetId: "new-sheet" } };
+  } } } };
+  const created = await createSpreadsheet(services, "Budget", [
+    { title: "Summary" },
+    { title: "Transactions" },
+  ]);
+  assert.deepEqual(requestBody, {
+    properties: { title: "Budget" },
+    sheets: [
+      { properties: { title: "Summary" } },
+      { properties: { title: "Transactions" } },
+    ],
+  });
+  assert.equal(created.spreadsheetUrl, "https://docs.google.com/spreadsheets/d/new-sheet/edit");
+});
+
+test("moves selected CSV files into a collision-safe spreadsheet directory", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "csv-organize-"));
+  const first = path.join(workspace, "Summary.csv");
+  const second = path.join(workspace, "Data.csv");
+  await Promise.all([fs.writeFile(first, "a\n"), fs.writeFile(second, "b\n")]);
+  await fs.mkdir(path.join(workspace, "Budget"));
+  try {
+    const result = await organizeCsvFiles([first, second], "Budget");
+    assert.equal(result.directory, path.join(workspace, "Budget-2"));
+    assert.deepEqual(result.files.map((file) => path.basename(file)), ["Summary.csv", "Data.csv"]);
+    await assert.rejects(fs.access(first));
+    assert.equal(await fs.readFile(path.join(result.directory, "Data.csv"), "utf8"), "b\n");
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("validates all CSV selections before moving any file", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "csv-validate-"));
+  const csv = path.join(workspace, "Data.csv");
+  const text = path.join(workspace, "Notes.txt");
+  await Promise.all([fs.writeFile(csv, "a\n"), fs.writeFile(text, "b\n")]);
+  try {
+    await assert.rejects(organizeCsvFiles([csv, text], "Book"), /Not a CSV file/);
+    assert.equal(await fs.readFile(csv, "utf8"), "a\n");
+    await assert.rejects(fs.access(path.join(workspace, "Book")));
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("round-trips quoted CSV fields and formulas", () => {
   const rows = [["Name", "Formula"], ["A, B", '=SUM(A1:A2)'], ['a "quote"', "line\nbreak"]];
