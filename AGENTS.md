@@ -39,6 +39,7 @@
   legacy application, launchd, and Keychain namespace.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
+- `docs/images/`: User-facing documentation images referenced by project guides.
 - `outreach/`: Durable drafts for project announcements and community posts.
 - `.gitignore`: Generated dependency/build output exclusions.
 - `LICENSE`: MIT license governing use and redistribution.

@@ -47,7 +47,7 @@ Attach a short screen recording showing this sequence:
 
 ## Proposed title
 
-GDMS — two-way sync between local Markdown files and Google Docs
+I built GDMS — two-way sync between local Markdown files and Google Docs
 
 ## Alternate titles
 
@@ -56,33 +56,26 @@ GDMS — two-way sync between local Markdown files and Google Docs
 
 ## Post
 
-**TL;DR:** I built a macOS service that keeps selected Google Docs synchronized with local Markdown files in both directions. It started as a way to combine Codex's local-file workflow with Google Docs collaboration, and I now use it regularly. I’m trying to figure out whether it is worth making easier for other people to install.
+TL;DR: I built a macOS service that syncs local Markdown files with Google Docs in both directions.
 
 I built a small macOS service called GDMS that keeps selected Google Docs paired with local Markdown files in both directions.
 
 The original reason was fairly specific: I use Codex a lot, and Codex works very well with ordinary local Markdown files. It can read and edit them alongside the rest of a project, and I can track them with Git. But Google Docs is still much better when I want to review a document, share it, or have someone else edit it.
 
-I wanted to use both interfaces without manually copying changes back and forth:
-
-meeting-notes.md  ↔  Google Doc
-
-proposal.md       ↔  Google Doc
+I wanted to use both interfaces without manually copying changes back and forth.
 
 Changes on either side are synchronized. The Google Doc stays the normal human collaboration surface, while the Markdown file stays available to Codex, local editors, search tools, and Git.
 
-I’ve been using it enough that the project has gradually picked up some less obvious features:
+I’ve been using it regularly, and it has gradually grown from a basic sync script into a more general document-sync tool. It now has:
 
-* targeted paragraph and list updates instead of rebuilding the whole Doc;  
-* headings, links, bold, italics, numbered and bulleted lists, and simple tables;  
-* consistent Google Docs spacing based on Markdown blank lines;  
-* standalone image synchronization using private temporary Cloudflare R2 staging;  
-* safeguards around images, simultaneous edits, and unsupported structures;  
-* portable per-workspace pairing manifests;  
-* Finder Quick Actions and a Raycast command for creating or pairing documents;  
-* versioned formatting migrations for updating existing paired Docs when sync behavior improves; and  
+* a first-class global gdms CLI, background synchronization, and per-pairing progress;  
+* targeted paragraph, heading, list, link, formatting, and standalone-image updates, plus simple tables;  
+* conflict checks and recoverable missing-file and deletion behavior;  
+* portable per-workspace pairing files and versioned formatting migrations for existing Docs;  
+* Finder Quick Actions and a Raycast workflow that supports Safari and common Chromium browsers; and  
 * Google Sheets ↔ CSV-directory synchronization as a related workflow.
 
-It is working well for me, but it is not packaged as a normal consumer app yet. It currently runs from a source checkout on macOS and requires configuring a Google OAuth desktop client. Local image pushes have some additional Cloudflare R2 setup. The repository includes installation, formatting, operations, and troubleshooting documentation.
+It is working well for me, but it is not packaged as a normal consumer app yet. It currently runs from a source checkout on macOS and requires Node.js and a Google OAuth desktop client. Local image pushes have some additional Cloudflare R2 setup. The repository includes installation, command, formatting, operations, and troubleshooting documentation.
 
 Repo: [https://github.com/rsheyd/google-docs-markdown-sync](https://github.com/rsheyd/google-docs-markdown-sync)
 
@@ -90,7 +83,7 @@ I’m at the point where I’m wondering whether this is useful mainly as a pers
 
 * whether the basic Markdown ↔ Google Docs workflow is useful to you;  
 * which setup step looks like the biggest obstacle;  
-* whether a packaged Mac app, Homebrew install, or simpler CLI would make the most difference; and  
+* whether a Homebrew install or packaged Mac app would make the biggest difference beyond the current gdms CLI; and  
 * which Markdown or Google Docs features would feel essential before trying it.
 
 ## Suggested media
@@ -100,13 +93,9 @@ Lead with either:
 * a short side-by-side synchronization video; or  
 * one image containing the Markdown file, corresponding Google Doc, and a small diagram showing GDMS between them.
 
----
-
-*↔ Markdown sync status* *Last successful sync: Aug 14, 2026, 10:29 AM · Markdown → Google Docs* [*Google Doc*](https://docs.google.com/document/d/1nYCGfUpnl6gn2bbEANaK5k6HRe8K09MpuSUhKUO22Yk/edit) *· Local file: `google-docs-markdown-sync/outreach/reddit-sideproject-draft.md`*
-
 <!-- google-docs-sync:status:start -->
 ---
 *↔ Markdown sync status*
-*Last successful sync: Aug 14, 2026, 11:15 AM · Google Docs → Markdown*
+*Last successful sync: Aug 14, 2026, 12:08 PM · Google Docs → Markdown*
 *[Google Doc](https://docs.google.com/document/d/1BQXqSS6PPJRI1U5pIncqrX3DtmDx9F5tkkPzt0CpoNo/edit) · Local file: `reddit-codex-and-sideproject-drafts-aug-2026.md`*
 <!-- google-docs-sync:status:end -->

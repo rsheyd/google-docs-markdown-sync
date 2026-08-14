@@ -14,6 +14,8 @@ making its supported content available as ordinary local files for Codex,
 Git, editors, and other file-based tools. Only explicitly paired documents are
 synchronized; repositories and unrelated files are never copied to Drive.
 
+![GDMS synchronizing a local Markdown file with Google Docs](docs/images/gdms-overview.png)
+
 Current release: **0.7.2** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 
 ## What it does
