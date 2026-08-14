@@ -4,20 +4,54 @@ All notable changes to this project are documented in this file.
 
 ## [0.7.2] - 2026-08-14
 
-### Fixed
+### Added
 
-- Let missing-file move detection proceed once its deadline is reached even
-  when a full sync pass takes longer than the detection window, and never run
-  move detection again after the durable deletion grace period has started.
-- Clear completed deletion tombstones when the same Google Doc is paired again
-  so an old deadline cannot affect the new pairing.
-
-## [0.7.1] - 2026-08-14
+- Add resumable, per-document formatting migrations with all-pairs and
+  single-document targeting, a non-writing dry run, failure isolation, and
+  applied-version tracking in local runtime state.
+- Add migration `0.3.2` to repair list spacing and ordered lists whose numbering
+  was previously restarted for every item, and migration `0.4.1` to reconcile
+  universal block-boundary spacing.
+- Add an explicit `delete` command that moves a paired Google Doc to Drive
+  trash, deletes its local Markdown and managed assets, removes the pairing,
+  and emails a recovery notice.
+- Add a machine-local global, opt-in `trash-after-grace-period` policy with
+  durable missing-file timers, move/restoration cancellation, resumable trash
+  state, and idempotent Resend notification retries.
+- Add a globally linked `gdms` executable as the primary user interface, with
+  first-class `help`, `--help`, `version`, and `--version` forms.
+- Add a consolidated command reference covering arguments, effects, and write
+  scope for every GDMS command.
+- Show per-pairing current/total progress and a final action summary for
+  `gdms sync-once`, using an in-place terminal line and stable redirected
+  output.
+- Record the running daemon version, PID, and start time in machine-local state.
+- Compare the loaded daemon version with `package.json` before each polling
+  cycle and exit cleanly on a change so LaunchAgent `KeepAlive` loads the new
+  code automatically.
 
 ### Changed
 
-- Replace the vague missing-file "waiting briefly" message with the exact
-  maximum move-detection wait and configured deletion grace period.
+- Keep ordered Markdown list items in one Google Docs numbering sequence
+  instead of restarting every item at one, and add standard paragraph spacing
+  after the final list item without adding space between items.
+- Treat a standard blank line between top-level Markdown blocks as one
+  universal visual gap while keeping hard breaks and list items compact.
+- Request Drive write authorization for recoverable trash operations. Existing
+  installations must authorize again after upgrading.
+- Prefer `gdms` throughout user documentation while retaining npm scripts as
+  development and recovery fallbacks.
+- Make `gdms sync-once` exit unsuccessfully after completing the pass when any
+  pairing reports an error.
+- Replace user-facing `defer` logs with policy-aware `missing-local` messages,
+  report the exact maximum move-detection wait and remaining deletion grace
+  time, and make trash completion explicit.
+- Prefix every background-daemon output and error message with an ISO 8601
+  timestamp using the machine's current UTC offset while keeping interactive
+  `sync-once` progress concise.
+- Make `gdms --version` and `gdms version` report both the checked-out CLI
+  version and the live daemon version, including a short-lived restart-pending
+  warning when they differ.
 - Use `~/Documents/GDMS` as the neutral default workspace root, preserve an
   explicit `GOOGLE_DOCS_SYNC_ROOT` in the installed service, and document the
   upgrade setting for installations that use `~/dev`.
@@ -27,115 +61,19 @@ All notable changes to this project are documented in this file.
 - Replace user-specific absolute paths in test fixtures and describe the
   phased migration away from legacy `com.roman` service identifiers.
 
-## [0.7.0] - 2026-08-14
+### Fixed
 
-### Added
-
-- Record the running daemon version, PID, and start time in machine-local state.
-- Compare the loaded daemon version with `package.json` before each polling
-  cycle and exit cleanly on a change so LaunchAgent `KeepAlive` loads the new
-  code automatically.
-
-### Changed
-
-- Make `gdms --version` and `gdms version` report both the checked-out CLI
-  version and the live daemon version, including a short-lived restart-pending
-  warning when they differ.
-
-## [0.6.3] - 2026-08-14
-
-### Changed
-
-- Prefix every background-daemon output and error message with an ISO 8601
-  timestamp using the machine's current UTC offset, while keeping interactive
-  `sync-once` progress concise.
-
-## [0.6.2] - 2026-08-14
-
-### Changed
-
-- Replace user-facing `defer` logs with policy-aware `missing-local` messages,
-  report remaining automatic-deletion grace time, and make trash completion
-  explicit in daemon logs and `sync-once` progress.
-
-## [0.6.1] - 2026-08-14
-
-### Added
-
-- Show per-pairing current/total progress and a final action summary for
-  `gdms sync-once`, using an in-place terminal line and stable redirected
-  output.
-
-### Changed
-
-- Make `gdms sync-once` exit unsuccessfully after completing the pass when any
-  pairing reports an error.
-
-## [0.6.0] - 2026-08-14
-
-### Added
-
-- Add a globally linked `gdms` executable as the primary user interface, with
-  first-class `help`, `--help`, `version`, and `--version` forms.
-- Add a consolidated command reference covering arguments, effects, and write
-  scope for every GDMS command.
-
-### Changed
-
-- Prefer `gdms` throughout user documentation while retaining npm scripts as
-  development and recovery fallbacks.
-
-## [0.5.0] - 2026-08-14
-
-### Added
-
-- Add an explicit `delete` command that moves a paired Google Doc to Drive
-  trash, deletes its local Markdown and managed assets, removes the pairing,
-  and emails a recovery notice.
-- Add a machine-local global, opt-in `trash-after-grace-period` policy with durable
-  missing-file timers, move/restoration cancellation, resumable trash state,
-  and idempotent Resend notification retries.
-
-### Changed
-
-- Request Drive write authorization for recoverable trash operations. Existing
-  installations must authorize again after upgrading.
+- Let missing-file move detection proceed once its deadline is reached even
+  when a full sync pass takes longer than the detection window, and never run
+  move detection again after the durable deletion grace period has started.
+- Clear completed deletion tombstones when the same Google Doc is paired again
+  so an old deadline cannot affect the new pairing.
 
 ### Safety
 
 - Keep missing-file restoration as the default, require a configured deletion
   email recipient before automatic trash, and limit deletion propagation to
   Markdown/Google Docs pairings for now.
-
-## [0.4.1] - 2026-08-14
-
-### Changed
-
-- Treat a standard blank line between top-level Markdown blocks as one universal
-  visual gap in Google Docs, covering paragraphs, headings, lists, blockquotes,
-  code blocks, and thematic breaks while keeping hard breaks and list items
-  compact.
-- Add migration `0.4.1` to reconcile the universal block-boundary spacing in
-  existing paired documents.
-
-## [0.4.0] - 2026-08-14
-
-### Added
-
-- Add resumable, per-document formatting migrations with all-pairs and
-  single-document targeting, a non-writing dry run, failure isolation, and
-  applied-version tracking in local runtime state.
-- Add migration `0.3.2` to repair list spacing and ordered lists whose numbering
-  was previously restarted for every item.
-
-## [0.3.2] - 2026-08-14
-
-### Changed
-
-- Keep ordered Markdown list items in one Google Docs numbering sequence instead
-  of restarting every item at one.
-- Add the standard paragraph spacing after the final item in a Markdown list
-  without adding space between its items.
 
 ## [0.3.1] - 2026-08-13
 
