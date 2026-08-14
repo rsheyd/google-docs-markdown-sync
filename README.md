@@ -117,6 +117,8 @@ The consolidated [command reference](docs/operations.md#command-reference) lists
 every `gdms` command, its arguments, and what it can modify.
 For the user-visible mapping from Markdown blank lines, headings, paragraphs,
 and lists to Google Docs formatting, see the [formatting guide](docs/formatting.md).
+For common questions about sharing and synchronization, see the
+[FAQ](docs/faq.md).
 
 ## Supported content and important limits
 
@@ -163,6 +165,7 @@ work is in the [roadmap](docs/roadmap.md).
 - [Installation](docs/installation.md): setup and first-use guide.
 - [Operations](docs/operations.md): service operation and troubleshooting.
 - [Formatting](docs/formatting.md): Markdown-to-Google-Docs formatting behavior.
+- [FAQ](docs/faq.md): common questions about sharing and synchronization.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and validation workflow.
 - [CHANGELOG.md](CHANGELOG.md): release history.
 - [Roadmap](docs/roadmap.md): product and engineering direction.

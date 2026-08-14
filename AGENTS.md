@@ -28,6 +28,7 @@
   troubleshooting guidance.
 - `docs/formatting.md`: User-facing Markdown-to-Google-Docs formatting rules,
   examples, normalization behavior, and migration workflow.
+- `docs/faq.md`: Answers to common questions about sharing and synchronization.
 - `CONTRIBUTING.md`: Development, validation, and post-change service restart
   instructions.
 - `CHANGELOG.md`: User-visible changes organized by application release.
