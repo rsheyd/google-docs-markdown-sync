@@ -8,6 +8,7 @@ import {
   planHeadingLinkUpdate,
   planIncrementalUpdate,
   planParagraphSpacingUpdate,
+  planOrderedListNumberingUpdate,
   planSpacingCleanup,
   replaceDocumentFromMarkdown,
   updateDocumentStatus,
@@ -498,11 +499,80 @@ test("plans nested list insertion without dropping child items", () => {
   const insertion = plan.requests.find((request) => request.insertText);
   const bullets = plan.requests.filter((request) => request.createParagraphBullets);
   assert.equal(insertion.insertText.text, "\nparent\n\tchild\n");
-  assert.equal(bullets.length, 2);
+  assert.equal(bullets.length, 1);
   assert.deepEqual(bullets[0].createParagraphBullets.range, {
-    startIndex: 15,
+    startIndex: 8,
     endIndex: 22,
   });
+});
+
+test("creates one bullet range so ordered list numbering continues", () => {
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [paragraph(1, "Before\n")] },
+  };
+  const plan = planIncrementalUpdate(
+    document,
+    "Before\n\n1. First\n2. Second\n3. Third",
+  );
+  const bullets = plan.requests.filter((request) => request.createParagraphBullets);
+  assert.equal(bullets.length, 1);
+  assert.deepEqual(bullets[0].createParagraphBullets, {
+    range: { startIndex: 8, endIndex: 27 },
+    bulletPreset: "NUMBERED_DECIMAL_NESTED",
+  });
+});
+
+test("adds visual spacing after a list only when another block follows", () => {
+  const first = bulletParagraph(1, "First\n", "numbered");
+  const second = bulletParagraph(first.endIndex, "Second\n", "numbered");
+  const after = paragraph(second.endIndex, "After\n");
+  const document = {
+    lists: {
+      numbered: {
+        listProperties: {
+          nestingLevels: [{ glyphType: "DECIMAL", glyphFormat: "%0." }],
+        },
+      },
+    },
+    body: { content: [first, second, after] },
+  };
+  const requests = planParagraphSpacingUpdate(
+    document,
+    "1. First\n2. Second\n\nAfter",
+  );
+  assert.deepEqual(requests.map((request) => request.updateParagraphStyle), [{
+    range: { startIndex: second.startIndex, endIndex: second.endIndex },
+    paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
+    fields: "spaceBelow",
+  }]);
+});
+
+test("repairs an ordered run split across separate Google list IDs", () => {
+  const first = bulletParagraph(1, "First\n", "one");
+  const second = bulletParagraph(first.endIndex, "Second\n", "two");
+  const document = {
+    lists: Object.fromEntries(["one", "two"].map((listId) => [listId, {
+      listProperties: {
+        nestingLevels: [{ glyphType: "DECIMAL", glyphFormat: "%0." }],
+      },
+    }])),
+    body: { content: [first, second] },
+  };
+  assert.deepEqual(
+    planOrderedListNumberingUpdate(document, "1. First\n2. Second"),
+    [{
+      createParagraphBullets: {
+        range: { startIndex: first.startIndex, endIndex: second.endIndex },
+        bulletPreset: "NUMBERED_DECIMAL_NESTED",
+      },
+    }],
+  );
+  second.paragraph.bullet.listId = "one";
+  assert.deepEqual(
+    planOrderedListNumberingUpdate(document, "1. First\n2. Second"),
+    [],
+  );
 });
 
 test("finds a focused paragraph replacement", () => {
@@ -553,12 +623,36 @@ test("adds visual spacing after Markdown paragraphs but not hard breaks", () => 
 
   assert.deepEqual(
     requests.map((request) => request.updateParagraphStyle),
-    [continuation, second].map((item) => ({
+    [continuation].map((item) => ({
       range: { startIndex: item.startIndex, endIndex: item.endIndex },
       paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
       fields: "spaceBelow",
     })),
   );
+});
+
+test("adds visual spacing between a heading and following list", () => {
+  const heading = paragraph(1, "Planning\n", "HEADING_3");
+  const item = bulletParagraph(heading.endIndex, "First\n");
+  const document = {
+    lists: {
+      bullets: {
+        listProperties: {
+          nestingLevels: [{ glyphSymbol: "●", glyphFormat: "%0" }],
+        },
+      },
+    },
+    body: { content: [heading, item] },
+  };
+  const requests = planParagraphSpacingUpdate(
+    document,
+    "### Planning\n\n- First",
+  );
+  assert.deepEqual(requests.map((request) => request.updateParagraphStyle), [{
+    range: { startIndex: heading.startIndex, endIndex: heading.endIndex },
+    paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
+    fields: "spaceBelow",
+  }]);
 });
 
 test("clears paragraph spacing on an explicit Markdown blank line", () => {
@@ -572,13 +666,16 @@ test("clears paragraph spacing on an explicit Markdown blank line", () => {
     { body: { content: [first, blank, second] } },
     "First\n\n\nSecond",
   );
-  assert.deepEqual(requests, [{
-    updateParagraphStyle: {
-      range: { startIndex: blank.startIndex, endIndex: blank.endIndex },
-      paragraphStyle: { spaceBelow: { magnitude: 0, unit: "PT" } },
-      fields: "spaceBelow",
-    },
-  }]);
+  assert.deepEqual(
+    requests.map((request) => request.updateParagraphStyle.range),
+    [blank, second].map((item) => ({
+      startIndex: item.startIndex,
+      endIndex: item.endIndex,
+    })),
+  );
+  assert.ok(requests.every(
+    (request) => request.updateParagraphStyle.paragraphStyle.spaceBelow.magnitude === 0,
+  ));
 });
 
 test("styles matching paragraphs while skipping API-only legacy blocks", () => {
@@ -593,7 +690,6 @@ test("styles matching paragraphs while skipping API-only legacy blocks", () => {
     requests.map((request) => request.updateParagraphStyle.range),
     [
       { startIndex: first.startIndex, endIndex: first.endIndex },
-      { startIndex: second.startIndex, endIndex: second.endIndex },
     ],
   );
 });
@@ -601,7 +697,7 @@ test("styles matching paragraphs while skipping API-only legacy blocks", () => {
 test("reconciles paragraph spacing when Markdown content is unchanged", async () => {
   const document = {
     revisionId: "revision-1",
-    body: { content: [paragraph(1, "Paragraph\n")] },
+    body: { content: [paragraph(1, "Paragraph\n"), paragraph(11, "Second\n")] },
   };
   const updates = [];
   const services = {
@@ -615,7 +711,7 @@ test("reconciles paragraph spacing when Markdown content is unchanged", async ()
     } }) } },
   };
 
-  await updateDocumentFromMarkdown(services, "document", "Paragraph");
+  await updateDocumentFromMarkdown(services, "document", "Paragraph\n\nSecond");
 
   assert.equal(updates.length, 1);
   assert.deepEqual(updates[0].requestBody.requests, [{

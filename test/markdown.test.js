@@ -37,6 +37,17 @@ test("parses ordered and unordered list items", () => {
   );
 });
 
+test("derives visual spacing from top-level Markdown block boundaries", () => {
+  const blocks = parseMarkdown("1. First\n2. Second\n\nAfter");
+  assert.equal(blocks[0].paragraphSpaceBelow, undefined);
+  assert.equal(blocks[1].paragraphSpaceBelow, 8);
+  assert.equal(blocks[2].paragraphSpaceBelow, undefined);
+  const headingAndList = parseMarkdown("### Planning\n\n- First\n- Second");
+  assert.equal(headingAndList[0].paragraphSpaceBelow, 8);
+  assert.equal(headingAndList[1].paragraphSpaceBelow, undefined);
+  assert.equal(headingAndList[2].paragraphSpaceBelow, undefined);
+});
+
 test("preserves links nested in heading-styled list items", () => {
   const blocks = parseMarkdown(
     "* ## [Purpose and priorities](#1-purpose)",

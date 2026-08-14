@@ -34,6 +34,7 @@ import {
 import { registerSpreadsheetPairing } from "./manifests.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import { runDaemon, runSyncPass } from "./sync.js";
+import { runDocumentMigrations } from "./migrations.js";
 import { installFinderQuickAction } from "./finder-quick-action.js";
 import {
   createSpreadsheet,
@@ -59,6 +60,10 @@ function parseArguments(values) {
     const value = rest[index];
     if (!value.startsWith("--")) continue;
     const key = value.slice(2);
+    if (key === "all" || key === "dry-run") {
+      options[key] = true;
+      continue;
+    }
     const next = rest[index + 1];
     if (options[key] === undefined) options[key] = next;
     else options[key] = Array.isArray(options[key]) ? [...options[key], next] : [options[key], next];
@@ -506,6 +511,20 @@ async function main() {
     await push(options);
   } else if (command === "cleanup-spacing") {
     await cleanupSpacing(options);
+  } else if (command === "migrate") {
+    if (!options.all && !options["document-id"]) {
+      throw new Error("migrate requires --all or --document-id.");
+    }
+    const results = await runDocumentMigrations({
+      dryRun: Boolean(options["dry-run"]),
+      documentId: options["document-id"],
+    });
+    const counts = results.reduce((summary, result) => {
+      summary[result.status] = (summary[result.status] ?? 0) + 1;
+      return summary;
+    }, {});
+    console.log(`Migration summary: ${Object.entries(counts).map(([status, count]) => `${status}=${count}`).join(" ") || "no documents"}`);
+    if (counts.error) process.exitCode = 1;
   } else if (command === "configure-r2") {
     await configureR2(options);
   } else if (command === "sync-once") {
@@ -541,6 +560,7 @@ async function main() {
   node src/cli.js plan --document-id ID
   node src/cli.js push (--document-id ID | --spreadsheet-id ID)
   node src/cli.js cleanup-spacing --document-id ID
+  node src/cli.js migrate (--all | --document-id ID) [--dry-run]
   node src/cli.js configure-r2 --account-id ID --bucket NAME --gateway-url URL
   node src/cli.js sync-once
   node src/cli.js daemon

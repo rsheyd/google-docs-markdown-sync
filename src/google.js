@@ -220,9 +220,16 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
     return {
       type: "listItem",
       ordered,
+      listId: bullet.listId,
       nestingLevel: bullet.nestingLevel ?? 0,
       text,
       styles,
+      ...(element.paragraph.paragraphStyle?.spaceBelow?.magnitude === undefined
+        ? {}
+        : {
+            paragraphSpaceBelow:
+              element.paragraph.paragraphStyle.spaceBelow.magnitude,
+          }),
       ...(images.length ? { images } : {}),
       startIndex: element.startIndex,
       endIndex: element.endIndex,
@@ -724,9 +731,8 @@ export function planParagraphSpacingUpdate(document, markdown) {
     const currentBlock = current[currentIndex];
     currentIndex += 1;
     if (
-      desiredBlock.type !== "text" ||
-      desiredBlock.paragraphStyle !== "NORMAL_TEXT" ||
-      currentBlock.type !== "text" ||
+      (desiredBlock.type !== "text" && desiredBlock.type !== "listItem") ||
+      currentBlock.type !== desiredBlock.type ||
       currentBlock.nativeTableOfContents ||
       currentBlock.text !== desiredBlock.text
     ) {
@@ -748,6 +754,75 @@ export function planParagraphSpacingUpdate(document, markdown) {
     });
   }
   return requests;
+}
+
+export function planOrderedListNumberingUpdate(document, markdown) {
+  const desired = parseMarkdown(markdown);
+  const current = withoutManagedStatusBlocks(
+    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
+  );
+  const matches = [];
+  let currentIndex = 0;
+  for (const [desiredIndex, desiredBlock] of desired.entries()) {
+    const desiredFingerprint = fingerprint(desiredBlock);
+    while (
+      currentIndex < current.length &&
+      fingerprint(current[currentIndex]) !== desiredFingerprint
+    ) {
+      currentIndex += 1;
+    }
+    if (currentIndex >= current.length) break;
+    matches.push({
+      desiredIndex,
+      desired: desiredBlock,
+      currentIndex,
+      current: current[currentIndex],
+    });
+    currentIndex += 1;
+  }
+
+  const requests = [];
+  for (let start = 0; start < matches.length;) {
+    if (!matches[start].desired.ordered) {
+      start += 1;
+      continue;
+    }
+    let end = start + 1;
+    while (
+      end < matches.length &&
+      matches[end].desired.ordered &&
+      matches[end].desiredIndex === matches[end - 1].desiredIndex + 1 &&
+      matches[end].currentIndex === matches[end - 1].currentIndex + 1
+    ) {
+      end += 1;
+    }
+    const run = matches.slice(start, end);
+    const listIds = new Set(run.map((match) => match.current.listId));
+    if (
+      run.length > 1 &&
+      run.every((match) => match.current.type === "listItem" && match.current.ordered) &&
+      listIds.size > 1
+    ) {
+      requests.push({
+        createParagraphBullets: {
+          range: {
+            startIndex: run[0].current.startIndex,
+            endIndex: run.at(-1).current.endIndex,
+          },
+          bulletPreset: "NUMBERED_DECIMAL_NESTED",
+        },
+      });
+    }
+    start = end;
+  }
+  return requests;
+}
+
+export function planListFormattingMigration(document, markdown) {
+  return [
+    ...planParagraphSpacingUpdate(document, markdown),
+    ...planOrderedListNumberingUpdate(document, markdown),
+  ];
 }
 
 function insertionRequests(
@@ -836,14 +911,34 @@ function insertionRequests(
     offset += blockPrefix.length + block.text.length + 1;
     return { block, blockStart, visibleStart, blockEnd };
   });
+  const positionedGroups = [];
+  for (const item of positioned) {
+    const previous = positionedGroups[positionedGroups.length - 1];
+    if (
+      item.block.type === "listItem" &&
+      previous?.type === "listItem" &&
+      previous.ordered === item.block.ordered
+    ) {
+      previous.items.push(item);
+    } else {
+      positionedGroups.push({
+        type: item.block.type,
+        ordered: item.block.ordered,
+        items: [item],
+      });
+    }
+  }
   // Google Docs removes leading tabs when it creates nested bullets. Work from
   // the end so those removals cannot invalidate the remaining request indexes.
-  for (const { block, blockStart, visibleStart, blockEnd } of positioned.reverse()) {
-    requests.push(...inlineStyleRequests(visibleStart, block.styles));
-    if (block.type === "text") {
+  for (const group of positionedGroups.reverse()) {
+    for (const { block, visibleStart } of [...group.items].reverse()) {
+      requests.push(...inlineStyleRequests(visibleStart, block.styles));
+    }
+    if (group.type === "text") {
+      const [{ block, visibleStart, blockEnd }] = group.items;
       const paragraphStyle = { namedStyleType: block.paragraphStyle };
       const fields = ["namedStyleType"];
-      if (applyParagraphSpacing && block.paragraphStyle === "NORMAL_TEXT") {
+      if (applyParagraphSpacing) {
         paragraphStyle.spaceBelow = {
           magnitude: block.paragraphSpaceBelow ?? 0,
           unit: "PT",
@@ -858,10 +953,27 @@ function insertionRequests(
         },
       });
     } else {
+      const first = group.items[0];
+      const last = group.items[group.items.length - 1];
+      if (applyParagraphSpacing) {
+        const { block, visibleStart, blockEnd } = last;
+        requests.push({
+          updateParagraphStyle: {
+            range: { startIndex: visibleStart, endIndex: blockEnd },
+            paragraphStyle: {
+              spaceBelow: {
+                magnitude: block.paragraphSpaceBelow ?? 0,
+                unit: "PT",
+              },
+            },
+            fields: "spaceBelow",
+          },
+        });
+      }
       requests.push({
         createParagraphBullets: {
-          range: { startIndex: blockStart, endIndex: blockEnd },
-          bulletPreset: block.ordered
+          range: { startIndex: first.blockStart, endIndex: last.blockEnd },
+          bulletPreset: group.ordered
             ? "NUMBERED_DECIMAL_NESTED"
             : "BULLET_DISC_CIRCLE_SQUARE",
         },

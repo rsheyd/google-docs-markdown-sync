@@ -122,13 +122,10 @@ function splitInlineLines(inline) {
 
 function appendTextLines(blocks, inline, properties) {
   const lines = splitInlineLines(inline);
-  for (const [index, line] of lines.entries()) {
+  for (const line of lines) {
     blocks.push({
       ...properties,
       ...line,
-      ...(properties.managedParagraphSpacing && index === lines.length - 1
-        ? { paragraphSpaceBelow: PARAGRAPH_SPACE_BELOW_PT }
-        : {}),
     });
   }
 }
@@ -174,8 +171,18 @@ export function parseMarkdown(markdown) {
   const tree = parser.parse(normalizeGoogleImageReferences(markdown));
   const blocks = [];
   let previousEndLine = 0;
+  let previousBlockEnd = 0;
   for (const node of tree.children) {
     const startLine = node.position?.start.line ?? previousEndLine + 1;
+    if (
+      previousEndLine &&
+      startLine > previousEndLine + 1 &&
+      previousBlockEnd > 0 &&
+      ["text", "listItem"].includes(blocks[previousBlockEnd - 1]?.type)
+    ) {
+      blocks[previousBlockEnd - 1].paragraphSpaceBelow =
+        PARAGRAPH_SPACE_BELOW_PT;
+    }
     const blankLines = previousEndLine
       ? Math.max(0, startLine - previousEndLine - 2)
       : 0;
@@ -199,7 +206,6 @@ export function parseMarkdown(markdown) {
       appendTextLines(blocks, renderInlineNodes(node.children), {
         type: "text",
         paragraphStyle: "NORMAL_TEXT",
-        managedParagraphSpacing: true,
       });
     } else if (node.type === "list") {
       appendList(blocks, node);
@@ -233,6 +239,7 @@ export function parseMarkdown(markdown) {
       });
     }
     previousEndLine = node.position?.end.line ?? startLine;
+    previousBlockEnd = blocks.length;
   }
   return blocks;
 }

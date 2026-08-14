@@ -14,7 +14,7 @@ making its supported content available as ordinary local files for Codex,
 Git, editors, and other file-based tools. Only explicitly paired documents are
 synchronized; repositories and unrelated files are never copied to Drive.
 
-Current release: **0.3.1** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
+Current release: **0.4.1** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 
 ## What it does
 
@@ -104,6 +104,8 @@ single-flight, and failed remote requests use bounded exponential backoff.
 For the manifest format, see [INSTALL.md](INSTALL.md#pairing-manifest). For
 detailed synchronization semantics, service management, logs, heartbeat
 configuration, and troubleshooting, see [OPERATIONS.md](OPERATIONS.md).
+For the user-visible mapping from Markdown blank lines, headings, paragraphs,
+and lists to Google Docs formatting, see [FORMATTING.md](FORMATTING.md).
 
 ## Supported content and important limits
 
@@ -147,6 +149,7 @@ work is in [ROADMAP.md](ROADMAP.md).
 - `test/`: Node unit tests for Docs, Sheets, images, manifests, and operations.
 - [INSTALL.md](INSTALL.md): setup and first-use guide.
 - [OPERATIONS.md](OPERATIONS.md): service operation and troubleshooting.
+- [FORMATTING.md](FORMATTING.md): Markdown-to-Google-Docs formatting behavior.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and validation workflow.
 - [CHANGELOG.md](CHANGELOG.md): release history.
 - [ROADMAP.md](ROADMAP.md): product and engineering direction.

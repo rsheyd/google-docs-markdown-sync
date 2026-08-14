@@ -162,7 +162,7 @@ test("does not write a pulled local file before the remote status update succeed
 test("styles an unchanged Markdown pairing and records the new revision", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-spacing-"));
   const filePath = path.join(directory, "paired.md");
-  await fs.writeFile(filePath, "Paragraph");
+  await fs.writeFile(filePath, "Paragraph\n\nSecond");
   const document = {
     revisionId: "old-revision",
     body: {
@@ -174,6 +174,17 @@ test("styles an unchanged Markdown pairing and records the new revision", async 
             startIndex: 1,
             endIndex: 11,
             textRun: { content: "Paragraph\n", textStyle: {} },
+          }],
+          paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        },
+      }, {
+        startIndex: 11,
+        endIndex: 18,
+        paragraph: {
+          elements: [{
+            startIndex: 11,
+            endIndex: 18,
+            textRun: { content: "Second\n", textStyle: {} },
           }],
           paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
         },
@@ -210,7 +221,7 @@ test("styles an unchanged Markdown pairing and records the new revision", async 
     name: "Paired",
   };
   const result = await syncPairing(services, pairing, {
-    localHash: createHash("sha256").update("Paragraph").digest("hex"),
+    localHash: createHash("sha256").update("Paragraph\n\nSecond").digest("hex"),
     localModifiedTime: 1,
     remoteRevisionId: "old-revision",
     remoteModifiedTime: "2026-08-11T14:00:00Z",

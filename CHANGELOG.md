@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.1] - 2026-08-14
+
+### Changed
+
+- Treat a standard blank line between top-level Markdown blocks as one universal
+  visual gap in Google Docs, covering paragraphs, headings, lists, blockquotes,
+  code blocks, and thematic breaks while keeping hard breaks and list items
+  compact.
+- Add migration `0.4.1` to reconcile the universal block-boundary spacing in
+  existing paired documents.
+
+## [0.4.0] - 2026-08-14
+
+### Added
+
+- Add resumable, per-document formatting migrations with all-pairs and
+  single-document targeting, a non-writing dry run, failure isolation, and
+  applied-version tracking in local runtime state.
+- Add migration `0.3.2` to repair list spacing and ordered lists whose numbering
+  was previously restarted for every item.
+
+## [0.3.2] - 2026-08-14
+
+### Changed
+
+- Keep ordered Markdown list items in one Google Docs numbering sequence instead
+  of restarting every item at one.
+- Add the standard paragraph spacing after the final item in a Markdown list
+  without adding space between its items.
+
 ## [0.3.1] - 2026-08-13
 
 ### Added

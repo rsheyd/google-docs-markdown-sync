@@ -51,6 +51,29 @@ npm run cli -- push --document-id DOCUMENT_ID
 npm run cli -- push --spreadsheet-id SPREADSHEET_ID
 ```
 
+## Apply formatting migrations
+
+For the formatting rules these migrations reconcile, see
+[FORMATTING.md](FORMATTING.md).
+
+Preview pending targeted migrations across every paired Google Doc:
+
+```sh
+npm run cli -- migrate --all --dry-run
+```
+
+Apply them after reviewing the preview:
+
+```sh
+npm run cli -- migrate --all
+```
+
+Use `--document-id DOCUMENT_ID` instead of `--all` to target one pairing.
+Migrations skip Google Sheets and versions already recorded for each document,
+continue past individual failures, and never rebuild document content. Successful
+writes update the stored remote revision so ordinary synchronization does not
+mistake the formatting migration for a collaborator edit.
+
 ## Logs
 
 Service output and errors are stored in:
