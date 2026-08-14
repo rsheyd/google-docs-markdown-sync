@@ -281,7 +281,7 @@ Restart GDMS after configuration:
 gdms install-service
 ```
 
-See [IMAGE-SYNC.md](IMAGE-SYNC.md) for the transport design and safety model.
+See the [image synchronization design](design/image-sync.md) for the transport design and safety model.
 
 ## Pairing manifest
 
@@ -322,5 +322,5 @@ grant the Drive write scope used for trash operations, followed by
 
 ## Optional weekly heartbeat
 
-Continue with [OPERATIONS.md](OPERATIONS.md#weekly-health-heartbeat) to install
+Continue with the [operations guide](operations.md#weekly-health-heartbeat) to install
 the independent success email and learn where to find service logs.

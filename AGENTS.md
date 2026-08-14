@@ -13,8 +13,8 @@
   requests over ad hoc text replacement.
 - Update user-facing documentation in the same pass when changing visible sync
   behavior, defaults, supported content, commands, setup, or operational
-  workflows. Route formatting semantics to `FORMATTING.md`, setup changes to
-  `INSTALL.md`, and commands or service behavior to `OPERATIONS.md`; keep the
+  workflows. Route formatting semantics to `docs/formatting.md`, setup changes to
+  `docs/installation.md`, and commands or service behavior to `docs/operations.md`; keep the
   README summary and links current when the broader product description changes.
 - Update this file map whenever durable project files are added or renamed.
 - Increase the version for user-visible changes and record them under that exact version in `CHANGELOG.md`; do not use an Unreleased section. Minor documentation, planning, template-copy, test-only, and internal-maintenance changes do not require a version bump unless they accompany a release. 
@@ -22,25 +22,26 @@
 ## File map
 
 - `README.md`: Product concept, intended workflow, scope, and design principles.
-- `INSTALL.md`: Prerequisites, Google authorization, first pairing, Finder and
+- `docs/installation.md`: Prerequisites, Google authorization, first pairing, Finder and
   Raycast setup, R2 image staging, and pairing manifest reference.
-- `OPERATIONS.md`: Service management, logs, heartbeat, timing, recovery, and
+- `docs/operations.md`: Service management, logs, heartbeat, timing, recovery, and
   troubleshooting guidance.
-- `FORMATTING.md`: User-facing Markdown-to-Google-Docs formatting rules,
+- `docs/formatting.md`: User-facing Markdown-to-Google-Docs formatting rules,
   examples, normalization behavior, and migration workflow.
 - `CONTRIBUTING.md`: Development, validation, and post-change service restart
   instructions.
 - `CHANGELOG.md`: User-visible changes organized by application release.
-- `ROADMAP.md`: Ordered product and engineering direction, with links to
+- `docs/roadmap.md`: Ordered product and engineering direction, with links to
   detailed feature plans.
-- `IMAGE-SYNC.md`: Design and phased implementation plan for R2-backed two-way
+- `docs/design/image-sync.md`: Design and phased implementation plan for R2-backed two-way
   inline image synchronization.
-- `NAMESPACE-MIGRATION.md`: Compatibility and rollout plan for replacing the
+- `docs/design/namespace-migration.md`: Compatibility and rollout plan for replacing the
   legacy application, launchd, and Keychain namespace.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
 - `docs/images/`: User-facing documentation images referenced by project guides.
-- `outreach/`: Durable drafts for project announcements and community posts.
+- `local-only/`: Git-excluded personal drafts, outreach material, and other
+  machine-local working files.
 - `.gitignore`: Generated dependency/build output exclusions.
 - `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.

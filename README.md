@@ -57,12 +57,12 @@ Raycast and a supported browser are not required when using only the CLI or Find
 Actions. Remote images can still be pulled without R2, but local image
 additions and replacements require it.
 
-See [INSTALL.md](INSTALL.md) for prerequisites, authorization, first pairing,
+See [installation guide](docs/installation.md) for prerequisites, authorization, first pairing,
 R2 configuration, and optional Finder and Raycast setup.
 
 ## Quick start
 
-After completing the Google authorization steps in [INSTALL.md](INSTALL.md):
+After completing the Google authorization steps in the [installation guide](docs/installation.md):
 
 ```sh
 npm install
@@ -80,7 +80,7 @@ Then choose one starting point:
 - Control-click local Markdown or CSV files in Finder and use the matching
   **Sync with Google… (GDMS)** Quick Action.
 - Pair or create a document directly with the commands in
-  [INSTALL.md](INSTALL.md#pair-your-first-document).
+  [installation guide](docs/installation.md#pair-your-first-document).
 
 Once paired, local changes are watched immediately and Google changes are
 polled automatically. Moving a paired Markdown file within its workspace or
@@ -110,13 +110,13 @@ Markdown, referenced image assets, and CSV directories locally; it polls paired
 Google Docs and Sheets every five seconds. Synchronization passes are
 single-flight, and failed remote requests use bounded exponential backoff.
 
-For the manifest format, see [INSTALL.md](INSTALL.md#pairing-manifest). For
+For the manifest format, see the [installation guide](docs/installation.md#pairing-manifest). For
 detailed synchronization semantics, service management, logs, heartbeat
-configuration, and troubleshooting, see [OPERATIONS.md](OPERATIONS.md).
-The consolidated [command reference](OPERATIONS.md#command-reference) lists
+configuration, and troubleshooting, see the [operations guide](docs/operations.md).
+The consolidated [command reference](docs/operations.md#command-reference) lists
 every `gdms` command, its arguments, and what it can modify.
 For the user-visible mapping from Markdown blank lines, headings, paragraphs,
-and lists to Google Docs formatting, see [FORMATTING.md](FORMATTING.md).
+and lists to Google Docs formatting, see the [formatting guide](docs/formatting.md).
 
 ## Supported content and important limits
 
@@ -150,8 +150,8 @@ Important current limitations:
   pairings. Missing CSV directories do not trash paired Google Sheets.
 
 The complete image model, safety rules, and remaining hardening work are in
-[IMAGE-SYNC.md](IMAGE-SYNC.md). Planned conflict, pairing-control, and fidelity
-work is in [ROADMAP.md](ROADMAP.md).
+[image synchronization design](docs/design/image-sync.md). Planned conflict, pairing-control, and fidelity
+work is in the [roadmap](docs/roadmap.md).
 
 ## Project layout
 
@@ -160,12 +160,12 @@ work is in [ROADMAP.md](ROADMAP.md).
 - `raycast-extension/`: optional active-browser document pairing command.
 - `cloudflare/image-gateway-worker.js`: authenticated private-R2 fetch gateway.
 - `test/`: Node unit tests for Docs, Sheets, images, manifests, and operations.
-- [INSTALL.md](INSTALL.md): setup and first-use guide.
-- [OPERATIONS.md](OPERATIONS.md): service operation and troubleshooting.
-- [FORMATTING.md](FORMATTING.md): Markdown-to-Google-Docs formatting behavior.
+- [Installation](docs/installation.md): setup and first-use guide.
+- [Operations](docs/operations.md): service operation and troubleshooting.
+- [Formatting](docs/formatting.md): Markdown-to-Google-Docs formatting behavior.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and validation workflow.
 - [CHANGELOG.md](CHANGELOG.md): release history.
-- [ROADMAP.md](ROADMAP.md): product and engineering direction.
+- [Roadmap](docs/roadmap.md): product and engineering direction.
 
 ## Development
 

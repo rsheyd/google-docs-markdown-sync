@@ -90,7 +90,7 @@ npm run cli -- migrate --all --dry-run
 npm run cli -- migrate --all
 ```
 
-See [OPERATIONS.md](OPERATIONS.md#apply-formatting-migrations) for targeting one
+See the [operations guide](operations.md#apply-formatting-migrations) for targeting one
 document, resumability, and failure behavior.
 
 ## Current boundaries
@@ -100,5 +100,5 @@ subset. Advanced layout, floating images, drawings, and other Docs-only visual
 effects are not represented in Markdown. Tables also have structural spacing
 requirements of their own and do not yet use the universal text-block gap rule.
 
-See [README.md](README.md#supported-content-and-important-limits) for the full
+See the [README](../README.md#supported-content-and-important-limits) for the full
 supported-content summary and current limitations.

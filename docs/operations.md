@@ -132,7 +132,7 @@ Markdown/Google Docs pairings, not Sheets/CSV pairings.
 ## Apply formatting migrations
 
 For the formatting rules these migrations reconcile, see
-[FORMATTING.md](FORMATTING.md).
+[formatting guide](formatting.md).
 
 Preview pending targeted migrations across every paired Google Doc:
 
@@ -303,7 +303,7 @@ automatic conflict copy.
 Confirm that the image is in the Markdown file's managed sibling asset
 directory, is PNG, JPEG, or GIF, and appears in a standalone image paragraph.
 Local additions and replacements also require the private R2 bucket and Worker
-configuration from [INSTALL.md](INSTALL.md#configure-image-staging).
+configuration from the [installation guide](installation.md#configure-image-staging).
 
 ### A table edit is refused
 

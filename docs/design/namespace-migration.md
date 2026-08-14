@@ -84,7 +84,7 @@ all migration-capable versions.
 ## Release and validation requirements
 
 Each phase is a user-visible change and requires a version increase plus an
-entry under that exact version in `CHANGELOG.md`. Before release, run the full
+entry under that exact version in [`CHANGELOG.md`](../../CHANGELOG.md). Before release, run the full
 test suite, lint both generated plists with `plutil`, and perform a host-level
 smoke test of `launchctl print` and Keychain migration. Host tests must use
 disposable test service names until the final install test, and must never log

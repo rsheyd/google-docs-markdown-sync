@@ -15,7 +15,7 @@ dependency and risk rather than by promised release dates.
   CSV files through Finder Quick Actions.
 
 The image implementation, storage convention, safety rules, live-validation
-results, and remaining work are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
+results, and remaining work are documented in the [image synchronization design](design/image-sync.md).
 
 ## Now: operational hardening
 
@@ -49,7 +49,7 @@ results, and remaining work are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
   an explicit cleanup path.
 
 The phases, rollback guarantees, affected identifiers, and validation plan are
-documented in [NAMESPACE-MIGRATION.md](NAMESPACE-MIGRATION.md).
+documented in the [namespace migration plan](design/namespace-migration.md).
 
 ## Later: broader fidelity
 
