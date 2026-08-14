@@ -39,6 +39,18 @@ results, and remaining work are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
 - Refine the current document-level image conflict stop into per-image
   baselines if routine use shows that the coarse check is too restrictive.
 
+## Next: application namespace migration
+
+- Introduce `io.github.rsheyd.google-docs-markdown-sync` identifiers with
+  dual-read Keychain compatibility and non-destructive credential copying.
+- Make the service installer replace legacy launchd jobs without allowing old
+  and new daemons to run together, while retaining rollback-safe credentials.
+- Remove legacy identifiers only after a documented compatibility window and
+  an explicit cleanup path.
+
+The phases, rollback guarantees, affected identifiers, and validation plan are
+documented in [NAMESPACE-MIGRATION.md](NAMESPACE-MIGRATION.md).
+
 ## Later: broader fidelity
 
 - Add explicit orphaned-asset review and cleanup tooling.
@@ -47,9 +59,22 @@ results, and remaining work are documented in [IMAGE-SYNC.md](IMAGE-SYNC.md).
 - Support safe mutations of mixed text-and-image paragraphs and image-bearing
   full document rebuilds.
 
+## Later: folder auto-sync
+
+- Evaluate opt-in synchronization of whole folders containing Markdown and CSV
+  files, with a preview before initial enrollment.
+- Define repository-local include and exclude rules so generated files,
+  dependencies, fixtures, vendored content, hidden directories, and other
+  unsuitable files are not paired accidentally.
+- Keep folder enrollment visible and reviewable in each workspace manifest,
+  and define predictable behavior for new, moved, renamed, and deleted files.
+- Establish Drive organization, API-load limits, conflict recovery, and bulk
+  unpairing before enabling unattended discovery or remote document creation.
+
 ## Out of scope for the current roadmap
 
 - General-purpose Google Drive mirroring.
 - Permanent public hosting of document images.
 - Pixel-perfect round-tripping of every Google Docs visual object.
-- Synchronizing unpaired documents or arbitrary workspace files.
+- Synchronizing unpaired documents or arbitrary workspace files outside an
+  explicitly configured folder auto-sync scope.

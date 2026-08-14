@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { DEFAULT_DEV_ROOT } from "../src/paths.js";
+import { DEFAULT_WORKSPACE_ROOT } from "../src/paths.js";
 import {
   DOC_STATUS_TITLE,
   documentStatusMarkdown,
@@ -50,10 +50,10 @@ test("strips the visible Google Docs status section from native Markdown export"
   assert.match(remoteDocumentStatusMarkdown(documentPairing, state), /Local file/);
 });
 
-test("shows document paths relative to the shared development root", () => {
+test("shows document paths relative to the configured workspace root", () => {
   const pairing = {
     ...documentPairing,
-    absolutePath: path.join(DEFAULT_DEV_ROOT, "example", "credentials/comms.md"),
+    absolutePath: path.join(DEFAULT_WORKSPACE_ROOT, "example", "credentials/comms.md"),
   };
   assert.match(
     remoteDocumentStatusMarkdown(pairing, state),
@@ -61,11 +61,11 @@ test("shows document paths relative to the shared development root", () => {
   );
   assert.doesNotMatch(
     remoteDocumentStatusMarkdown(pairing, state),
-    new RegExp(DEFAULT_DEV_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    new RegExp(DEFAULT_WORKSPACE_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
 });
 
-test("keeps the portable workspace path outside the shared development root", () => {
+test("keeps the portable workspace path outside the configured workspace root", () => {
   const pairing = {
     ...documentPairing,
     absolutePath: "/private/tmp/example/notes/example.md",

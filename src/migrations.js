@@ -7,7 +7,7 @@ import {
   planParagraphSpacingUpdate,
 } from "./google.js";
 import { loadPairings } from "./manifests.js";
-import { DEFAULT_DEV_ROOT } from "./paths.js";
+import { workspaceRoot } from "./paths.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import { stripDocumentStatus } from "./status.js";
 
@@ -37,7 +37,7 @@ export function planPendingMigrations(document, markdown, applied = {}) {
 export async function runDocumentMigrations({
   dryRun = false,
   documentId,
-  root = process.env.GOOGLE_DOCS_SYNC_ROOT ?? DEFAULT_DEV_ROOT,
+  root = workspaceRoot(),
   logger = console,
   pairings: suppliedPairings,
   services: suppliedServices,

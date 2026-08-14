@@ -9,7 +9,7 @@ import { APP_SUPPORT_DIR } from "./paths.js";
 const KEYCHAIN_SERVICE = "com.roman.google-docs-markdown-sync";
 const KEYCHAIN_ACCOUNT = "google-oauth";
 const SCOPES = [
-  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/documents",
   "https://www.googleapis.com/auth/spreadsheets",
 ];
@@ -81,7 +81,7 @@ export async function getAuthClient({ interactive = false } = {}) {
   const credentials = readKeychainCredentials();
   if (!credentials) {
     if (interactive) return authorize();
-    throw new Error("No OAuth token found. Run `npm run auth` first.");
+    throw new Error("No OAuth token found. Run `gdms auth` first.");
   }
 
   const client = new google.auth.OAuth2(

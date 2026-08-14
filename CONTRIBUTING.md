@@ -73,7 +73,7 @@ npm test
 To inspect a proposed update without changing a Google Doc:
 
 ```sh
-npm run cli -- plan --document-id DOCUMENT_ID
+gdms plan --document-id DOCUMENT_ID
 ```
 
 ## Make the change affect future syncing
@@ -86,15 +86,15 @@ source files.
 After changing anything under `src/`, restart the installed service with:
 
 ```sh
-npm run install-service
+gdms install-service
 ```
 
 That command rewrites the LaunchAgent configuration, stops the existing
 daemon, and starts it again with the current source. Existing Google
 authorization and document pairings remain in place.
 
-If the service is running manually with `npm run sync`, stop it with
-<kbd>Control</kbd>+<kbd>C</kbd> and run `npm run sync` again instead.
+If the service is running manually with `gdms daemon`, stop it with
+<kbd>Control</kbd>+<kbd>C</kbd> and run `gdms daemon` again instead.
 
 No restart is needed after changes limited to tests, documentation, examples,
 or Markdown files being synchronized. Local Markdown edits are picked up
@@ -119,7 +119,7 @@ After restarting, make a small edit to a paired Markdown file and confirm it
 appears in the same Google Doc. For a non-writing connectivity check, run:
 
 ```sh
-npm run heartbeat
+gdms heartbeat
 ```
 
 Service output and errors are written under:

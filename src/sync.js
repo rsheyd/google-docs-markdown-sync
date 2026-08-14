@@ -24,8 +24,18 @@ import {
   applyRemoteTitle,
   loadPairings,
 } from "./manifests.js";
-import { DEFAULT_DEV_ROOT } from "./paths.js";
+import { workspaceRoot } from "./paths.js";
+import { loadSettings } from "./config.js";
 import { loadState, saveState, stateKey } from "./state.js";
+import {
+  cancelMissingDeletion,
+  deletionDue,
+  recordMissingDeletion,
+  retryDeletionNotifications,
+  trashPairedDocument,
+} from "./deletions.js";
+import { createTimestampLogger } from "./progress.js";
+import { readPackageVersion } from "./version.js";
 import {
   getSpreadsheetInfo,
   pullSpreadsheet,
@@ -326,45 +336,149 @@ export async function syncPairing(
 }
 
 export async function runSyncPass({
-  root = process.env.GOOGLE_DOCS_SYNC_ROOT ?? DEFAULT_DEV_ROOT,
+  root = workspaceRoot(),
   interactiveAuth = false,
   logger = console,
   pairings: suppliedPairings,
   targetPaths,
   deferMissingLocal,
+  onProgress,
+  missingLocalWaitMs,
 } = {}) {
   const auth = await getAuthClient({ interactive: interactiveAuth });
   const services = createGoogleServices(auth);
   const discoveredPairings = suppliedPairings ?? (await loadPairings(root));
+  const settings = await loadSettings();
+  const configuredPairings = discoveredPairings.map((pairing) => ({
+    ...pairing,
+    deletionPolicy: settings.deletionPolicy,
+  }));
   const pairings = targetPaths
-    ? discoveredPairings.filter((pairing) =>
+    ? configuredPairings.filter((pairing) =>
         targetPaths.has(pairing.absolutePath),
       )
-    : discoveredPairings;
+    : configuredPairings;
   const state = await loadState();
   const results = [];
 
   for (const pairing of pairings) {
+    const current = results.length + 1;
+    onProgress?.({ type: "start", current, total: pairings.length, pairing });
     const key = stateKey(pairing);
     try {
+      if (
+        pairing.type !== "spreadsheet" &&
+        pairing.deletionPolicy?.mode === "trash-after-grace-period" &&
+        state.documents[key]
+      ) {
+        const localExists = await fs.access(pairing.absolutePath).then(
+          () => true,
+          (error) => {
+            if (error.code === "ENOENT") return false;
+            throw error;
+          },
+        );
+        if (localExists) {
+          await cancelMissingDeletion(pairing, state, { persistState: saveState });
+        } else if (
+          (state.deletions?.[pairing.documentId] &&
+            state.deletions[pairing.documentId].phase !== "notified") ||
+          !deferMissingLocal ||
+          !(await deferMissingLocal(pairing))
+        ) {
+          const deletion = await recordMissingDeletion(pairing, state, {
+            persistState: saveState,
+          });
+          if (deletionDue(pairing, deletion)) {
+            await trashPairedDocument({
+              services,
+              pairing,
+              state,
+              deletion,
+              persistState: saveState,
+            });
+            const completed = { pairing, action: "trash" };
+            results.push(completed);
+            onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+            if (!onProgress) {
+              logger.log(
+                `trash: Google Doc moved to Drive trash and pairing removed: ${pairing.absolutePath}`,
+              );
+            }
+          } else {
+            const remainingSeconds = Math.max(
+              1,
+              Math.ceil(
+                (Date.parse(deletion.missingSince) +
+                  pairing.deletionPolicy.gracePeriodMinutes * 60_000 -
+                  Date.now()) /
+                  1_000,
+              ),
+            );
+            const completed = { pairing, action: "pending-trash", remainingSeconds };
+            results.push(completed);
+            onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+            if (!onProgress) {
+              logger.log(
+                `pending-trash: deletion grace period active; ${remainingSeconds} second(s) remaining: ${pairing.absolutePath}`,
+              );
+            }
+          }
+          continue;
+        } else {
+          const moveDetectionSeconds = Math.ceil((missingLocalWaitMs ?? 0) / 1_000);
+          const completed = { pairing, action: "defer", moveDetectionSeconds };
+          results.push(completed);
+          onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+          if (!onProgress) {
+            logger.log(
+              `missing-local: waiting up to ${moveDetectionSeconds} second(s) to detect a move before starting the ${pairing.deletionPolicy.gracePeriodMinutes}-minute deletion grace period: ${pairing.absolutePath}`,
+            );
+          }
+          continue;
+        }
+      }
       const result = await syncPairing(services, pairing, state.documents[key], {
         deferMissingLocal,
       });
       state.documents[key] = result.state;
-      results.push({ pairing: result.pairing, action: result.action });
-      if (result.action !== "none") {
-        logger.log(`${result.action}: ${result.pairing.absolutePath}`);
+      const completed = {
+        pairing: result.pairing,
+        action: result.action,
+        ...(result.action === "defer"
+          ? { moveDetectionSeconds: Math.ceil((missingLocalWaitMs ?? 0) / 1_000) }
+          : {}),
+      };
+      results.push(completed);
+      onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+      if (!onProgress && result.action !== "none") {
+        if (result.action === "defer") {
+          const destination = pairing.deletionPolicy?.mode === "trash-after-grace-period"
+            ? "starting the deletion grace period"
+            : "restoring from Google Docs";
+          logger.log(
+            `missing-local: waiting up to ${completed.moveDetectionSeconds} second(s) to detect a move before ${destination}: ${result.pairing.absolutePath}`,
+          );
+        } else {
+          logger.log(`${result.action}: ${result.pairing.absolutePath}`);
+        }
       }
-      if (result.pairing.absolutePath !== pairing.absolutePath) {
+      if (!onProgress && result.pairing.absolutePath !== pairing.absolutePath) {
         logger.log(
           `rename: ${pairing.absolutePath} -> ${result.pairing.absolutePath}`,
         );
       }
     } catch (error) {
-      results.push({ pairing, action: "error", error });
-      logger.error(`${pairing.absolutePath}: ${error.message}`);
+      const completed = { pairing, action: "error", error };
+      results.push(completed);
+      onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+      if (!onProgress) logger.error(`${pairing.absolutePath}: ${error.message}`);
     }
   }
+  await retryDeletionNotifications(state, {
+    persistState: saveState,
+    logger,
+  });
   await saveState(state);
   return results;
 }
@@ -387,6 +501,21 @@ export function backoffDelay(
   const exponential = baseMs * 2 ** Math.min(consecutiveFailures, 4);
   const jitter = Math.floor(random() * Math.min(1_000, baseMs));
   return Math.min(60_000, exponential + jitter);
+}
+
+export function shouldDeferMissingPath(
+  firstMissingByPath,
+  filePath,
+  waitMs,
+  now = Date.now(),
+) {
+  if (!firstMissingByPath.has(filePath)) {
+    firstMissingByPath.set(filePath, now);
+    return true;
+  }
+  if (now - firstMissingByPath.get(filePath) < waitMs) return true;
+  firstMissingByPath.delete(filePath);
+  return false;
 }
 
 export function createWatcherManager({ onChange, logger }) {
@@ -464,9 +593,21 @@ export async function runDaemon({
   intervalMs = Number(process.env.GOOGLE_DOCS_SYNC_INTERVAL_MS ?? 5_000),
   debounceMs = Number(process.env.GOOGLE_DOCS_SYNC_DEBOUNCE_MS ?? 750),
   logger = console,
+  getVersion = readPackageVersion,
+  getState = loadState,
+  persistState = saveState,
 } = {}) {
+  logger = createTimestampLogger(logger);
+  const runningVersion = await getVersion();
+  const daemonState = await getState();
+  daemonState.daemon = {
+    version: runningVersion,
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+  };
+  await persistState(daemonState);
   logger.log(
-    `Google Docs Markdown Sync started (${debounceMs}ms local debounce, ${intervalMs}ms remote poll).`,
+    `Google Docs Markdown Sync ${runningVersion} started (${debounceMs}ms local debounce, ${intervalMs}ms remote poll).`,
   );
   let stopping = false;
   let sleepTimer;
@@ -476,7 +617,7 @@ export async function runDaemon({
   const pendingMoves = new Map();
   const deferredMissingPaths = new Map();
   const enqueue = createSingleFlight();
-  const root = process.env.GOOGLE_DOCS_SYNC_ROOT ?? DEFAULT_DEV_ROOT;
+  const root = workspaceRoot();
 
   const watcherManager = createWatcherManager({
     logger,
@@ -511,6 +652,7 @@ export async function runDaemon({
               root,
               targetPaths,
               deferMissingLocal,
+              missingLocalWaitMs: intervalMs * 2,
               logger,
             });
           } finally {
@@ -527,13 +669,11 @@ export async function runDaemon({
 
   function deferMissingLocal(pairing) {
     if (pendingMoves.has(pairing.absolutePath)) return true;
-    const deferredAt = deferredMissingPaths.get(pairing.absolutePath);
-    if (deferredAt && Date.now() - deferredAt <= intervalMs * 2) {
-      deferredMissingPaths.delete(pairing.absolutePath);
-      return false;
-    }
-    deferredMissingPaths.set(pairing.absolutePath, Date.now());
-    return true;
+    return shouldDeferMissingPath(
+      deferredMissingPaths,
+      pairing.absolutePath,
+      intervalMs * 2,
+    );
   }
 
   const stop = () => {
@@ -548,6 +688,13 @@ export async function runDaemon({
   let consecutiveFailures = 0;
   try {
     while (!stopping) {
+      const onDiskVersion = await getVersion();
+      if (onDiskVersion !== runningVersion) {
+        logger.log(
+          `version-change: ${runningVersion} -> ${onDiskVersion}; exiting so the LaunchAgent can restart GDMS. Foreground users should run \`gdms daemon\` again.`,
+        );
+        break;
+      }
       const pairings = await loadPairings(root);
       await watcherManager.refresh(pairings);
       const results = await enqueue(() =>
@@ -557,6 +704,7 @@ export async function runDaemon({
             (pairing) => !pendingMoves.has(pairing.absolutePath),
           ),
           deferMissingLocal,
+          missingLocalWaitMs: intervalMs * 2,
           logger,
         }),
       );

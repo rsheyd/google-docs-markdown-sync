@@ -1,5 +1,5 @@
 import path from "node:path";
-import { DEFAULT_DEV_ROOT } from "./paths.js";
+import { workspaceRoot } from "./paths.js";
 
 export const MARKDOWN_STATUS_START = "<!-- google-docs-sync:status:start -->";
 export const MARKDOWN_STATUS_END = "<!-- google-docs-sync:status:end -->";
@@ -25,7 +25,7 @@ function directionLabel(writer, spreadsheet = false) {
 
 function documentLocalPath(pairing) {
   if (!pairing.absolutePath) return pairing.markdownPath;
-  const relative = path.relative(DEFAULT_DEV_ROOT, pairing.absolutePath);
+  const relative = path.relative(workspaceRoot(), pairing.absolutePath);
   if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
     return relative;
   }

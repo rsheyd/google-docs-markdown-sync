@@ -1,11 +1,14 @@
 {
   "name": "google-docs-markdown-sync",
-  "version": "0.4.1",
+  "version": "0.7.2",
   "private": true,
   "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "bin": {
+    "gdms": "./src/cli.js"
   },
   "scripts": {
     "auth": "node src/cli.js auth",

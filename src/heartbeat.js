@@ -111,6 +111,56 @@ export async function sendHeartbeatEmail({
   return body;
 }
 
+export async function sendDeletionEmail({
+  token = readResendToken(),
+  recipient =
+    process.env.GOOGLE_DOCS_SYNC_DELETE_TO ??
+    process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO,
+  sender =
+    process.env.GOOGLE_DOCS_SYNC_DELETE_FROM ??
+    process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_FROM ??
+    "Google Docs Sync <onboarding@resend.dev>",
+  deletion,
+  fetchImplementation = fetch,
+} = {}) {
+  if (!recipient) {
+    throw new Error(
+      "No deletion email recipient is configured. Set GOOGLE_DOCS_SYNC_DELETE_TO.",
+    );
+  }
+  const response = await fetchImplementation("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `gdms-delete-${deletion.documentId}-${deletion.trashedAt}`,
+    },
+    body: JSON.stringify({
+      from: sender,
+      to: [recipient],
+      subject: `GDMS moved “${deletion.name ?? "Google Doc"}” to trash`,
+      text: [
+        "GDMS moved a paired Google Doc to Google Drive trash.",
+        "",
+        `Document: ${deletion.name ?? "Google Doc"}`,
+        `Google Doc: ${deletion.documentUrl}`,
+        `Local Markdown: ${deletion.absolutePath}`,
+        `Deletion policy: ${deletion.policyDescription}`,
+        `Moved to trash: ${deletion.trashedAt}`,
+        "",
+        "You can recover the document from Google Drive trash. The GDMS pairing has been removed.",
+      ].join("\n"),
+    }),
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(
+      `Resend rejected the deletion email (${response.status}): ${body.message ?? JSON.stringify(body)}`,
+    );
+  }
+  return body;
+}
+
 export async function runHeartbeat({ recipient, sender } = {}) {
   const result = await verifySyncHealth();
   const email = await sendHeartbeatEmail({ result, recipient, sender });

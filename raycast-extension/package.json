@@ -3,8 +3,8 @@
   "title": "GDMS",
   "version": "0.3.1",
   "private": true,
-  "description": "Pair the active Google Doc or Sheet with a Codex workspace",
-  "author": "Roman",
+  "description": "Pair the active Google Doc or Sheet with a local workspace",
+  "author": "GDMS Contributors",
   "license": "MIT",
   "icon": "icon.png",
   "main": "src/pair-google-doc.tsx",
@@ -27,15 +27,15 @@
     {
       "name": "pair-google-doc",
       "title": "Pair Google Doc or Sheet with GDMS",
-      "description": "Pair the active Chrome Google Doc with Markdown or Sheet with CSV files",
+      "description": "Pair the active browser's Google Doc with Markdown or Sheet with CSV files",
       "mode": "view"
     }
   ],
   "preferences": [
     {
-      "name": "devRoot",
-      "title": "Codex Workspaces Root",
-      "description": "Folder containing Codex workspaces",
+      "name": "workspaceRoot",
+      "title": "GDMS Workspaces Root",
+      "description": "Folder containing the local workspaces GDMS should search",
       "type": "directory",
       "required": true
     },
@@ -55,11 +55,10 @@
     },
     {
       "name": "nodePath",
-      "title": "Node Executable",
-      "description": "Absolute path to Node.js",
+      "title": "Node Executable Override",
+      "description": "Optional absolute path to Node.js; leave blank to use Raycast's Node runtime",
       "type": "textfield",
-      "required": true,
-      "default": "/opt/homebrew/bin/node"
+      "required": false
     }
   ]
 }

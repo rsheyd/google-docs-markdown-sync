@@ -1,7 +1,14 @@
 import os from "node:os";
 import path from "node:path";
 
-export const DEFAULT_DEV_ROOT = path.join(os.homedir(), "dev");
+export const DEFAULT_WORKSPACE_ROOT = path.join(
+  os.homedir(),
+  "Documents",
+  "GDMS",
+);
+export function workspaceRoot(env = process.env) {
+  return env.GOOGLE_DOCS_SYNC_ROOT?.trim() || DEFAULT_WORKSPACE_ROOT;
+}
 export const MANIFEST_NAME = "google-docs-sync.json";
 export const APP_SUPPORT_DIR = path.join(
   os.homedir(),
@@ -11,6 +18,7 @@ export const APP_SUPPORT_DIR = path.join(
 );
 export const STATE_PATH = path.join(APP_SUPPORT_DIR, "state.json");
 export const R2_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "r2.json");
+export const SETTINGS_PATH = path.join(APP_SUPPORT_DIR, "settings.json");
 export const INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");
 export const LOG_PATH = path.join(APP_SUPPORT_DIR, "service.log");
 export const ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "service-error.log");

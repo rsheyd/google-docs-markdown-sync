@@ -7,7 +7,7 @@ import {
   rollbackAssetRelocation,
 } from "./images.js";
 import {
-  DEFAULT_DEV_ROOT,
+  workspaceRoot,
   INDEX_PATH,
   MANIFEST_NAME,
 } from "./paths.js";
@@ -78,6 +78,22 @@ export function validateManifest(manifest, manifestPath) {
   });
 }
 
+export async function removeDocumentPairing(pairing) {
+  if (pairing.type === "spreadsheet") {
+    throw new Error("Deletion propagation currently supports Markdown/Google Docs only.");
+  }
+  const manifest = await readJson(pairing.manifestPath);
+  const nextPairings = manifest.pairings.filter(
+    (item) => item.documentId !== pairing.documentId,
+  );
+  if (nextPairings.length === manifest.pairings.length) return false;
+  await writeJsonAtomic(pairing.manifestPath, {
+    ...manifest,
+    pairings: nextPairings,
+  });
+  return true;
+}
+
 async function walkForManifests(directory, results) {
   let entries;
   try {
@@ -99,7 +115,7 @@ async function walkForManifests(directory, results) {
   }
 }
 
-export async function discoverManifestPaths(root = DEFAULT_DEV_ROOT) {
+export async function discoverManifestPaths(root = workspaceRoot()) {
   const indexed = await readJson(INDEX_PATH, { version: 1, manifests: [] });
   const results = new Set(indexed.manifests ?? []);
   await walkForManifests(root, results);
@@ -118,7 +134,7 @@ export async function discoverManifestPaths(root = DEFAULT_DEV_ROOT) {
   return existing;
 }
 
-export async function loadPairings(root = DEFAULT_DEV_ROOT) {
+export async function loadPairings(root = workspaceRoot()) {
   const manifestPaths = await discoverManifestPaths(root);
   const pairings = [];
   for (const manifestPath of manifestPaths) {

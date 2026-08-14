@@ -1,6 +1,6 @@
 # GDMS — Google Docs/Sheets ↔ Markdown/CSV Sync
 
-GDMS is a personal macOS synchronization service that keeps selected Google
+GDMS is a self-hosted macOS synchronization service that keeps selected Google
 Docs paired with Markdown files and selected Google Sheets paired with CSV
 directories in local workspaces.
 
@@ -14,7 +14,7 @@ making its supported content available as ordinary local files for Codex,
 Git, editors, and other file-based tools. Only explicitly paired documents are
 synchronized; repositories and unrelated files are never copied to Drive.
 
-Current release: **0.4.1** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
+Current release: **0.7.2** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 
 ## What it does
 
@@ -26,10 +26,14 @@ Current release: **0.4.1** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 - Preserves document IDs, URLs, and unchanged Google Docs ranges.
 - Creates and pairs Docs from Markdown or Sheets from CSV through Finder Quick
   Actions.
-- Pairs the active Chrome Doc or Sheet through a personal Raycast command.
+- Pairs the active Doc or Sheet from Safari or a supported Chromium browser
+  through an optional Raycast command.
 - Runs automatically after login and can send an independent weekly health
   heartbeat.
 - Shows human-readable sync status and links on both sides of each pairing.
+- Can explicitly delete both sides of a Markdown/Google Docs pairing, or
+  globally opt in to moving Docs to Drive trash after a missing-file grace period,
+  with an email notification after the trash operation succeeds.
 
 ## Is it for me?
 
@@ -42,11 +46,12 @@ Before installing, expect to configure:
 
 - Node.js 22 or newer;
 - a Google Cloud OAuth desktop client with Drive, Docs, and Sheets APIs;
-- Google Chrome and Raycast for the active-document shortcut workflow;
+- Safari or a supported Chromium browser, plus Raycast, for the
+  active-document shortcut workflow;
 - Cloudflare R2 and the included Worker to push local images to Docs; and
 - optionally, Resend for the weekly success email.
 
-Chrome and Raycast are not required when using only the CLI or Finder Quick
+Raycast and a supported browser are not required when using only the CLI or Finder Quick
 Actions. Remote images can still be pulled without R2, but local image
 additions and replacements require it.
 
@@ -59,15 +64,17 @@ After completing the Google authorization steps in [INSTALL.md](INSTALL.md):
 
 ```sh
 npm install
-npm run auth
-npm run install-service
-npm run install-finder-action
+npm link
+gdms auth
+gdms install-service
+gdms install-finder-action
 ```
 
 Then choose one starting point:
 
-- Open a Google Doc or Sheet in Chrome and run **Pair Google Doc or Sheet with
-  GDMS** from Raycast.
+- Bring a Google Doc or Sheet to the front in Safari, Chrome, Chromium, Brave,
+  or Microsoft Edge and run **Pair Google Doc or Sheet with GDMS** from
+  Raycast.
 - Control-click local Markdown or CSV files in Finder and use the matching
   **Sync with Google… (GDMS)** Quick Action.
 - Pair or create a document directly with the commands in
@@ -104,6 +111,8 @@ single-flight, and failed remote requests use bounded exponential backoff.
 For the manifest format, see [INSTALL.md](INSTALL.md#pairing-manifest). For
 detailed synchronization semantics, service management, logs, heartbeat
 configuration, and troubleshooting, see [OPERATIONS.md](OPERATIONS.md).
+The consolidated [command reference](OPERATIONS.md#command-reference) lists
+every `gdms` command, its arguments, and what it can modify.
 For the user-visible mapping from Markdown blank lines, headings, paragraphs,
 and lists to Google Docs formatting, see [FORMATTING.md](FORMATTING.md).
 
@@ -134,7 +143,9 @@ Important current limitations:
 - Floating images, drawings, linked charts, cropping, rotation, and other
   advanced visual effects are unsupported.
 - Deleting a generated status artifact does not unpair a document; it is
-  recreated on a later sync pass. Explicit unpairing is not implemented yet.
+  recreated on a later sync pass.
+- Deletion propagation currently applies only to Markdown/Google Docs
+  pairings. Missing CSV directories do not trash paired Google Sheets.
 
 The complete image model, safety rules, and remaining hardening work are in
 [IMAGE-SYNC.md](IMAGE-SYNC.md). Planned conflict, pairing-control, and fidelity
@@ -144,7 +155,7 @@ work is in [ROADMAP.md](ROADMAP.md).
 
 - `src/`: synchronization service, Google APIs, CLI, installers, status, image
   staging, and heartbeat.
-- `raycast-extension/`: personal active-document pairing command.
+- `raycast-extension/`: optional active-browser document pairing command.
 - `cloudflare/image-gateway-worker.js`: authenticated private-R2 fetch gateway.
 - `test/`: Node unit tests for Docs, Sheets, images, manifests, and operations.
 - [INSTALL.md](INSTALL.md): setup and first-use guide.

@@ -35,8 +35,11 @@
   detailed feature plans.
 - `IMAGE-SYNC.md`: Design and phased implementation plan for R2-backed two-way
   inline image synchronization.
+- `NAMESPACE-MIGRATION.md`: Compatibility and rollout plan for replacing the
+  legacy application, launchd, and Keychain namespace.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
+- `outreach/`: Durable drafts for project announcements and community posts.
 - `.gitignore`: Generated dependency/build output exclusions.
 - `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.
@@ -49,6 +52,7 @@
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,
   synchronization, and heartbeat checks.
-- `raycast-extension/`: Personal Raycast extension for active-document pairing.
+- `raycast-extension/`: Optional Raycast extension for active-browser document
+  pairing.
 - `examples/google-docs-sync.example.json`: Inert example workspace pairing
   file; its name intentionally does not match the live manifest scanner.

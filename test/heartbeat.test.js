@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   assertDaemonRunning,
+  sendDeletionEmail,
   sendHeartbeatEmail,
   verifySyncHealth,
 } from "../src/heartbeat.js";
@@ -10,6 +11,32 @@ test("accepts a running synchronization daemon", () => {
   assert.doesNotThrow(() =>
     assertDaemonRunning({ exec: () => "state = running\n" }),
   );
+});
+
+test("sends an idempotent deletion email with recovery context", async () => {
+  let request;
+  const result = await sendDeletionEmail({
+    token: "secret",
+    recipient: "person@example.com",
+    sender: "Sync <sync@example.com>",
+    deletion: {
+      documentId: "doc-1",
+      name: "Note",
+      documentUrl: "https://docs.google.com/document/d/doc-1/edit",
+      absolutePath: "/workspace/note.md",
+      policyDescription: "automatic after 60 minute(s) missing",
+      trashedAt: "2026-08-14T12:00:00.000Z",
+    },
+    fetchImplementation: async (url, options) => {
+      request = { url, options };
+      return { ok: true, json: async () => ({ id: "email-delete" }) };
+    },
+  });
+  const body = JSON.parse(request.options.body);
+  assert.equal(request.options.headers["Idempotency-Key"], "gdms-delete-doc-1-2026-08-14T12:00:00.000Z");
+  assert.match(body.text, /Google Drive trash/);
+  assert.match(body.text, /\/workspace\/note.md/);
+  assert.deepEqual(result, { id: "email-delete" });
 });
 
 test("rejects a stopped synchronization daemon", () => {

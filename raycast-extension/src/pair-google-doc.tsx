@@ -5,6 +5,7 @@ import {
   Icon,
   List,
   Toast,
+  getFrontmostApplication,
   getPreferenceValues,
   popToRoot,
   showToast,
@@ -27,10 +28,10 @@ const SKIPPED = new Set([
 ]);
 
 type Preferences = {
-  devRoot: string;
+  workspaceRoot: string;
   serviceRoot: string;
   oauthClientPath: string;
-  nodePath: string;
+  nodePath?: string;
 };
 
 type ActiveResource = {
@@ -39,10 +40,33 @@ type ActiveResource = {
   title: string;
 };
 
-async function activeChromeResource(): Promise<ActiveResource> {
-  const script = [
-    'tell application "Google Chrome"',
-    'if (count of windows) is 0 then error "Google Chrome has no open windows."',
+const CHROMIUM_BROWSERS = new Map([
+  ["com.google.Chrome", "Google Chrome"],
+  ["com.google.Chrome.beta", "Google Chrome Beta"],
+  ["org.chromium.Chromium", "Chromium"],
+  ["com.brave.Browser", "Brave Browser"],
+  ["com.microsoft.edgemac", "Microsoft Edge"],
+]);
+
+async function activeBrowserResource(): Promise<ActiveResource> {
+  const bundleId = (await getFrontmostApplication()).bundleId ?? "";
+  const chromiumName = CHROMIUM_BROWSERS.get(bundleId);
+  const browserName = bundleId === "com.apple.Safari" ? "Safari" : chromiumName;
+  if (!browserName) {
+    throw new Error(
+      "Open this command from Safari, Chrome, Chromium, Brave, or Microsoft Edge.",
+    );
+  }
+  const script = bundleId === "com.apple.Safari" ? [
+    'tell application "Safari"',
+    'if (count of windows) is 0 then error "Safari has no open windows."',
+    "set activeURL to URL of current tab of front window",
+    "set activeTitle to name of current tab of front window",
+    "return activeURL & linefeed & activeTitle",
+    "end tell",
+  ] : [
+    `tell application "${chromiumName}"`,
+    `if (count of windows) is 0 then error "${chromiumName} has no open windows."`,
     "set activeURL to URL of active tab of front window",
     "set activeTitle to title of active tab of front window",
     "return activeURL & linefeed & activeTitle",
@@ -57,7 +81,7 @@ async function activeChromeResource(): Promise<ActiveResource> {
       ? "spreadsheet"
       : undefined;
   if (!type) {
-    throw new Error("Chrome's active tab is not a Google Doc or Sheet.");
+    throw new Error(`${browserName}'s active tab is not a Google Doc or Sheet.`);
   }
   const title = titleLines
     .join(" ")
@@ -131,7 +155,7 @@ function PairForm({
     });
     try {
       await executeFile(
-        preferences.nodePath,
+        preferences.nodePath?.trim() || process.execPath,
         [
           path.join(preferences.serviceRoot, "src", "cli.js"),
           isSheet ? "pair-sheet" : "pair",
@@ -200,8 +224,8 @@ export default function PairGoogleDoc() {
 
   useEffect(() => {
     Promise.all([
-      activeChromeResource(),
-      collectFolders(preferences.devRoot),
+      activeBrowserResource(),
+      collectFolders(preferences.workspaceRoot),
     ])
       .then(([activeResource, discoveredFolders]) => {
         setResource(activeResource);
@@ -211,18 +235,18 @@ export default function PairGoogleDoc() {
         setError(reason instanceof Error ? reason.message : String(reason)),
       )
       .finally(() => setLoading(false));
-  }, [preferences.devRoot]);
+  }, [preferences.workspaceRoot]);
 
   const items = useMemo(
     () =>
       folders.map((folder) => ({
         folder,
         title:
-          folder === preferences.devRoot
+          folder === preferences.workspaceRoot
             ? path.basename(folder)
-            : path.relative(preferences.devRoot, folder),
+            : path.relative(preferences.workspaceRoot, folder),
       })),
-    [folders, preferences.devRoot],
+    [folders, preferences.workspaceRoot],
   );
 
   if (error) {

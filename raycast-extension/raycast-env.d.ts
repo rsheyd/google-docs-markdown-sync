@@ -8,14 +8,14 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** Codex Workspaces Root - Folder containing Codex workspaces */
-  "devRoot": string,
+  /** GDMS Workspaces Root - Folder containing the local workspaces GDMS should search */
+  "workspaceRoot": string,
   /** Sync Service Root - Folder containing this project's src/cli.js */
   "serviceRoot": string,
   /** Google OAuth Client JSON - OAuth desktop client JSON stored outside Git */
   "oauthClientPath": string,
-  /** Node Executable - Absolute path to Node.js */
-  "nodePath": string
+  /** Node Executable Override - Optional absolute path to Node.js; leave blank to use Raycast's Node runtime */
+  "nodePath"?: string
 }
 
 /** Preferences accessible in all the extension's commands */

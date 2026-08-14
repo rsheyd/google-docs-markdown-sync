@@ -15,7 +15,8 @@ Required for every installation:
 
 Optional components depend on the workflow:
 
-- Google Chrome and Raycast for pairing the active browser document;
+- Safari or a supported Chromium browser, plus Raycast, for pairing the active
+  browser document;
 - Cloudflare R2 for adding or replacing local images in Google Docs; and
 - Resend for the independent weekly health email.
 
@@ -25,11 +26,36 @@ Clone or download the repository, enter its directory, and run:
 
 ```sh
 npm install
+npm link
 ```
 
-GDMS runs directly from this checkout. Moving or deleting the checkout later
+`npm link` installs the `gdms` command as a global symlink to this checkout.
+Confirm the command and both CLI/daemon versions with `gdms --version`. Before
+the service is installed, the daemon line reports `not running`. GDMS runs
+directly from this checkout. Moving or deleting the checkout later
 will break the installed LaunchAgent and Finder Quick Actions until they are
 reinstalled from the new location.
+
+## Choose the workspace root
+
+GDMS searches `~/Documents/GDMS` for workspace manifests by default. Create
+that directory before the first pairing:
+
+```sh
+mkdir -p "$HOME/Documents/GDMS"
+```
+
+To keep workspaces elsewhere, set `GOOGLE_DOCS_SYNC_ROOT` to their common
+parent before running GDMS commands. Continue the installation in the same
+shell so the later `gdms install-service` command retains the configured root:
+
+```sh
+export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
+```
+
+Existing installations that keep manifests under `~/dev` should set the
+variable to `$HOME/dev` and run `gdms install-service`. The Raycast extension
+has a matching **GDMS Workspaces Root** preference.
 
 ## Authorize Google
 
@@ -50,33 +76,38 @@ export GOOGLE_DOCS_SYNC_OAUTH_CLIENT="/absolute/path/to/client_secret.json"
 Then authorize GDMS:
 
 ```sh
-npm run auth
+gdms auth
 ```
 
-The service requests Drive read access, Docs access for same-document updates,
+The service requests Drive access (including moving explicitly paired Docs to
+trash), Docs access for same-document updates,
 and Sheets access for same-spreadsheet updates. Refresh tokens are stored in
 the macOS Keychain. Google OAuth apps left in external **Testing** status issue
-refresh tokens that expire after seven days; an unattended personal service
+refresh tokens that expire after seven days; an unattended synchronization service
 should use an appropriately configured production consent screen.
 
-Existing pre-Sheets installations must run `npm run auth` again to grant the
+Existing pre-Sheets installations must run `gdms auth` again to grant the
 Sheets scope.
 
 ## Install the background service
 
 ```sh
-npm run install-service
+gdms install-service
 ```
 
 This creates and starts a per-user LaunchAgent. The service watches local
 changes and polls Google automatically after login. Confirm connectivity with:
 
 ```sh
-npm run heartbeat
+gdms heartbeat
 ```
 
 The heartbeat requires at least one pairing. If none exists yet, continue with
 the next section first.
+
+The daemon records its loaded version in local runtime state. Future versioned
+source updates cause it to exit cleanly, after which LaunchAgent `KeepAlive`
+automatically starts the new code.
 
 ## Pair your first document
 
@@ -85,7 +116,7 @@ the next section first.
 Create a Google Doc from an existing Markdown file and register the pairing:
 
 ```sh
-npm run cli -- create \
+gdms create \
   --file "notes/example.md" \
   --name "Example"
 ```
@@ -96,9 +127,9 @@ title is derived from the filename with the current month appended.
 ### Start from a Google Doc
 
 ```sh
-npm run cli -- pair \
+gdms pair \
   --url "https://docs.google.com/document/d/DOCUMENT_ID/edit" \
-  --workspace "$HOME/dev/example-project" \
+  --workspace "$HOME/Documents/GDMS/example-project" \
   --file "notes/example.md"
 ```
 
@@ -108,7 +139,7 @@ Create a Google Sheet with one tab per selected CSV. The files must share a
 parent directory and are moved into a new paired subdirectory:
 
 ```sh
-npm run cli -- create-sheet \
+gdms create-sheet \
   --file "Summary.csv" \
   --file "Transactions.csv" \
   --name "Budget"
@@ -117,18 +148,57 @@ npm run cli -- create-sheet \
 ### Start from a Google Sheet
 
 ```sh
-npm run cli -- pair-sheet \
+gdms pair-sheet \
   --url "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" \
-  --workspace "$HOME/dev/example-project" \
+  --workspace "$HOME/Documents/GDMS/example-project" \
   --directory "data/budget"
 ```
+
+## Optional deletion propagation
+
+After creating at least one Markdown/Google Docs pairing, enable automatic
+deletion once for every existing and future pairing on this Mac:
+
+```sh
+gdms configure-deletion \
+  --grace-period-minutes 60 \
+  --to "you@example.com"
+```
+
+Add `--from "Google Docs Sync <sync@your-verified-domain>"` if Resend requires
+a verified sender. The non-secret global policy is stored in
+`~/Library/Application Support/google-docs-markdown-sync/settings.json`, not in
+individual workspace manifests.
+
+Store a Resend API token in macOS Keychain. Keeping `-w` last prompts securely
+instead of putting the token in shell history or process arguments:
+
+```sh
+security add-generic-password -U \
+  -s com.roman.google-docs-markdown-sync -a resend-api -w
+```
+
+The running service reads this global setting on every sync pass, so enabling
+or disabling it does not require reinstalling or restarting the service.
+
+The policy is opt-in for this GDMS installation. Until it is enabled, GDMS
+continues restoring a missing Markdown file from its Google Doc. Disable it
+globally at any time with:
+
+```sh
+gdms configure-deletion --disable
+```
+
+It currently applies only to
+Markdown/Google Docs pairings; deleting a paired CSV directory never moves its
+Google Sheet to trash.
 
 ## Finder Quick Actions
 
 Install both Finder actions with:
 
 ```sh
-npm run install-finder-action
+gdms install-finder-action
 ```
 
 For Markdown, Control-click one or more `.md` files and choose **Quick Actions
@@ -146,9 +216,10 @@ executable because the workflows store absolute paths.
 
 ## Raycast setup
 
-The Raycast command reads the active Chrome Google Doc or Sheet, searches
-project folders below `~/dev`, and registers the chosen local file or
-directory.
+The Raycast command reads the active Google Doc or Sheet from the frontmost
+Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It
+searches below the configured **GDMS Workspaces Root** and registers the chosen
+local file or directory.
 
 ```sh
 cd raycast-extension
@@ -158,6 +229,10 @@ npm run dev
 
 Keep the development command running while using the extension. `npm run
 build` compiles it but does not register it in Raycast.
+
+The optional **Node Executable Override** preference can point to another
+Node.js 22+ executable. When it is blank, the extension uses Raycast's Node
+runtime instead of assuming a Homebrew installation path.
 
 Raycast extensions cannot provide a default global hotkey. In Raycast
 Settings, open **Extensions**, find **GDMS → Pair Google Doc or Sheet with
@@ -174,7 +249,7 @@ read/write for that bucket. Do not enable permanent public access. Configure
 the non-secret values:
 
 ```sh
-npm run cli -- configure-r2 --account-id ACCOUNT_ID --bucket BUCKET_NAME \
+gdms configure-r2 --account-id ACCOUNT_ID --bucket BUCKET_NAME \
   --gateway-url https://WORKER.ACCOUNT.workers.dev
 ```
 
@@ -204,7 +279,7 @@ staged objects immediately; the lifecycle rule covers interrupted requests.
 Restart GDMS after configuration:
 
 ```sh
-npm run install-service
+gdms install-service
 ```
 
 See [IMAGE-SYNC.md](IMAGE-SYNC.md) for the transport design and safety model.
@@ -237,6 +312,14 @@ Each participating workspace tracks `google-docs-sync.json`:
 Paths are relative to the manifest. Do not add tokens, hashes, revisions, or
 timestamps. Spreadsheet directories also contain a managed portable
 `.google-sheets-sync.json` tab map and a human-readable `SYNC-STATUS.md`.
+
+Global deletion behavior is deliberately absent from this portable manifest.
+Configure it once for the entire installation with
+[`configure-deletion`](#optional-deletion-propagation).
+
+Upgrading from GDMS 0.4.x or earlier requires running `gdms auth` once to
+grant the Drive write scope used for trash operations, followed by
+`gdms install-service` to refresh the background service configuration.
 
 ## Optional weekly heartbeat
 
