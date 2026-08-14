@@ -3,8 +3,7 @@ import path from "node:path";
 
 export const DEFAULT_WORKSPACE_ROOT = path.join(
   os.homedir(),
-  "Documents",
-  "GDMS",
+  "dev",
 );
 export function workspaceRoot(env = process.env) {
   return env.GOOGLE_DOCS_SYNC_ROOT?.trim() || DEFAULT_WORKSPACE_ROOT;

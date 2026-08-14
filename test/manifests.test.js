@@ -52,12 +52,12 @@ test("extracts spreadsheet IDs and resolves spreadsheet directories", () => {
         directoryPath: "data/budget",
       }],
     },
-    "/Users/example/Documents/GDMS/example/google-docs-sync.json",
+    "/Users/example/dev/example/google-docs-sync.json",
   );
   assert.equal(pairing.type, "spreadsheet");
   assert.equal(
     pairing.absolutePath,
-    "/Users/example/Documents/GDMS/example/data/budget",
+    "/Users/example/dev/example/data/budget",
   );
 });
 
@@ -76,7 +76,7 @@ test("reads local paths from mixed document and spreadsheet pairings", () => {
 });
 
 test("resolves portable manifest paths inside the workspace", () => {
-  const manifestPath = "/Users/example/Documents/GDMS/example/google-docs-sync.json";
+  const manifestPath = "/Users/example/dev/example/google-docs-sync.json";
   const [pairing] = validateManifest(
     {
       version: 1,
@@ -92,7 +92,7 @@ test("resolves portable manifest paths inside the workspace", () => {
   );
   assert.equal(
     pairing.absolutePath,
-    path.join("/Users/example/Documents/GDMS/example", "notes/example.md"),
+    path.join("/Users/example/dev/example", "notes/example.md"),
   );
 });
 
@@ -103,7 +103,7 @@ test("rejects paths that escape a workspace", () => {
         version: 1,
         pairings: [{ documentId: "abc", markdownPath: "../outside.md" }],
       },
-      "/Users/example/Documents/GDMS/example/google-docs-sync.json",
+      "/Users/example/dev/example/google-docs-sync.json",
     ),
   );
 });

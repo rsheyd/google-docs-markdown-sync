@@ -8,7 +8,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 
 type ExtensionPreferences = {
-  /** GDMS Workspaces Root - Folder containing the local workspaces GDMS should search */
+  /** Local Workspaces Root - Folder containing the local workspaces GDMS should search */
   "workspaceRoot": string,
   /** Sync Service Root - Folder containing this project's src/cli.js */
   "serviceRoot": string,

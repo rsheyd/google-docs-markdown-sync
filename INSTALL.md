@@ -38,11 +38,12 @@ reinstalled from the new location.
 
 ## Choose the workspace root
 
-GDMS searches `~/Documents/GDMS` for workspace manifests by default. Create
-that directory before the first pairing:
+GDMS searches `~/dev` for workspace manifests by default. This suits local
+repositories and Codex workspaces without making them GDMS-specific. Create
+the directory if it does not already exist:
 
 ```sh
-mkdir -p "$HOME/Documents/GDMS"
+mkdir -p "$HOME/dev"
 ```
 
 To keep workspaces elsewhere, set `GOOGLE_DOCS_SYNC_ROOT` to their common
@@ -53,9 +54,7 @@ shell so the later `gdms install-service` command retains the configured root:
 export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
 ```
 
-Existing installations that keep manifests under `~/dev` should set the
-variable to `$HOME/dev` and run `gdms install-service`. The Raycast extension
-has a matching **GDMS Workspaces Root** preference.
+The Raycast extension has a matching **Local Workspaces Root** preference.
 
 ## Authorize Google
 
@@ -129,7 +128,7 @@ title is derived from the filename with the current month appended.
 ```sh
 gdms pair \
   --url "https://docs.google.com/document/d/DOCUMENT_ID/edit" \
-  --workspace "$HOME/Documents/GDMS/example-project" \
+  --workspace "$HOME/dev/example-project" \
   --file "notes/example.md"
 ```
 
@@ -150,7 +149,7 @@ gdms create-sheet \
 ```sh
 gdms pair-sheet \
   --url "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" \
-  --workspace "$HOME/Documents/GDMS/example-project" \
+  --workspace "$HOME/dev/example-project" \
   --directory "data/budget"
 ```
 
@@ -218,7 +217,7 @@ executable because the workflows store absolute paths.
 
 The Raycast command reads the active Google Doc or Sheet from the frontmost
 Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It
-searches below the configured **GDMS Workspaces Root** and registers the chosen
+searches below the configured **Local Workspaces Root** and registers the chosen
 local file or directory.
 
 ```sh

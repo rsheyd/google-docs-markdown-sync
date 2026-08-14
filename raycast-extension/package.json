@@ -34,7 +34,7 @@
   "preferences": [
     {
       "name": "workspaceRoot",
-      "title": "GDMS Workspaces Root",
+      "title": "Local Workspaces Root",
       "description": "Folder containing the local workspaces GDMS should search",
       "type": "directory",
       "required": true

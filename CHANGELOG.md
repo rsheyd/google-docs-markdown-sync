@@ -52,9 +52,9 @@ All notable changes to this project are documented in this file.
 - Make `gdms --version` and `gdms version` report both the checked-out CLI
   version and the live daemon version, including a short-lived restart-pending
   warning when they differ.
-- Use `~/Documents/GDMS` as the neutral default workspace root, preserve an
-  explicit `GOOGLE_DOCS_SYNC_ROOT` in the installed service, and document the
-  upgrade setting for installations that use `~/dev`.
+- Use `~/dev` as the conventional default for repositories and Codex
+  workspaces, preserve an explicit `GOOGLE_DOCS_SYNC_ROOT` in the installed
+  service, and keep the root configurable in Raycast.
 - Generalize the Raycast pairing workflow for Safari and common Chromium
   browsers, remove its machine-specific Node path, and use project-oriented
   author and workspace wording.

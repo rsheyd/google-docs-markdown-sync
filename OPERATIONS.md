@@ -332,7 +332,7 @@ gdms install-finder-action
 Workspace manifests use relative paths and remain portable. Runtime state and
 Keychain credentials remain under the current macOS user account.
 
-The default workspace root is `~/Documents/GDMS`. To use another root, export
+The default workspace root is `~/dev`. To use another root, export
 `GOOGLE_DOCS_SYNC_ROOT` and reinstall the service so launchd receives it:
 
 ```sh

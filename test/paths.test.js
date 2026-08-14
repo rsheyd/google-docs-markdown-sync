@@ -7,10 +7,10 @@ import {
   workspaceRoot,
 } from "../src/paths.js";
 
-test("uses a neutral workspace root under Documents", () => {
+test("uses the conventional local development root", () => {
   assert.equal(
     DEFAULT_WORKSPACE_ROOT,
-    path.join(os.homedir(), "Documents", "GDMS"),
+    path.join(os.homedir(), "dev"),
   );
   assert.equal(workspaceRoot({}), DEFAULT_WORKSPACE_ROOT);
 });
