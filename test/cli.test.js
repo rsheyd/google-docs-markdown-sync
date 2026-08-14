@@ -26,6 +26,7 @@ test("prints gdms-oriented help without an error", async () => {
   const { stdout } = await execute(process.execPath, [cliPath, "--help"]);
   assert.match(stdout, /Usage: gdms COMMAND/);
   assert.match(stdout, /configure-deletion/);
+  assert.match(stdout, /recover --document-id ID/);
   assert.match(stdout, /--version/);
 });
 

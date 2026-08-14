@@ -17,6 +17,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms plan` | `--document-id ID` | None | Preview the incremental Google Docs update plan. |
 | `gdms push` | `--document-id ID` or `--spreadsheet-id ID` | Local + Google | Push one local pairing immediately and refresh managed status. |
 | `gdms delete` | `--file FILE` or `--document-id ID`, plus `--yes` | Local + Google | Move a paired Doc to Drive trash, delete local Markdown/assets, unpair, and email. Docs only. |
+| `gdms recover` | `--document-id ID --workspace PATH --file FILE` | Local + Google | Restore the same Doc from trash, preserve local content, re-pair, and verify. Docs only. |
 | `gdms cleanup-spacing` | `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from one Doc. |
 | `gdms migrate` | `--all` or `--document-id ID` | Local state + Google | Apply pending formatting migrations; add `--dry-run` for no writes. |
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
@@ -128,6 +129,42 @@ local Markdown file and its managed asset directory, removes the pairing, and
 sends the configured Resend notification. Omitting `--yes` performs no writes.
 This command and automatic deletion propagation currently apply only to
 Markdown/Google Docs pairings, not Sheets/CSV pairings.
+
+## Recover an accidentally trashed pairing
+
+Use `recover` when a move, rename, or deletion caused GDMS to move the original
+Google Doc to Drive trash and remove its pairing:
+
+```sh
+gdms recover \
+  --document-id DOCUMENT_ID \
+  --workspace "/absolute/path/to/workspace" \
+  --file "new/folder/note.md"
+```
+
+The command uses the original Google Doc ID. It checks the Drive file, restores
+it from trash when necessary, and verifies `trashed: false`. If the requested
+Markdown path or matching `.assets` directory already exists, GDMS moves them
+to collision-safe timestamped siblings such as
+`note.recovery-backup-20260814T173045Z.md` and
+`note.recovery-backup-20260814T173045Z.assets`. It then exports the restored
+Doc, registers the new relative path in `google-docs-sync.json`, clears the old
+deletion tombstone, and verifies the local file and pairing.
+
+When a backup was created, compare it with the newly exported Markdown. Merge
+any local-only changes into the paired file, then push explicitly:
+
+```sh
+gdms push --document-id DOCUMENT_ID
+gdms sync-once
+```
+
+Do not use `gdms create` for recovery; it creates a second Google Doc with a
+different ID. Do not edit the manifest by hand as a substitute for restoring
+the Drive file. A manual fallback is to disable deletion propagation, preserve
+the local Markdown/assets, restore the original Doc in Drive, run `gdms pair`
+at the desired path, compare and merge the backup, push, verify, and then
+re-enable the previous deletion policy.
 
 ## Apply formatting migrations
 
@@ -243,7 +280,12 @@ Google API or OAuth request from blocking the queue indefinitely.
 - Writes are hashed and revision-tracked to prevent feedback loops. Pairings
   share one single-flight synchronization queue.
 
-Google Docs native Markdown export defines the supported pull representation.
+Google Docs native Markdown export normally defines the supported pull
+representation. When Drive refuses that export because the document exceeds
+its export-size limit, GDMS falls back to serializing the same supported
+paragraphs, headings, lists, inline styles, links, tables, and images from the
+Google Docs API. Other export failures remain errors rather than silently
+changing conversion paths.
 On push, GDMS applies changed paragraph and list ranges in descending order in
 one atomic Docs batch. Unchanged ranges and tables remain in place. A changed
 table structure falls back to a full body rebuild unless the document contains
@@ -290,6 +332,16 @@ either path changes.
 Google OAuth applications in external **Testing** mode issue expiring refresh
 tokens. Configure the consent screen appropriately for an unattended
 synchronization service, then run `gdms auth` again.
+
+### A large Google Doc cannot be exported
+
+GDMS automatically uses its Google Docs API fallback when Drive reports
+`exportSizeLimitExceeded`. Pairing and later pulls should continue without
+splitting the document. The fallback covers GDMS's supported Markdown subset;
+Docs-only layout and effects remain outside the round trip. If the initial
+import fails for another reason, GDMS restores the workspace manifest instead
+of leaving a new pairing entry without its Markdown file. The Raycast command
+shows the CLI's specific error output when further action is required.
 
 ### A synchronization pass reports an image conflict
 

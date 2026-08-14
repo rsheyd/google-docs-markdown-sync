@@ -95,10 +95,13 @@ document, resumability, and failure behavior.
 
 ## Current boundaries
 
-Google Docs' native Markdown export defines much of the supported round-trip
-subset. Advanced layout, floating images, drawings, and other Docs-only visual
-effects are not represented in Markdown. Tables also have structural spacing
-requirements of their own and do not yet use the universal text-block gap rule.
+Google Docs' native Markdown export normally defines much of the supported
+round-trip subset. If Drive rejects a large document with its export-size
+limit, GDMS serializes supported headings, paragraphs, lists, tables, inline
+styles, links, and images from the Google Docs API instead. Advanced layout,
+floating images, drawings, and other Docs-only visual effects are not
+represented by either path. Tables also have structural spacing requirements
+of their own and do not yet use the universal text-block gap rule.
 
 See the [README](../README.md#supported-content-and-important-limits) for the full
 supported-content summary and current limitations.

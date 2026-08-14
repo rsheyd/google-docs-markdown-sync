@@ -18,12 +18,29 @@ export function createGoogleServices(
   };
 }
 
-export async function exportMarkdown(services, documentId) {
-  const response = await services.drive.files.export(
-    { fileId: documentId, mimeType: "text/markdown" },
-    { responseType: "arraybuffer" },
+function exportSizeLimitExceeded(error) {
+  return (
+    error?.response?.data?.error?.errors?.some(
+      (item) => item.reason === "exportSizeLimitExceeded",
+    ) || error?.response?.data?.error?.message === "This file is too large to be exported."
   );
-  return stripRemoteDocumentStatus(Buffer.from(response.data).toString("utf8"));
+}
+
+export async function exportMarkdown(services, documentId, { document } = {}) {
+  try {
+    const response = await services.drive.files.export(
+      { fileId: documentId, mimeType: "text/markdown" },
+      { responseType: "arraybuffer" },
+    );
+    return stripRemoteDocumentStatus(Buffer.from(response.data).toString("utf8"));
+  } catch (error) {
+    if (!exportSizeLimitExceeded(error)) throw error;
+    const source = document ?? (await services.docs.documents.get({
+      documentId,
+      suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
+    })).data;
+    return stripRemoteDocumentStatus(markdownFromDocument(source));
+  }
 }
 
 export async function getRemoteInfo(services, documentId) {
@@ -340,6 +357,116 @@ export function blocksFromDocument(document, desiredBlocks = []) {
   }
   if (blocks.at(-1)?.type === "text" && blocks.at(-1)?.text === "") blocks.pop();
   return blocks;
+}
+
+function escapeMarkdownText(value) {
+  return value.replace(/([\\`*_[\]<>])/g, "\\$1");
+}
+
+function escapeMarkdownDestination(value) {
+  return String(value).replace(/([\\()])/g, "\\$1");
+}
+
+function styledMarkdown(text, styles = [], images = [], imageReference) {
+  const imageAt = new Map(images.map((item) => [item.offset, item]));
+  const boundaries = new Set([
+    0,
+    text.length,
+    ...images.flatMap((item) => [item.offset, Math.min(text.length, item.offset + 1)]),
+  ]);
+  for (const range of styles) {
+    boundaries.add(Math.max(0, Math.min(text.length, range.start)));
+    boundaries.add(Math.max(0, Math.min(text.length, range.end)));
+  }
+  const points = [...boundaries].sort((a, b) => a - b);
+  let markdown = "";
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const image = imageAt.get(start);
+    if (image) {
+      const alt = String(image.title ?? image.description ?? "")
+        .replace(/\\/g, "\\\\")
+        .replace(/]/g, "\\]");
+      markdown += `![${alt}][${imageReference()}]`;
+      continue;
+    }
+    const raw = text.slice(start, end).replaceAll(INLINE_IMAGE_MARKER, "");
+    if (!raw) continue;
+    const style = Object.assign(
+      {},
+      ...styles
+        .filter((range) => range.start <= start && range.end >= end)
+        .map((range) => range.style),
+    );
+    let value = escapeMarkdownText(raw).replace(/\n/g, "  \n");
+    if (style.bold) value = `**${value}**`;
+    if (style.italic) value = `_${value}_`;
+    if (style.strikethrough) value = `~~${value}~~`;
+    if (style.link) value = `[${value}](${escapeMarkdownDestination(style.link)})`;
+    markdown += value;
+  }
+  const trailingImage = imageAt.get(text.length);
+  if (trailingImage) {
+    const alt = String(trailingImage.title ?? trailingImage.description ?? "")
+      .replace(/\\/g, "\\\\")
+      .replace(/]/g, "\\]");
+    markdown += `![${alt}][${imageReference()}]`;
+  }
+  return markdown;
+}
+
+function tableCellMarkdown(cell, imageReference) {
+  return styledMarkdown(cell.text, cell.styles, cell.images, imageReference)
+    .replace(/\|/g, "\\|")
+    .replace(/\s*\n\s*/g, "<br>");
+}
+
+export function markdownFromDocument(document) {
+  let imageNumber = 0;
+  const imageReference = () => `image${++imageNumber}`;
+  const lines = [];
+  let previousList;
+  for (const block of blocksFromDocument(document)) {
+    if (block.type === "table") {
+      const rows = block.rows.map((row) =>
+        row.map((cell) => tableCellMarkdown(cell, imageReference)),
+      );
+      if (!rows.length) continue;
+      const columns = Math.max(1, ...rows.map((row) => row.length));
+      const normalized = rows.map((row) => [
+        ...row,
+        ...Array.from({ length: columns - row.length }, () => ""),
+      ]);
+      lines.push(`| ${normalized[0].join(" | ")} |`);
+      lines.push(`| ${Array.from({ length: columns }, () => "---").join(" | ")} |`);
+      for (const row of normalized.slice(1)) lines.push(`| ${row.join(" | ")} |`);
+      lines.push("");
+      previousList = undefined;
+      continue;
+    }
+
+    const content = styledMarkdown(
+      block.text,
+      block.styles,
+      block.images,
+      imageReference,
+    );
+    if (block.type === "listItem") {
+      const marker = block.ordered ? "1." : "-";
+      lines.push(`${"  ".repeat(block.nestingLevel ?? 0)}${marker} ${content}`);
+      previousList = block.listId;
+      continue;
+    }
+
+    if (previousList !== undefined) lines.push("");
+    const heading = String(block.paragraphStyle).match(/^HEADING_([1-6])$/);
+    lines.push(heading ? `${"#".repeat(Number(heading[1]))} ${content}` : content);
+    lines.push("");
+    previousList = undefined;
+  }
+  while (lines.at(-1) === "") lines.pop();
+  return `${lines.join("\n")}\n`;
 }
 
 function comparableBlock(block, imageHashes = new Map()) {

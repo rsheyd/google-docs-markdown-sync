@@ -127,6 +127,14 @@ function suggestedDirectory(title: string) {
   return suggestedFilename(title).replace(/\.md$/, "");
 }
 
+function commandErrorMessage(error: unknown) {
+  if (error && typeof error === "object" && "stderr" in error) {
+    const stderr = String(error.stderr ?? "").trim();
+    if (stderr) return stderr;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 function PairForm({
   resource,
   workspace,
@@ -182,7 +190,7 @@ function PairForm({
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Pairing failed";
-      toast.message = error instanceof Error ? error.message : String(error);
+      toast.message = commandErrorMessage(error);
     }
   }
 

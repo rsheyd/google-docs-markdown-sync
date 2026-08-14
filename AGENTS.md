@@ -51,10 +51,12 @@
   Markdown, image, R2 staging, migrations, and CSV conversion, Docs and Sheets adapters,
   CLI, launch-at-login and Finder Quick Action installers, and independent
   weekly Resend health heartbeat.
+- `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `cloudflare/image-gateway-worker.js`: HMAC-authenticated, short-lived image
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,
   synchronization, and heartbeat checks.
+- `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.
 - `examples/google-docs-sync.example.json`: Inert example workspace pairing

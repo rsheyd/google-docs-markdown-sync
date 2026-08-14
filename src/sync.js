@@ -87,7 +87,9 @@ export async function pullDocument(services, pairing, remote) {
     pairing.documentId,
     remoteDocumentStatusMarkdown(pairing, status),
   );
-  const exported = await exportMarkdown(services, pairing.documentId);
+  const exported = await exportMarkdown(services, pairing.documentId, {
+    document: updatedRemote.document,
+  });
   const content = await materializeRemoteImages(
     services,
     pairing,
@@ -251,7 +253,9 @@ export async function syncPairing(
     local.hash !== previous.localHash &&
     (remote.revisionId !== previous.remoteRevisionId || hasMarkdownStatus(local.text))
   ) {
-    const remoteContent = await exportMarkdown(services, effectivePairing.documentId);
+    const remoteContent = await exportMarkdown(services, effectivePairing.documentId, {
+      document: remote.document,
+    });
     if (sha256(remoteContent) === local.hash) {
       return {
         action: "repair-status",

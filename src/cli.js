@@ -10,7 +10,7 @@ import {
   prepareImagePush,
 } from "./images.js";
 import { createR2Stager, loadR2Configuration } from "./r2.js";
-import { R2_CONFIG_PATH, SETTINGS_PATH } from "./paths.js";
+import { MANIFEST_NAME, R2_CONFIG_PATH, SETTINGS_PATH } from "./paths.js";
 import { loadSettings, saveDeletionPolicy } from "./config.js";
 import {
   createDocumentFromMarkdown,
@@ -29,8 +29,15 @@ import {
 import { runHeartbeat } from "./heartbeat.js";
 import { trashPairedDocument } from "./deletions.js";
 import {
+  assertRecoveryTargetAvailable,
+  clearRecoveryDeletion,
+  preserveRecoveryContent,
+  restoreDriveDocument,
+} from "./recovery.js";
+import {
   defaultDocumentTitle,
   loadPairings,
+  removeDocumentPairing,
   registerPairing,
 } from "./manifests.js";
 import { registerSpreadsheetPairing } from "./manifests.js";
@@ -99,6 +106,7 @@ Commands:
   push (--document-id ID | --spreadsheet-id ID)
   cleanup-spacing --document-id ID
   delete (--file MARKDOWN.md | --document-id ID) --yes
+  recover --document-id ID --workspace PATH --file RELATIVE.md
   migrate (--all | --document-id ID) [--dry-run]
   configure-r2 --account-id ID --bucket NAME --gateway-url URL
   configure-deletion --grace-period-minutes MINUTES --to EMAIL [--from SENDER]
@@ -123,51 +131,64 @@ async function pair(options) {
   for (const required of ["url", "workspace", "file"]) {
     if (!options[required]) throw new Error(`pair requires --${required}.`);
   }
-  const pairing = await registerPairing({
-    workspace: options.workspace,
-    documentUrl: options.url,
-    markdownPath: options.file,
-    name: options.name,
+  const workspace = path.resolve(options.workspace);
+  const manifestPath = path.join(workspace, MANIFEST_NAME);
+  const previousManifest = await fs.readFile(manifestPath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
   });
-  const auth = await getAuthClient();
-  const services = createGoogleServices(auth);
-  const [exportedMarkdown, remote] = await Promise.all([
-    exportMarkdown(services, pairing.documentId),
-    getRemoteInfo(services, pairing.documentId),
-  ]);
-  const markdown = await materializeRemoteImages(
-    services,
-    pairing,
-    remote.document,
-    exportedMarkdown,
-  );
-  const status = {
-    content: markdown,
-    lastWriter: "google-docs",
-    lastSuccessfulSync: new Date().toISOString(),
-  };
-  await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
-  const finalRemote = await updateDocumentStatus(
-    services,
-    pairing.documentId,
-    remoteDocumentStatusMarkdown(pairing, status),
-  );
-  const stat = await import("node:fs/promises").then((fs) =>
-    fs.stat(pairing.absolutePath),
-  );
-  const state = await loadState();
-  state.documents[stateKey(pairing)] = {
-    localHash: await hashMarkdownWithAssets(pairing.absolutePath, markdown),
-    localModifiedTime: stat.mtimeMs,
-    remoteRevisionId: finalRemote.revisionId,
-    remoteModifiedTime: finalRemote.modifiedTime,
-    lastWriter: "google-docs",
-    lastSuccessfulSync: new Date().toISOString(),
-  };
-  await saveState(state);
-  console.log(`Paired ${pairing.documentUrl}`);
-  console.log(`Created ${pairing.absolutePath}`);
-  console.log(`Updated ${path.join(pairing.workspace, "google-docs-sync.json")}`);
+  try {
+    const pairing = await registerPairing({
+      workspace,
+      documentUrl: options.url,
+      markdownPath: options.file,
+      name: options.name,
+    });
+    const auth = await getAuthClient();
+    const services = createGoogleServices(auth);
+    const [exportedMarkdown, remote] = await Promise.all([
+      exportMarkdown(services, pairing.documentId),
+      getRemoteInfo(services, pairing.documentId),
+    ]);
+    const markdown = await materializeRemoteImages(
+      services,
+      pairing,
+      remote.document,
+      exportedMarkdown,
+    );
+    const status = {
+      content: markdown,
+      lastWriter: "google-docs",
+      lastSuccessfulSync: new Date().toISOString(),
+    };
+    const finalRemote = await updateDocumentStatus(
+      services,
+      pairing.documentId,
+      remoteDocumentStatusMarkdown(pairing, status),
+    );
+    await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
+    const stat = await fs.stat(pairing.absolutePath);
+    const state = await loadState();
+    state.documents[stateKey(pairing)] = {
+      localHash: await hashMarkdownWithAssets(pairing.absolutePath, markdown),
+      localModifiedTime: stat.mtimeMs,
+      remoteRevisionId: finalRemote.revisionId,
+      remoteModifiedTime: finalRemote.modifiedTime,
+      lastWriter: "google-docs",
+      lastSuccessfulSync: new Date().toISOString(),
+    };
+    await saveState(state);
+    console.log(`Paired ${pairing.documentUrl}`);
+    console.log(`Created ${pairing.absolutePath}`);
+    console.log(`Updated ${manifestPath}`);
+  } catch (error) {
+    if (previousManifest === undefined) {
+      await fs.rm(manifestPath, { force: true });
+    } else {
+      await writeJsonAtomic(manifestPath, JSON.parse(previousManifest));
+    }
+    throw error;
+  }
 }
 
 async function create(options) {
@@ -611,6 +632,58 @@ async function deleteDocument(options) {
   console.log(`Sent deletion email ${result.email.id}.`);
 }
 
+async function recoverDocument(options) {
+  for (const required of ["document-id", "workspace", "file"]) {
+    if (!options[required]) throw new Error(`recover requires --${required}.`);
+  }
+  const documentId = options["document-id"];
+  const workspace = path.resolve(options.workspace);
+  const absolutePath = path.resolve(workspace, options.file);
+  if (absolutePath !== workspace && !absolutePath.startsWith(`${workspace}${path.sep}`)) {
+    throw new Error("Recovery Markdown filename must stay inside the selected workspace.");
+  }
+  const pairings = await loadPairings();
+  assertRecoveryTargetAvailable(pairings, documentId, absolutePath);
+  const auth = await getAuthClient();
+  const services = createGoogleServices(auth);
+  const restored = await restoreDriveDocument(services, documentId);
+  const backup = await preserveRecoveryContent(absolutePath);
+  const documentUrl = `https://docs.google.com/document/d/${documentId}/edit`;
+  try {
+    await pair({
+      url: documentUrl,
+      workspace,
+      file: path.relative(workspace, absolutePath),
+      name: restored.name,
+    });
+  } catch (error) {
+    const partial = (await loadPairings()).find((item) => item.documentId === documentId);
+    if (partial) await removeDocumentPairing(partial);
+    throw error;
+  }
+  const state = await loadState();
+  if (clearRecoveryDeletion(state, documentId)) await saveState(state);
+  const [verifiedFile, verifiedPairings] = await Promise.all([
+    services.drive.files.get({ fileId: documentId, fields: "id,name,trashed" }),
+    loadPairings(),
+    fs.access(absolutePath),
+  ]);
+  if (verifiedFile.data.trashed) throw new Error("Recovery verification found the Doc in trash.");
+  if (!verifiedPairings.some((item) => item.documentId === documentId && item.absolutePath === absolutePath)) {
+    throw new Error("Recovery verification did not find the expected pairing.");
+  }
+  console.log(restored.wasTrashed
+    ? `Restored ${documentUrl} from Google Drive trash.`
+    : `${documentUrl} was already outside Google Drive trash.`);
+  if (backup?.markdownPath) console.log(`Preserved local Markdown at ${backup.markdownPath}`);
+  if (backup?.assetDirectory) console.log(`Preserved local assets at ${backup.assetDirectory}`);
+  console.log(`Verified pairing at ${absolutePath}`);
+  if (backup) {
+    console.log("Compare the recovered Markdown with the backup, merge local-only changes, then run:");
+    console.log(`gdms push --document-id ${documentId}`);
+  }
+}
+
 async function main() {
   const { command, options } = parseArguments(process.argv.slice(2));
   if (command === "--version" || command === "version") {
@@ -655,6 +728,8 @@ async function main() {
     await configureDeletion(options);
   } else if (command === "delete") {
     await deleteDocument(options);
+  } else if (command === "recover") {
+    await recoverDocument(options);
   } else if (command === "sync-once") {
     let announced = false;
     const results = await runSyncPass({

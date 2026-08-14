@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { getAuthClient } from "./auth.js";
 import { createGoogleServices, getRemoteInfo } from "./google.js";
 import { loadPairings } from "./manifests.js";
@@ -128,6 +129,18 @@ export async function sendDeletionEmail({
       "No deletion email recipient is configured. Set GOOGLE_DOCS_SYNC_DELETE_TO.",
     );
   }
+  const recoveryLines = [
+    "You can recover the same document from Google Drive trash. The GDMS pairing has been removed.",
+  ];
+  if (deletion.manifestPath && deletion.absolutePath) {
+    const workspace = path.dirname(deletion.manifestPath);
+    recoveryLines.push(
+      "Preserve any local-only content, then restore and re-pair it with:",
+      `gdms recover --document-id ${deletion.documentId} --workspace ${JSON.stringify(workspace)} --file ${JSON.stringify(path.relative(workspace, deletion.absolutePath))}`,
+    );
+  } else {
+    recoveryLines.push("Use `gdms recover --help` for the safe restoration workflow.");
+  }
   const response = await fetchImplementation("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -148,7 +161,7 @@ export async function sendDeletionEmail({
         `Deletion policy: ${deletion.policyDescription}`,
         `Moved to trash: ${deletion.trashedAt}`,
         "",
-        "You can recover the document from Google Drive trash. The GDMS pairing has been removed.",
+        ...recoveryLines,
       ].join("\n"),
     }),
   });

@@ -16,7 +16,7 @@ synchronized; repositories and unrelated files are never copied to Drive.
 
 ![GDMS synchronizing a local Markdown file with Google Docs](docs/images/gdms-overview.png)
 
-Current release: **0.7.2** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
+Current release: **0.8.0** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 
 ## What it does
 
@@ -122,11 +122,13 @@ For common questions about sharing and synchronization, see the
 
 ## Supported content and important limits
 
-Google Docs' native Markdown export defines the supported Docs → Markdown
-subset. Headings, paragraphs, ordered and unordered lists, links, bold,
-italics, simple tables, blank-line spacing, heading links, and standalone
-images round-trip. Incremental pushes preserve unchanged document ranges and
-native tables of contents where the APIs allow it.
+Google Docs' native Markdown export normally defines the supported Docs →
+Markdown subset. When Drive's export-size limit rejects a large document, GDMS
+falls back to serializing that subset through the Google Docs API. Headings,
+paragraphs, ordered and unordered lists, links, bold, italics, simple tables,
+blank-line spacing, heading links, and standalone images round-trip.
+Incremental pushes preserve unchanged document ranges and native tables of
+contents where the APIs allow it.
 
 Google Sheets pairings use one local directory per spreadsheet and one CSV per
 tab. Raw values and formulas round-trip. Formatting, charts, comments, filters,
@@ -148,6 +150,10 @@ Important current limitations:
   advanced visual effects are unsupported.
 - Deleting a generated status artifact does not unpair a document; it is
   recreated on a later sync pass.
+- Recover an accidentally trashed and unpaired Doc with `gdms recover`; GDMS
+  preserves local Markdown/assets, restores the same Drive ID, re-pairs it at
+  the requested path, and verifies the result. See the
+  [recovery runbook](docs/operations.md#recover-an-accidentally-trashed-pairing).
 - Deletion propagation currently applies only to Markdown/Google Docs
   pairings. Missing CSV directories do not trash paired Google Sheets.
 

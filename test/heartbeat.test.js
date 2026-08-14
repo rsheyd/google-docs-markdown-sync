@@ -24,6 +24,7 @@ test("sends an idempotent deletion email with recovery context", async () => {
       name: "Note",
       documentUrl: "https://docs.google.com/document/d/doc-1/edit",
       absolutePath: "/workspace/note.md",
+      manifestPath: "/workspace/google-docs-sync.json",
       policyDescription: "automatic after 60 minute(s) missing",
       trashedAt: "2026-08-14T12:00:00.000Z",
     },
@@ -36,6 +37,8 @@ test("sends an idempotent deletion email with recovery context", async () => {
   assert.equal(request.options.headers["Idempotency-Key"], "gdms-delete-doc-1-2026-08-14T12:00:00.000Z");
   assert.match(body.text, /Google Drive trash/);
   assert.match(body.text, /\/workspace\/note.md/);
+  assert.match(body.text, /gdms recover --document-id doc-1/);
+  assert.match(body.text, /--workspace "\/workspace" --file "note.md"/);
   assert.deepEqual(result, { id: "email-delete" });
 });
 

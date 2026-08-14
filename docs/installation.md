@@ -188,6 +188,12 @@ globally at any time with:
 gdms configure-deletion --disable
 ```
 
+If an accidental move or deletion reaches the end of the grace period, use
+`gdms recover` with the original document ID instead of creating a replacement
+Doc or editing the pairing manifest manually. Recovery preserves any local
+Markdown and assets before re-exporting the same Doc. See
+[Recover an accidentally trashed pairing](operations.md#recover-an-accidentally-trashed-pairing).
+
 It currently applies only to
 Markdown/Google Docs pairings; deleting a paired CSV directory never moves its
 Google Sheet to trash.

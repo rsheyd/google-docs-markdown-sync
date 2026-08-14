@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.0] - 2026-08-14
+
+### Added
+
+- Fall back to Google Docs API serialization when Drive refuses a native
+  Markdown export because the document exceeds its export-size limit, covering
+  supported headings, paragraphs, lists, inline styles, links, tables, and
+  images during pairing and later pulls.
+- Add `gdms recover --document-id ID --workspace PATH --file FILE` to restore
+  the original Google Doc from Drive trash, preserve existing Markdown and
+  managed assets under collision-safe timestamped backup names, recreate the
+  pairing at its desired relative path, clear the deletion tombstone, and
+  verify the recovered state.
+- Add an operational recovery runbook and include an exact recovery command in
+  new deletion-notification emails.
+
+### Safety
+
+- Restore the previous workspace manifest when an initial document pairing
+  fails, so an error does not leave a new pairing entry without its Markdown
+  file, and surface the CLI's specific stderr in the Raycast failure toast.
+- Verify the original Drive file is accessible and outside trash before
+  replacing the requested local path, and never overwrite local recovery
+  content without first moving it and its assets to backup siblings.
+
 ## [0.7.2] - 2026-08-14
 
 ### Added

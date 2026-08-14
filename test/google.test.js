@@ -5,6 +5,8 @@ import {
   createDocumentFromMarkdown,
   createGoogleServices,
   diffBlockHunks,
+  exportMarkdown,
+  markdownFromDocument,
   planHeadingLinkUpdate,
   planIncrementalUpdate,
   planParagraphSpacingUpdate,
@@ -15,6 +17,55 @@ import {
   updateDocumentFromMarkdown,
 } from "../src/google.js";
 import { INLINE_IMAGE_MARKER } from "../src/markdown.js";
+
+test("falls back to the Docs API when Drive Markdown export is too large", async () => {
+  let documentReads = 0;
+  const document = {
+    body: { content: [paragraph(1, "Large document\n")] },
+  };
+  const services = {
+    drive: {
+      files: {
+        export: async () => {
+          throw {
+            response: {
+              data: {
+                error: {
+                  errors: [{ reason: "exportSizeLimitExceeded" }],
+                },
+              },
+            },
+          };
+        },
+      },
+    },
+    docs: {
+      documents: {
+        get: async () => {
+          documentReads += 1;
+          return { data: document };
+        },
+      },
+    },
+  };
+
+  assert.equal(await exportMarkdown(services, "large-document"), "Large document\n");
+  assert.equal(documentReads, 1);
+  assert.equal(
+    await exportMarkdown(services, "large-document", { document }),
+    "Large document\n",
+  );
+  assert.equal(documentReads, 1);
+});
+
+test("does not hide unrelated Drive export errors", async () => {
+  const denied = new Error("Access denied");
+  const services = {
+    drive: { files: { export: async () => { throw denied; } } },
+    docs: { documents: { get: async () => assert.fail("unexpected Docs read") } },
+  };
+  await assert.rejects(exportMarkdown(services, "document"), denied);
+});
 
 test("creates a Google Doc and populates it from Markdown", async () => {
   const calls = [];
@@ -195,6 +246,68 @@ function imageParagraph(startIndex, objectId = "image-1") {
     },
   };
 }
+
+test("serializes Docs API headings, styles, lists, tables, and image references", () => {
+  const heading = paragraph(1, "Heading\n", "HEADING_2");
+  const styled = paragraph(heading.endIndex, "Bold link\n");
+  styled.paragraph.elements[0].textRun.textStyle = {
+    bold: true,
+    link: { url: "https://example.com/path" },
+  };
+  const item = bulletParagraph(styled.endIndex, "First\n");
+  const image = imageParagraph(item.endIndex);
+  const tableStart = image.endIndex;
+  const document = {
+    lists: {
+      bullets: {
+        listProperties: {
+          nestingLevels: [{ glyphSymbol: "●" }],
+        },
+      },
+    },
+    inlineObjects: {
+      "image-1": {
+        inlineObjectProperties: {
+          embeddedObject: { title: "Diagram" },
+        },
+      },
+    },
+    body: {
+      content: [
+        heading,
+        styled,
+        item,
+        image,
+        {
+          startIndex: tableStart,
+          endIndex: tableStart + 8,
+          table: {
+            tableRows: [{
+              tableCells: [
+                { content: [paragraph(tableStart + 1, "A\n")] },
+                { content: [paragraph(tableStart + 3, "B\n")] },
+              ],
+            }],
+          },
+        },
+      ],
+    },
+  };
+
+  assert.equal(markdownFromDocument(document), [
+    "## Heading",
+    "",
+    "[**Bold link**](https://example.com/path)",
+    "",
+    "- First",
+    "",
+    "![Diagram][image1]",
+    "",
+    "| A | B |",
+    "| --- | --- |",
+    "",
+  ].join("\n"));
+});
 
 test("extracts document paragraphs and ignores the terminal empty paragraph", () => {
   const document = {
