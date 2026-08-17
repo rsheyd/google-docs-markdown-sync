@@ -158,8 +158,12 @@ Important current limitations:
   pairings. Missing CSV directories do not trash paired Google Sheets.
 
 The complete image model, safety rules, and remaining hardening work are in
-[image synchronization design](docs/design/image-sync.md). Planned conflict, pairing-control, and fidelity
-work is in the [roadmap](docs/roadmap.md).
+[image synchronization design](docs/design/image-sync.md). Planned conflict,
+pairing-control, fidelity, and managed-folder work is in the
+[roadmap](docs/roadmap.md). The exploratory
+[managed folder synchronization design](docs/design/managed-folder-sync.md)
+records the proposed scope and unresolved safety decisions; it describes a
+potential future feature, not current behavior.
 
 ## Project layout
 

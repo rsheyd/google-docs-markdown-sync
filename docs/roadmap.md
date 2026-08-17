@@ -61,15 +61,26 @@ documented in the [namespace migration plan](design/namespace-migration.md).
 
 ## Later: folder auto-sync
 
-- Evaluate opt-in synchronization of whole folders containing Markdown and CSV
-  files, with a preview before initial enrollment.
-- Define repository-local include and exclude rules so generated files,
-  dependencies, fixtures, vendored content, hidden directories, and other
-  unsuitable files are not paired accidentally.
-- Keep folder enrollment visible and reviewable in each workspace manifest,
-  and define predictable behavior for new, moved, renamed, and deleted files.
-- Establish Drive organization, API-load limits, conflict recovery, and bulk
-  unpairing before enabling unattended discovery or remote document creation.
+- Evaluate an explicit managed-folder pairing that continuously synchronizes
+  all Markdown and CSV files beneath one deliberately enrolled local root with
+  one bounded Google Drive subtree.
+- Preview initial enrollment before creating Drive folders, Docs, Sheets, or
+  tabs, and keep the folder rule and child pairings visible in a portable
+  manifest inside the managed root.
+- Mirror local subfolders in Drive, preserve stable object identity through
+  moves and renames, and retain GDMS's move-detection and deletion-grace-period
+  safeguards.
+- Extend recoverable deletion to CSV tabs before allowing missing CSV files to
+  remove remote data. Sheet tabs lack ordinary Drive trash semantics and need
+  a dedicated recovery design.
+- Treat automatic adoption of remote-created Docs and tabs as a later phase;
+  begin with explicit enrollment and local-authoritative folder structure.
+- Establish operation journaling, conflict recovery, notifications, API-load
+  limits, and non-destructive bulk unpairing before unattended discovery.
+
+The proposed product contract, safety model, CSV mapping alternatives, phased
+delivery, and unresolved decisions are documented in the
+[managed folder synchronization design](design/managed-folder-sync.md).
 
 ## Out of scope for the current roadmap
 

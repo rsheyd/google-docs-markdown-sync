@@ -38,6 +38,8 @@
   inline image synchronization.
 - `docs/design/namespace-migration.md`: Compatibility and rollout plan for replacing the
   legacy application, launchd, and Keychain namespace.
+- `docs/design/managed-folder-sync.md`: Exploratory product and engineering
+  design for explicitly enrolled local folder trees and bounded Drive subtrees.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
   steps.
 - `docs/images/`: User-facing documentation images referenced by project guides.
