@@ -6,9 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Rename the CSV Finder Quick Action to **Combine CSVs into One Google Sheet
-  (GDMS)** so its one-spreadsheet, one-tab-per-CSV behavior is clear, and remove
-  the legacy ambiguously named workflow when reinstalling the actions.
+- Rename the CSV Finder Quick Action to **Combine & Sync CSVs with New Google
+  Sheet (GDMS)** so its new-spreadsheet, one-tab-per-CSV, ongoing-sync behavior
+  is clear; remove the legacy ambiguously named workflow; and open the Finder
+  Quick Actions settings after installation so the user can enable both GDMS
+  actions.
 
 ## [0.8.0] - 2026-08-14
 

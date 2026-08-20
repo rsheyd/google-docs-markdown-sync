@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   CSV_FINDER_QUICK_ACTION_NAME,
   CSV_UTI,
+  FINDER_QUICK_ACTION_SETTINGS_URL,
   FINDER_QUICK_ACTION_NAME,
   MARKDOWN_UTI,
   csvFinderQuickActionInfoPlist,
@@ -36,7 +37,11 @@ test("CSV Finder Quick Action is restricted to CSV files", () => {
   const info = csvFinderQuickActionInfoPlist();
   assert.match(info, new RegExp(CSV_FINDER_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")));
   assert.match(info, new RegExp(CSV_UTI.replaceAll(".", "\\.")));
-  assert.equal(CSV_FINDER_QUICK_ACTION_NAME, "Combine CSVs into One Google Sheet (GDMS)");
+  assert.equal(
+    CSV_FINDER_QUICK_ACTION_NAME,
+    "Combine & Sync CSVs with New Google Sheet (GDMS)",
+  );
+  assert.match(FINDER_QUICK_ACTION_SETTINGS_URL, /com\.apple\.finder-quick-actions/);
 });
 
 test("Finder Quick Action passes selected Markdown paths to GDMS create", () => {
@@ -75,13 +80,11 @@ test("Finder Quick Action registers only for Markdown files", () => {
 
 test("installer writes the named workflow under Library Services", async () => {
   const homeDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-home-"));
-  const legacyCsvInstalled = path.join(
-    homeDirectory,
-    "Library",
-    "Services",
+  const legacyCsvInstalled = [
     "Sync with Google Sheets (GDMS).workflow",
-  );
-  await fs.mkdir(legacyCsvInstalled, { recursive: true });
+    "Combine CSVs into One Google Sheet (GDMS).workflow",
+  ].map((name) => path.join(homeDirectory, "Library", "Services", name));
+  await Promise.all(legacyCsvInstalled.map((directory) => fs.mkdir(directory, { recursive: true })));
   const installed = await installFinderQuickAction({ homeDirectory });
   assert.equal(
     installed,
@@ -99,5 +102,5 @@ test("installer writes the named workflow under Library Services", async () => {
   );
   const csvInfo = await fs.readFile(path.join(csvInstalled, "Contents", "Info.plist"), "utf8");
   assert.match(csvInfo, /public\.comma-separated-values-text/);
-  await assert.rejects(fs.access(legacyCsvInstalled));
+  await Promise.all(legacyCsvInstalled.map((directory) => assert.rejects(fs.access(directory))));
 });

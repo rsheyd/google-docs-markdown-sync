@@ -211,13 +211,20 @@ For Markdown, Control-click one or more `.md` files and choose **Quick Actions
 registers each pairing.
 
 For Sheets, select one or more `.csv` files in the same directory and choose
-**Quick Actions → Combine CSVs into One Google Sheet (GDMS)**. GDMS prompts for a name,
-creates a collision-safe sibling directory, moves the files into it, and
-creates one tab per CSV. If remote creation fails, the files remain together in
-the new directory so the operation can be retried.
+**Quick Actions → Combine & Sync CSVs with New Google Sheet (GDMS)**. GDMS
+prompts for a name, creates a collision-safe sibling directory, moves the files
+into it, creates one tab per CSV, and pairs the files for ongoing two-way sync.
+If remote creation fails, the files remain together in the new directory so
+the operation can be retried.
+
+After installing, System Settings opens to the Finder Quick Actions controls.
+Enable both GDMS actions there. If they are not visible in Finder afterward,
+Control-click a compatible file and choose **Quick Actions → Customize…**, then
+enable the GDMS actions.
 
 Re-run the installer after moving the repository or changing the Node
-executable because the workflows store absolute paths.
+executable because the workflows store absolute paths. The settings pane opens
+again so you can confirm that both actions remain enabled.
 
 ## Raycast setup
 
