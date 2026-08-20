@@ -25,7 +25,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms sync-once` | — | Local + Google | Run one synchronization pass and exit. |
 | `gdms daemon` | — | Local + Google | Run the foreground synchronization loop. |
 | `gdms install-service` | — | Local system | Install or restart the per-user synchronization LaunchAgent. |
-| `gdms install-finder-action` | — | Local system | Install the Markdown and CSV Finder Quick Actions. |
+| `gdms install-finder-action` | — | Local system | Install the Markdown action and the **Combine CSVs into One Google Sheet (GDMS)** action. |
 | `gdms heartbeat` | `--to EMAIL` unless configured | Email + Google reads | Check the daemon and pairings, then send a success email; optionally pass `--from`. |
 | `gdms install-heartbeat` | `--to EMAIL` | Local system | Install the weekly heartbeat LaunchAgent; optionally pass `--from`. |
 | `gdms version`, `gdms --version` | — | None | Print the CLI version and the live daemon version when running. |

@@ -211,7 +211,7 @@ For Markdown, Control-click one or more `.md` files and choose **Quick Actions
 registers each pairing.
 
 For Sheets, select one or more `.csv` files in the same directory and choose
-**Quick Actions → Sync with Google Sheets (GDMS)**. GDMS prompts for a name,
+**Quick Actions → Combine CSVs into One Google Sheet (GDMS)**. GDMS prompts for a name,
 creates a collision-safe sibling directory, moves the files into it, and
 creates one tab per CSV. If remote creation fails, the files remain together in
 the new directory so the operation can be retried.

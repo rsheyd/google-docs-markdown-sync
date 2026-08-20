@@ -5,7 +5,8 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const FINDER_QUICK_ACTION_NAME = "Sync with Google Docs (GDMS)";
-export const CSV_FINDER_QUICK_ACTION_NAME = "Sync with Google Sheets (GDMS)";
+export const CSV_FINDER_QUICK_ACTION_NAME = "Combine CSVs into One Google Sheet (GDMS)";
+const LEGACY_CSV_FINDER_QUICK_ACTION_NAME = "Sync with Google Sheets (GDMS)";
 export const MARKDOWN_UTI = "net.daringfireball.markdown";
 export const CSV_UTI = "public.comma-separated-values-text";
 
@@ -218,6 +219,12 @@ export async function installFinderQuickAction({
     csvFinderQuickActionWorkflow({ nodePath: process.execPath, cliPath }),
     csvFinderQuickActionInfoPlist(),
   );
+  await fs.rm(path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    `${LEGACY_CSV_FINDER_QUICK_ACTION_NAME}.workflow`,
+  ), { recursive: true, force: true });
   if (refreshServices) {
     execFileSync("/System/Library/CoreServices/pbs", ["-update"]);
   }

@@ -77,8 +77,9 @@ Then choose one starting point:
 - Bring a Google Doc or Sheet to the front in Safari, Chrome, Chromium, Brave,
   or Microsoft Edge and run **Pair Google Doc or Sheet with GDMS** from
   Raycast.
-- Control-click local Markdown or CSV files in Finder and use the matching
-  **Sync with Google… (GDMS)** Quick Action.
+- Control-click local Markdown files in Finder and use **Sync with Google Docs
+  (GDMS)**, or select CSV files and use **Combine CSVs into One Google Sheet
+  (GDMS)**.
 - Pair or create a document directly with the commands in
   [installation guide](docs/installation.md#pair-your-first-document).
 
