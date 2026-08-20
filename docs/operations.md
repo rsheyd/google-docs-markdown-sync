@@ -10,9 +10,9 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | Command | Required arguments | Writes | Purpose |
 | --- | --- | --- | --- |
 | `gdms auth` | — | Keychain | Authorize Google Drive, Docs, and Sheets access. |
-| `gdms create` | `--file FILE` | Local + Google | Create and pair a Google Doc from Markdown; optionally pass `--workspace` and `--name`. |
+| `gdms create` | `--file FILE` | Local + Google | Create and pair a Google Doc from Markdown; optionally pass `--workspace`, `--name`, and `--open`. |
 | `gdms pair` | `--url URL --workspace PATH --file FILE` | Local + Google | Pair an existing Google Doc and create its Markdown representation; optionally pass `--name`. |
-| `gdms create-sheet` | One or more `--file FILE.csv` | Local + Google | Group CSV files, create a Google Sheet, and pair its tabs; optionally pass `--name`. |
+| `gdms create-sheet` | One or more `--file FILE.csv` | Local + Google | Group CSV files, create a Google Sheet, and pair its tabs; optionally pass `--name` and `--open`. |
 | `gdms pair-sheet` | `--url URL --workspace PATH --directory DIR` | Local + Google | Pair an existing Google Sheet with a CSV directory. |
 | `gdms plan` | `--document-id ID` | None | Preview the incremental Google Docs update plan. |
 | `gdms push` | `--document-id ID` or `--spreadsheet-id ID` | Local + Google | Push one local pairing immediately and refresh managed status. |
@@ -25,7 +25,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms sync-once` | — | Local + Google | Run one synchronization pass and exit. |
 | `gdms daemon` | — | Local + Google | Run the foreground synchronization loop. |
 | `gdms install-service` | — | Local system | Install or restart the per-user synchronization LaunchAgent. |
-| `gdms install-finder-action` | — | Local system | Install both Finder actions and open the settings pane where they can be enabled. |
+| `gdms install-finder-action` | — | Local system | Install both Finder actions and open the Quick Actions pane where both can be enabled. |
 | `gdms heartbeat` | `--to EMAIL` unless configured | Email + Google reads | Check the daemon and pairings, then send a success email; optionally pass `--from`. |
 | `gdms install-heartbeat` | `--to EMAIL` | Local system | Install the weekly heartbeat LaunchAgent; optionally pass `--from`. |
 | `gdms version`, `gdms --version` | — | None | Print the CLI version and the live daemon version when running. |

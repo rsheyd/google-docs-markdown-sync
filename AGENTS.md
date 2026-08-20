@@ -54,6 +54,7 @@
   CLI, launch-at-login and Finder Quick Action installers, and independent
   weekly Resend health heartbeat.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
+- `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
 - `cloudflare/image-gateway-worker.js`: HMAC-authenticated, short-lived image
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,

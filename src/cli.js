@@ -51,6 +51,7 @@ import {
 import { formatVersionReport, readPackageVersion } from "./version.js";
 import { runDocumentMigrations } from "./migrations.js";
 import { installFinderQuickAction } from "./finder-quick-action.js";
+import { openUrl } from "./macos.js";
 import {
   createSpreadsheet,
   getSpreadsheetInfo,
@@ -75,7 +76,7 @@ function parseArguments(values) {
     const value = rest[index];
     if (!value.startsWith("--")) continue;
     const key = value.slice(2);
-    if (key === "all" || key === "dry-run" || key === "yes" || key === "disable") {
+    if (key === "all" || key === "dry-run" || key === "yes" || key === "disable" || key === "open") {
       options[key] = true;
       continue;
     }
@@ -98,8 +99,8 @@ Usage: gdms COMMAND [OPTIONS]
 
 Commands:
   auth
-  create --file RELATIVE.md [--workspace PATH] [--name NAME]
-  create-sheet --file FILE.csv [--file TAB.csv ...] [--name NAME]
+  create --file RELATIVE.md [--workspace PATH] [--name NAME] [--open]
+  create-sheet --file FILE.csv [--file TAB.csv ...] [--name NAME] [--open]
   pair --url URL --workspace PATH --file RELATIVE.md [--name NAME]
   pair-sheet --url URL --workspace PATH --directory RELATIVE_DIRECTORY [--name NAME]
   plan --document-id ID
@@ -261,6 +262,9 @@ async function create(options) {
   console.log(`Created ${created.documentUrl}`);
   console.log(`Paired ${absolutePath}`);
   console.log(`Updated ${path.join(workspace, "google-docs-sync.json")}`);
+  if (options.open && !await openUrl(created.documentUrl)) {
+    console.error("Created the Google Doc, but could not open it in the browser.");
+  }
 }
 
 async function createSheet(options) {
@@ -324,6 +328,9 @@ async function createSheet(options) {
   console.log(`Created ${created.spreadsheetUrl}`);
   console.log(`Paired ${organized.directory}`);
   console.log(`Updated ${path.join(organized.workspace, "google-docs-sync.json")}`);
+  if (options.open && !await openUrl(created.spreadsheetUrl)) {
+    console.error("Created the Google Sheet, but could not open it in the browser.");
+  }
 }
 
 async function pairSheet(options) {

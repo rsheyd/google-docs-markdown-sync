@@ -4,8 +4,9 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-export const FINDER_QUICK_ACTION_NAME = "Sync with Google Docs (GDMS)";
+export const FINDER_QUICK_ACTION_NAME = "Sync MDs with New Google Docs (GDMS)";
 export const CSV_FINDER_QUICK_ACTION_NAME = "Combine & Sync CSVs with New Google Sheet (GDMS)";
+const LEGACY_FINDER_QUICK_ACTION_NAMES = ["Sync with Google Docs (GDMS)"];
 const LEGACY_CSV_FINDER_QUICK_ACTION_NAMES = [
   "Sync with Google Sheets (GDMS)",
   "Combine CSVs into One Google Sheet (GDMS)",
@@ -29,12 +30,30 @@ function shellQuote(value) {
 
 export function finderQuickActionShellCommand({ nodePath, cliPath }) {
   return `set -e
+if (( $# == 0 )); then
+  echo "GDMS requires at least one Markdown file." >&2
+  exit 64
+fi
+if (( $# == 1 )); then
+  case "$1" in
+    *.md) ${shellQuote(nodePath)} ${shellQuote(cliPath)} create --file "$1" --open ;;
+    *) echo "GDMS only accepts Markdown (.md) files: $1" >&2; exit 64 ;;
+  esac
+  exit 0
+fi
+created_count=0
 for markdown_file in "$@"; do
   case "$markdown_file" in
     *.md) ${shellQuote(nodePath)} ${shellQuote(cliPath)} create --file "$markdown_file" ;;
     *) echo "GDMS only accepts Markdown (.md) files: $markdown_file" >&2; exit 64 ;;
   esac
-done`;
+  (( created_count += 1 ))
+done
+/usr/bin/osascript \
+  -e 'on run argv' \
+  -e 'display notification ((item 1 of argv) & " new Google Docs created and synced.") with title "GDMS"' \
+  -e 'end run' \
+  "$created_count" >/dev/null 2>&1 || true`;
 }
 
 export function csvFinderQuickActionShellCommand({ nodePath, cliPath }) {
@@ -64,7 +83,7 @@ spreadsheet_name="$(/usr/bin/osascript \
   -e 'text returned of result' \
   -e 'end run' \
   "$default_name")"
-${shellQuote(nodePath)} ${shellQuote(cliPath)} create-sheet "${"${csv_arguments[@]}"}" --name "$spreadsheet_name"`;
+${shellQuote(nodePath)} ${shellQuote(cliPath)} create-sheet "${"${csv_arguments[@]}"}" --name "$spreadsheet_name" --open`;
 }
 
 function quickActionWorkflow(command) {
@@ -172,10 +191,10 @@ function quickActionInfoPlist(name, uti) {
     <dict>
       <key>NSBackgroundColorName</key><string>background</string>
       <key>NSIconName</key><string>NSActionTemplate</string>
-      <key>NSMenuItem</key><dict><key>default</key><string>${name}</string></dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>${xmlEscape(name)}</string></dict>
       <key>NSMessage</key><string>runWorkflowAsService</string>
       <key>NSRequiredContext</key><dict><key>NSApplicationIdentifier</key><string>com.apple.finder</string></dict>
-      <key>NSSendFileTypes</key><array><string>${uti}</string></array>
+      <key>NSSendFileTypes</key><array><string>${xmlEscape(uti)}</string></array>
     </dict>
   </array>
 </dict>
@@ -218,6 +237,12 @@ export async function installFinderQuickAction({
     finderQuickActionWorkflow({ nodePath: process.execPath, cliPath }),
     finderQuickActionInfoPlist(),
   );
+  await Promise.all(LEGACY_FINDER_QUICK_ACTION_NAMES.map((name) => fs.rm(path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    `${name}.workflow`,
+  ), { recursive: true, force: true })));
   await writeQuickAction(
     homeDirectory,
     CSV_FINDER_QUICK_ACTION_NAME,

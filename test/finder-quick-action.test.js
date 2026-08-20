@@ -26,6 +26,7 @@ test("CSV Finder Quick Action groups selected files into one create-sheet comman
   assert.match(command, /for csv_file in "\$@"/);
   assert.match(command, /csv_arguments\+=\(--file "\$csv_file"\)/);
   assert.match(command, /create-sheet/);
+  assert.match(command, /--name "\$spreadsheet_name" --open/);
   assert.match(command, /osascript/);
   assert.match(command, /-e 'end run'/);
   assert.match(command, /--name "\$spreadsheet_name"/);
@@ -35,7 +36,7 @@ test("CSV Finder Quick Action is restricted to CSV files", () => {
   const workflow = csvFinderQuickActionWorkflow({ nodePath: "/node", cliPath: "/cli" });
   assert.match(workflow, /create-sheet/);
   const info = csvFinderQuickActionInfoPlist();
-  assert.match(info, new RegExp(CSV_FINDER_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")));
+  assert.match(info, /Combine &amp; Sync CSVs with New Google Sheet \(GDMS\)/);
   assert.match(info, new RegExp(CSV_UTI.replaceAll(".", "\\.")));
   assert.equal(
     CSV_FINDER_QUICK_ACTION_NAME,
@@ -51,6 +52,9 @@ test("Finder Quick Action passes selected Markdown paths to GDMS create", () => 
   });
   assert.match(command, /for markdown_file in "\$@"/);
   assert.match(command, /create --file "\$markdown_file"/);
+  assert.match(command, /create --file "\$1" --open/);
+  assert.match(command, /created_count/);
+  assert.match(command, /display notification/);
   assert.match(command, /'\/path with spaces\/node'/);
   assert.match(command, /'\/project'"'"'s\/src\/cli\.js'/);
   assert.match(command, /\*\.md\)/);
@@ -76,6 +80,7 @@ test("Finder Quick Action registers only for Markdown files", () => {
   assert.match(info, new RegExp(FINDER_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")));
   assert.match(info, new RegExp(MARKDOWN_UTI.replaceAll(".", "\\.")));
   assert.match(info, /runWorkflowAsService/);
+  assert.equal(FINDER_QUICK_ACTION_NAME, "Sync MDs with New Google Docs (GDMS)");
 });
 
 test("installer writes the named workflow under Library Services", async () => {
@@ -84,7 +89,16 @@ test("installer writes the named workflow under Library Services", async () => {
     "Sync with Google Sheets (GDMS).workflow",
     "Combine CSVs into One Google Sheet (GDMS).workflow",
   ].map((name) => path.join(homeDirectory, "Library", "Services", name));
-  await Promise.all(legacyCsvInstalled.map((directory) => fs.mkdir(directory, { recursive: true })));
+  const legacyMarkdownInstalled = path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    "Sync with Google Docs (GDMS).workflow",
+  );
+  await Promise.all([
+    ...legacyCsvInstalled.map((directory) => fs.mkdir(directory, { recursive: true })),
+    fs.mkdir(legacyMarkdownInstalled, { recursive: true }),
+  ]);
   const installed = await installFinderQuickAction({ homeDirectory });
   assert.equal(
     installed,
@@ -103,4 +117,5 @@ test("installer writes the named workflow under Library Services", async () => {
   const csvInfo = await fs.readFile(path.join(csvInstalled, "Contents", "Info.plist"), "utf8");
   assert.match(csvInfo, /public\.comma-separated-values-text/);
   await Promise.all(legacyCsvInstalled.map((directory) => assert.rejects(fs.access(directory))));
+  await assert.rejects(fs.access(legacyMarkdownInstalled));
 });

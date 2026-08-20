@@ -8,9 +8,17 @@ All notable changes to this project are documented in this file.
 
 - Rename the CSV Finder Quick Action to **Combine & Sync CSVs with New Google
   Sheet (GDMS)** so its new-spreadsheet, one-tab-per-CSV, ongoing-sync behavior
-  is clear; remove the legacy ambiguously named workflow; and open the Finder
-  Quick Actions settings after installation so the user can enable both GDMS
-  actions.
+  is clear, remove the legacy ambiguously named workflow, and open the Quick
+  Actions pane after installation so both GDMS actions can be enabled together.
+- Escape action names in generated service plists so the ampersand in the CSV
+  action name does not prevent macOS from registering it.
+- Rename the Markdown Finder Quick Action to **Sync MDs with New Google Docs
+  (GDMS)** so its accepted file type and one-new-Doc-per-file behavior are clear,
+  and remove the previous workflow name when reinstalling the actions.
+- Open a newly created Sheet or single Markdown-created Doc from Finder in the
+  default browser; for multi-Markdown batches, avoid opening many tabs and show
+  a completion notification instead. Add the reusable `--open` option to
+  `gdms create` and `gdms create-sheet`.
 
 ## [0.8.0] - 2026-08-14
 

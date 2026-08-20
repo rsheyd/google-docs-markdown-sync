@@ -207,20 +207,26 @@ gdms install-finder-action
 ```
 
 For Markdown, Control-click one or more `.md` files and choose **Quick Actions
-→ Sync with Google Docs (GDMS)**. GDMS creates one Google Doc per file and
-registers each pairing.
+→ Sync MDs with New Google Docs (GDMS)**. GDMS creates one Google Doc per file and
+registers each pairing. A single new Doc opens in the default browser. For a
+multi-file selection, GDMS avoids opening many tabs and instead shows a
+completion notification with the number of Docs created.
 
 For Sheets, select one or more `.csv` files in the same directory and choose
 **Quick Actions → Combine & Sync CSVs with New Google Sheet (GDMS)**. GDMS
 prompts for a name, creates a collision-safe sibling directory, moves the files
 into it, creates one tab per CSV, and pairs the files for ongoing two-way sync.
+The new Google Sheet opens in the default browser.
 If remote creation fails, the files remain together in the new directory so
 the operation can be retried.
 
-After installing, System Settings opens to the Finder Quick Actions controls.
-Enable both GDMS actions there. If they are not visible in Finder afterward,
-Control-click a compatible file and choose **Quick Actions → Customize…**, then
-enable the GDMS actions.
+After installing, the Finder Quick Actions pane opens automatically. Turn on
+**Sync MDs with New Google Docs (GDMS)** and **Combine & Sync CSVs with New
+Google Sheet (GDMS)**, then click the pane's **Done** button.
+
+If an action is not visible in Finder afterward, Control-click a compatible
+`.md` or `.csv` file and choose **Quick Actions → Customize…**, then enable the
+matching GDMS action.
 
 Re-run the installer after moving the repository or changing the Node
 executable because the workflows store absolute paths. The settings pane opens

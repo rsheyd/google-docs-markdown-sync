@@ -27,6 +27,8 @@ test("prints gdms-oriented help without an error", async () => {
   assert.match(stdout, /Usage: gdms COMMAND/);
   assert.match(stdout, /configure-deletion/);
   assert.match(stdout, /recover --document-id ID/);
+  assert.match(stdout, /create .*--open/);
+  assert.match(stdout, /create-sheet .*--open/);
   assert.match(stdout, /--version/);
 });
 
