@@ -16,7 +16,7 @@ synchronized; repositories and unrelated files are never copied to Drive.
 
 ![GDMS synchronizing a local Markdown file with Google Docs](docs/images/gdms-overview.png)
 
-Current release: **0.8.0** · macOS · Node.js 22+ · [MIT licensed](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/rsheyd/google-docs-markdown-sync?display_name=tag&sort=semver)](https://github.com/rsheyd/google-docs-markdown-sync/releases/latest) · macOS · Node.js 22+ · [MIT licensed](LICENSE)
 
 ## What it does
 
@@ -146,7 +146,9 @@ Important current limitations:
   replaced range can be affected.
 - General simultaneous text edits use the later modification timestamp. If an
   image-bearing document changed on both sides, synchronization stops with an
-  explicit conflict.
+  explicit conflict. Background errors are deduplicated in durable logs. When
+  weekly health email is configured, persistent errors email the same recipient
+  after 15 minutes by default, followed by an email when synchronization recovers.
 - Floating images, drawings, linked charts, cropping, rotation, and other
   advanced visual effects are unsupported.
 - Deleting a generated status artifact does not unpair a document; it is

@@ -4,6 +4,7 @@ import { getAuthClient } from "./auth.js";
 import { createGoogleServices, getRemoteInfo } from "./google.js";
 import { loadPairings } from "./manifests.js";
 import { getSpreadsheetInfo } from "./sheets.js";
+import { loadSettings } from "./config.js";
 
 export const RESEND_KEYCHAIN_SERVICE =
   "com.roman.google-docs-markdown-sync";
@@ -175,6 +176,9 @@ export async function sendDeletionEmail({
 }
 
 export async function runHeartbeat({ recipient, sender } = {}) {
+  const settings = await loadSettings();
+  recipient ??= settings.notifications.recipient;
+  sender ??= settings.notifications.sender;
   const result = await verifySyncHealth();
   const email = await sendHeartbeatEmail({ result, recipient, sender });
   console.log(

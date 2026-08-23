@@ -755,6 +755,26 @@ function withoutStructuralTableSpacers(blocks) {
   });
 }
 
+function withoutNativeTocStructuralSpacers(blocks) {
+  const firstNativeToc = blocks.findIndex((block) => block.nativeTableOfContents);
+  const structuralGap =
+    firstNativeToc >= 2 &&
+    blocks[firstNativeToc - 2].type === "text" &&
+    blocks[firstNativeToc - 2].text === "" &&
+    blocks[firstNativeToc - 1].type === "text"
+      ? firstNativeToc - 2
+      : -1;
+  return blocks.filter((block, index) =>
+    index !== structuralGap &&
+    !(
+      block.nativeTableOfContents &&
+      block.type === "text" &&
+      block.text === "" &&
+      block.startIndex === block.endIndex
+    ),
+  );
+}
+
 function withoutManagedStatusBlocks(blocks) {
   const statusIndex = blocks.findIndex(
     (block) => block.type === "text" && block.text === DOC_STATUS_TITLE,
@@ -766,21 +786,44 @@ function withoutManagedStatusBlocks(blocks) {
   return blocks.slice(0, start);
 }
 
+function nativeTableOfContentsAlignment(current, desired) {
+  const currentStart = current.findIndex((block) => block.nativeTableOfContents);
+  const currentEnd = current.findLastIndex((block) => block.nativeTableOfContents);
+  if (currentStart < 0) return undefined;
+  const nativeBlocks = current.slice(currentStart, currentEnd + 1);
+  const desiredStart = desired.findIndex((_block, start) =>
+    nativeBlocks.every((nativeBlock, offset) => {
+      const desiredBlock = desired[start + offset];
+      return desiredBlock?.type === nativeBlock.type && desiredBlock.text === nativeBlock.text;
+    }),
+  );
+  if (desiredStart < 0) return undefined;
+  return { currentStart, currentEnd, desiredStart, nativeBlocks };
+}
+
 export function planHeadingLinkUpdate(document, markdown) {
   const desired = parseMarkdown(markdown);
-  assertResolvableHeadingLinks(desired);
-  const current = withoutStructuralTableSpacers(
-    blocksFromDocument(document, desired),
+  const current = withoutNativeTocStructuralSpacers(
+    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
   );
-  const { fragmentToId } = headingLinks(document, desired);
   if (current.length !== desired.length) {
     throw new Error("Google Docs content did not settle after its structural update.");
   }
+  const nativeToc = nativeTableOfContentsAlignment(current, desired);
+  const desiredIsNativeToc = (_block, index) =>
+    nativeToc &&
+    index >= nativeToc.desiredStart &&
+    index < nativeToc.desiredStart + nativeToc.nativeBlocks.length;
+  assertResolvableHeadingLinks(
+    desired.filter((block, index) => !desiredIsNativeToc(block, index)),
+  );
+  const { fragmentToId } = headingLinks(document, desired);
 
   const requests = [];
   for (let blockIndex = 0; blockIndex < desired.length; blockIndex += 1) {
     const desiredBlock = desired[blockIndex];
     const currentBlock = current[blockIndex];
+    if (desiredIsNativeToc(desiredBlock, blockIndex)) continue;
     if (desiredBlock.type === "table") continue;
     if (
       currentBlock.type === "table" ||
@@ -1160,14 +1203,26 @@ export function planIncrementalUpdate(
   } = {},
 ) {
   const desired = parseMarkdown(markdown);
-  assertResolvableHeadingLinks(desired);
-  let current = withoutStructuralTableSpacers(
-    blocksFromDocument(document, desired),
+  let current = withoutNativeTocStructuralSpacers(
+    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
   );
   if (ignoreManagedStatus) {
     current = withoutManagedStatusBlocks(current);
   }
-  const hunks = diffBlockHunks(current, desired, {
+  const nativeToc = nativeTableOfContentsAlignment(current, desired);
+  const desiredIsNativeToc = (_block, index) =>
+    nativeToc &&
+    index >= nativeToc.desiredStart &&
+    index < nativeToc.desiredStart + nativeToc.nativeBlocks.length;
+  const comparableDesired = desired.map((block, index) =>
+    desiredIsNativeToc(block, index)
+      ? {
+          ...block,
+          styles: nativeToc.nativeBlocks[index - nativeToc.desiredStart].styles,
+        }
+      : block,
+  );
+  const hunks = diffBlockHunks(current, comparableDesired, {
     currentImageHashes,
     desiredImageHashes,
   });
@@ -1195,6 +1250,9 @@ export function planIncrementalUpdate(
         "Leave its exported Markdown range unchanged or replace it in Google Docs.",
     );
   }
+  assertResolvableHeadingLinks(
+    desired.filter((block, index) => !desiredIsNativeToc(block, index)),
+  );
   const requiresTableFallback = hunks.some((hunk) =>
     [
       ...current.slice(hunk.currentStart, hunk.currentEnd),

@@ -35,6 +35,7 @@ import {
   trashPairedDocument,
 } from "./deletions.js";
 import { createTimestampLogger } from "./progress.js";
+import { createSyncErrorReporter } from "./notifications.js";
 import { readPackageVersion } from "./version.js";
 import {
   getSpreadsheetInfo,
@@ -74,6 +75,31 @@ async function localSnapshot(filePath) {
   }
 }
 
+function markdownTocRange(markdown) {
+  const lines = markdown.replaceAll("\r\n", "\n").split("\n");
+  const start = lines.findIndex((line) => /^\*\*Table of Contents\*\*\s*$/.test(line));
+  if (start < 0) return undefined;
+  const headingOffset = lines.slice(start + 1).findIndex((line) => /^#{1,6}\s/.test(line));
+  if (headingOffset < 0) return undefined;
+  return { lines, start, end: start + 1 + headingOffset };
+}
+
+export function preserveNativeTableOfContents(localMarkdown, remoteMarkdown) {
+  const local = markdownTocRange(localMarkdown);
+  const remote = markdownTocRange(remoteMarkdown);
+  if (!local || !remote) return localMarkdown;
+  return [
+    ...local.lines.slice(0, local.start),
+    ...remote.lines.slice(remote.start, remote.end),
+    ...local.lines.slice(local.end),
+  ].join("\n");
+}
+
+function hasNativeTableOfContents(document) {
+  const body = document.body ?? document.tabs?.[0]?.documentTab?.body;
+  return (body?.content ?? []).some((element) => element.tableOfContents);
+}
+
 export async function pullDocument(services, pairing, remote) {
   const status = {
     lastWriter: "google-docs",
@@ -110,17 +136,23 @@ export async function pullDocument(services, pairing, remote) {
 }
 
 async function push(services, pairing, local, before) {
+  const content = hasNativeTableOfContents(before.document)
+    ? preserveNativeTableOfContents(
+        local.content,
+        await exportMarkdown(services, pairing.documentId, { document: before.document }),
+      )
+    : local.content;
   const status = {
-    content: local.content,
+    content,
     lastWriter: "markdown",
     lastSuccessfulSync: new Date().toISOString(),
   };
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
-  const imageSync = hasImagesForSync(before.document, local.content)
+  const imageSync = hasImagesForSync(before.document, content)
     ? await prepareImagePush(
         services,
         pairing.absolutePath,
-        local.content,
+        content,
         before.document,
         createR2Stager(loadR2Configuration()),
       )
@@ -129,7 +161,7 @@ async function push(services, pairing, local, before) {
     await updateDocumentFromMarkdown(
       services,
       pairing.documentId,
-      local.content,
+      content,
       { imageSync },
     );
   } finally {
@@ -220,8 +252,25 @@ export function hasImageConflict({ local, remote, previous }) {
     local.exists &&
     local.hash !== previous.localHash &&
     remote.revisionId !== previous.remoteRevisionId &&
+    remote.modifiedTime !== previous.remoteModifiedTime &&
     hasImagesForSync(remote.document, local.content),
   );
+}
+
+export function shouldRaiseImageConflict({ remoteContentVerifiedUnchanged, ...snapshots }) {
+  return !remoteContentVerifiedUnchanged && hasImageConflict(snapshots);
+}
+
+export async function comparableMarkdownHash(filePath, content, document = {}) {
+  return hasImagesForSync(document, content)
+    ? hashMarkdownWithAssets(filePath, content)
+    : sha256(content);
+}
+
+export function refineTwoSidedAction({ localHash, previousHash, remoteHash }) {
+  if (remoteHash === previousHash) return "push";
+  if (remoteHash === localHash) return "repair-status";
+  return undefined;
 }
 
 export async function syncPairing(
@@ -245,7 +294,8 @@ export async function syncPairing(
       state: previous,
     };
   }
-  const action = chooseSyncAction({ local, remote, previous });
+  let action = chooseSyncAction({ local, remote, previous });
+  let remoteContentVerifiedUnchanged = false;
   if (
     !spreadsheet &&
     previous &&
@@ -256,7 +306,28 @@ export async function syncPairing(
     const remoteContent = await exportMarkdown(services, effectivePairing.documentId, {
       document: remote.document,
     });
-    if (sha256(remoteContent) === local.hash) {
+    const comparableRemoteContent = hasImagesForSync(remote.document, local.content)
+      ? await materializeRemoteImages(
+          services,
+          effectivePairing,
+          remote.document,
+          remoteContent,
+        )
+      : remoteContent;
+    const comparableRemoteHash = await comparableMarkdownHash(
+      effectivePairing.absolutePath,
+      comparableRemoteContent,
+      remote.document,
+    );
+    const refinedAction = refineTwoSidedAction({
+      localHash: local.hash,
+      previousHash: previous.localHash,
+      remoteHash: comparableRemoteHash,
+    });
+    if (refinedAction === "push") {
+      action = "push";
+      remoteContentVerifiedUnchanged = true;
+    } else if (refinedAction === "repair-status") {
       return {
         action: "repair-status",
         pairing: effectivePairing,
@@ -270,7 +341,12 @@ export async function syncPairing(
       };
     }
   }
-  if (!spreadsheet && hasImageConflict({ local, remote, previous })) {
+  if (!spreadsheet && shouldRaiseImageConflict({
+    local,
+    remote,
+    previous,
+    remoteContentVerifiedUnchanged,
+  })) {
     throw new Error(
       "Image conflict: both Markdown/assets and Google Docs changed since " +
         "the last synchronized baseline. Resolve one side before syncing.",
@@ -343,6 +419,7 @@ export async function runSyncPass({
   root = workspaceRoot(),
   interactiveAuth = false,
   logger = console,
+  errorReporter,
   pairings: suppliedPairings,
   targetPaths,
   deferMissingLocal,
@@ -476,7 +553,10 @@ export async function runSyncPass({
       const completed = { pairing, action: "error", error };
       results.push(completed);
       onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
-      if (!onProgress) logger.error(`${pairing.absolutePath}: ${error.message}`);
+      if (!onProgress) {
+        if (errorReporter) await errorReporter.report(pairing, error);
+        else logger.error(`${pairing.absolutePath}: ${error.message}`);
+      }
     }
   }
   await retryDeletionNotifications(state, {
@@ -484,6 +564,7 @@ export async function runSyncPass({
     logger,
   });
   await saveState(state);
+  await errorReporter?.reconcile(results);
   return results;
 }
 
@@ -600,8 +681,24 @@ export async function runDaemon({
   getVersion = readPackageVersion,
   getState = loadState,
   persistState = saveState,
+  errorReporter,
 } = {}) {
   logger = createTimestampLogger(logger);
+  const settings = await loadSettings();
+  const notifications = settings.notifications;
+  errorReporter ??= createSyncErrorReporter({
+    logger,
+    desktopNotificationsEnabled: notifications.desktopNotificationsEnabled,
+    emailRecipient:
+      process.env.GOOGLE_DOCS_SYNC_ERROR_TO ??
+      (notifications.errorEmailEnabled ? notifications.recipient : undefined),
+    emailSender:
+      process.env.GOOGLE_DOCS_SYNC_ERROR_FROM ?? notifications.sender,
+    emailDelayMs: Number(
+      process.env.GOOGLE_DOCS_SYNC_ERROR_EMAIL_DELAY_MS ??
+      notifications.errorEmailDelayMinutes * 60_000,
+    ),
+  });
   const runningVersion = await getVersion();
   const daemonState = await getState();
   daemonState.daemon = {
@@ -658,6 +755,7 @@ export async function runDaemon({
               deferMissingLocal,
               missingLocalWaitMs: intervalMs * 2,
               logger,
+              errorReporter,
             });
           } finally {
             for (const [filePath, move] of moves) {
@@ -710,6 +808,7 @@ export async function runDaemon({
           deferMissingLocal,
           missingLocalWaitMs: intervalMs * 2,
           logger,
+          errorReporter,
         }),
       );
       consecutiveFailures = results.some((result) => result.action === "error")

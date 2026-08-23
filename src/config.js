@@ -1,8 +1,52 @@
 import { readJson, writeJsonAtomic } from "./files.js";
-import { SETTINGS_PATH } from "./paths.js";
+import fs from "node:fs/promises";
+import { HEARTBEAT_LAUNCH_AGENT_PATH, SETTINGS_PATH } from "./paths.js";
 
 const DEFAULT_GOOGLE_REQUEST_TIMEOUT_MS = 30_000;
 export const DEFAULT_DELETION_POLICY = Object.freeze({ mode: "restore-local" });
+export const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
+  desktopNotificationsEnabled: false,
+  errorEmailEnabled: true,
+  errorEmailDelayMinutes: 15,
+});
+
+export function validateNotificationSettings(value = {}, source = SETTINGS_PATH) {
+  const settings = { ...DEFAULT_NOTIFICATION_SETTINGS, ...value };
+  if (settings.recipient !== undefined && !String(settings.recipient).trim()) {
+    throw new Error(`${source} notifications.recipient must be a non-empty email address.`);
+  }
+  if (
+    !Number.isFinite(settings.errorEmailDelayMinutes) ||
+    settings.errorEmailDelayMinutes < 0
+  ) {
+    throw new Error(`${source} notifications.errorEmailDelayMinutes must be zero or greater.`);
+  }
+  return settings;
+}
+
+function xmlUnescape(value) {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&");
+}
+
+export function notificationSettingsFromHeartbeatPlist(plist) {
+  const valueFor = (name) => {
+    const match = plist.match(
+      new RegExp(`<key>${name}</key>\\s*<string>([^<]*)</string>`),
+    );
+    return match ? xmlUnescape(match[1]) : undefined;
+  };
+  const recipient = valueFor("GOOGLE_DOCS_SYNC_HEARTBEAT_TO");
+  if (!recipient) return undefined;
+  const sender = valueFor("GOOGLE_DOCS_SYNC_HEARTBEAT_FROM");
+  return validateNotificationSettings({
+    recipient,
+    ...(sender ? { sender } : {}),
+  });
+}
 
 export function googleRequestTimeoutMs(
   value = process.env.GOOGLE_DOCS_SYNC_REQUEST_TIMEOUT_MS,
@@ -45,6 +89,7 @@ export async function loadSettings() {
   return {
     ...settings,
     deletionPolicy: validateDeletionPolicy(settings.deletionPolicy),
+    notifications: validateNotificationSettings(settings.notifications),
   };
 }
 
@@ -57,4 +102,32 @@ export async function saveDeletionPolicy(deletionPolicy) {
     deletionPolicy: policy,
   });
   return policy;
+}
+
+export async function saveNotificationSettings(notifications) {
+  const value = validateNotificationSettings(notifications);
+  const settings = await readJson(SETTINGS_PATH, { version: 1 });
+  await writeJsonAtomic(SETTINGS_PATH, {
+    ...settings,
+    version: 1,
+    notifications: value,
+  });
+  return value;
+}
+
+export async function migrateHeartbeatNotificationSettings({
+  readFile = fs.readFile,
+} = {}) {
+  const settings = await readJson(SETTINGS_PATH, { version: 1 });
+  if (settings.notifications?.recipient) {
+    return saveNotificationSettings(settings.notifications);
+  }
+  const plist = await readFile(HEARTBEAT_LAUNCH_AGENT_PATH, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!plist) return undefined;
+  const notifications = notificationSettingsFromHeartbeatPlist(plist);
+  if (!notifications) return undefined;
+  return saveNotificationSettings(notifications);
 }

@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.2] - 2026-08-23
+
+### Fixed
+
+- Avoid false image-conflict stops when Google changes only a document revision
+  token without changing its Drive modification time, such as during native
+  table-of-contents or metadata normalization.
+- Treat a remote revision and modification-time change as metadata-only when
+  normalized remote content and image bytes still match the shared baseline,
+  allowing a concurrent local-only edit to push safely.
+- Repair the shared baseline when a document-body update succeeded before a
+  later table-of-contents reconciliation failed, comparing normalized remote
+  images and bytes instead of incompatible raw Markdown and asset-aware hashes.
+- Exclude native table-of-contents links from Markdown heading-link validation
+  and rewriting because Google manages those ranges.
+- Ignore API-only structural spacer paragraphs around and within native tables
+  of contents while still refusing changes to their visible entries.
+- Normalize a changed Markdown TOC back to the current remote-managed native
+  TOC during a push, allowing valid body additions to synchronize without
+  attempting an unsupported Google Docs TOC rewrite.
+- Report each distinct daemon sync error once instead of repeating it every
+  polling cycle, and announce when the affected pairing recovers.
+
+### Added
+
+- Keep desktop error/recovery notifications off by default because transient
+  banners are not a durable operational record. Installing weekly health email
+  stores one shared recipient and
+  enables persistent sync-error email to that address after 15 minutes by
+  default; add `gdms configure-notifications` for recipient, delay, and opt-out
+  changes, plus automatic migration from existing heartbeat LaunchAgents. Send
+  a recovery email only when the corresponding persistent-error email was sent.
+
 ## [0.8.1] - 2026-08-20
 
 ### Changed

@@ -21,6 +21,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms cleanup-spacing` | `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from one Doc. |
 | `gdms migrate` | `--all` or `--document-id ID` | Local state + Google | Apply pending formatting migrations; add `--dry-run` for no writes. |
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
+| `gdms configure-notifications` | Existing health-email recipient or `--to EMAIL` | Local settings + local system | Configure the shared email recipient, persistent-error delay, or error-email opt-out, then restart the sync service. |
 | `gdms configure-r2` | `--account-id ID --bucket NAME --gateway-url URL` | Local settings | Store non-secret R2 image-staging configuration. |
 | `gdms sync-once` | — | Local + Google | Run one synchronization pass and exit. |
 | `gdms daemon` | — | Local + Google | Run the foreground synchronization loop. |
@@ -203,6 +204,29 @@ the Mac's current UTC offset, for example
 `2026-08-14T11:42:08-04:00`. Interactive `gdms sync-once` progress remains
 untimestamped because it is already observed live.
 
+The daemon records each distinct pairing error once instead of repeating it on
+every polling cycle. Desktop banners are disabled by default because they are
+transient and do not provide a dependable review queue.
+
+Installing the weekly health email also enables persistent sync-error email to
+the same recipient after 15 minutes. Configure the shared recipient or delay
+directly with:
+
+```sh
+gdms configure-notifications --to "you@example.com"
+gdms configure-notifications --error-email-delay-minutes 30
+```
+
+Disable only persistent-error email with
+`gdms configure-notifications --disable-error-email`; weekly health email,
+and deduplicated logs remain active. Re-enable it with `--enable-error-email`.
+GDMS sends a recovery email only if it previously emailed the corresponding
+persistent error. Desktop error/recovery banners can be explicitly enabled with
+`gdms configure-notifications --enable-desktop-notifications` and disabled with
+`--disable-desktop-notifications`. Advanced installations may override saved values
+with `GOOGLE_DOCS_SYNC_ERROR_TO`, `GOOGLE_DOCS_SYNC_ERROR_FROM`, and
+`GOOGLE_DOCS_SYNC_ERROR_EMAIL_DELAY_MS` in the service environment.
+
 Inspect recent entries with:
 
 ```sh
@@ -213,7 +237,7 @@ tail -n 50 "$HOME/Library/Application Support/google-docs-markdown-sync/service-
 Machine-specific runtime state is stored in the same application-support
 directory. OAuth and R2 credentials are stored in macOS Keychain.
 
-## Weekly health heartbeat
+## Email notifications and weekly health heartbeat
 
 An independent LaunchAgent can send a weekly success email after checking the
 sync daemon and every paired Google Doc and Sheet. Because it is separate from
@@ -226,6 +250,11 @@ Monday 9:00 AM local-time heartbeat:
 ```sh
 gdms install-heartbeat --to "you@example.com"
 ```
+
+This stores one shared email recipient and sender in machine-local GDMS
+settings. Persistent sync errors automatically use the same address after 15
+minutes. Existing installations migrate the recipient from the older heartbeat
+LaunchAgent the next time `gdms install-service` runs.
 
 Run an immediate check and test email with:
 
@@ -275,8 +304,9 @@ Google API or OAuth request from blocking the queue indefinitely.
 - A local-only change updates the same Google document. A remote-only change
   updates the local representation.
 - Simultaneous text-only changes use the later filesystem or Drive
-  modification time. Image-bearing documents stop with a conflict when both
-  sides changed from the shared baseline.
+  modification time. Image-bearing documents stop with a conflict when the
+  local content, Google revision, and Drive modification time all changed from
+  the shared baseline. Revision-token churn alone is not treated as an edit.
 - Writes are hashed and revision-tracked to prevent feedback loops. Pairings
   share one single-flight synchronization queue.
 
@@ -346,9 +376,20 @@ shows the CLI's specific error output when further action is required.
 ### A synchronization pass reports an image conflict
 
 GDMS stops when both sides of an image-bearing document changed since their
-shared baseline. Compare the Google Doc with the Markdown file and its asset
-directory before choosing which content to retain. GDMS does not yet create an
-automatic conflict copy.
+shared baseline. A Google revision-token change with an unchanged Drive
+modification time is treated as normalization rather than a second-side edit.
+If a prior push updated the document body before a later formatting step
+failed, GDMS compares normalized remote content and image bytes with the local
+snapshot and repairs the shared baseline when they match. For a genuine
+conflict, compare the Google Doc with the Markdown file and its
+asset directory before choosing which content to retain. GDMS does not yet
+create an automatic conflict copy.
+
+For a Google Doc with a native table of contents, the TOC is remote-managed.
+When a local editor regenerates that Markdown range, GDMS restores the current
+exported native TOC locally and pushes the remaining body changes. Refresh the
+TOC inside Google Docs when headings change; its refreshed entries then pull
+back to Markdown normally.
 
 ### A Markdown image cannot be pushed
 

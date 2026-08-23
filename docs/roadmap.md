@@ -32,8 +32,9 @@ results, and remaining work are documented in the [image synchronization design]
 ## Next: safer conflicts and pairing controls
 
 - Add explicit unpairing and a command that lists every registered pairing.
-- Improve conflict visibility while retaining the current
-  later-modification-wins policy for text-only documents.
+- [x] Improve conflict visibility with durable deduplicated logs, delayed email
+  escalation, and emailed recovery notices while retaining the
+  current later-modification-wins policy for text-only documents.
 - Create recoverable conflict copies and user-visible notifications when both
   sides change incompatibly.
 - Refine the current document-level image conflict stop into per-image

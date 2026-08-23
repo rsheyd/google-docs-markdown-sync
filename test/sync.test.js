@@ -7,16 +7,24 @@ import { createHash } from "node:crypto";
 import {
   backoffDelay,
   chooseSyncAction,
+  comparableMarkdownHash,
   createSingleFlight,
   createWatcherManager,
   hasImageConflict,
   pullDocument,
+  preserveNativeTableOfContents,
+  refineTwoSidedAction,
   runDaemon,
+  shouldRaiseImageConflict,
   shouldDeferMissingPath,
   syncPairing,
 } from "../src/sync.js";
 
-const previous = { localHash: "old", remoteRevisionId: "old-revision" };
+const previous = {
+  localHash: "old",
+  remoteRevisionId: "old-revision",
+  remoteModifiedTime: "2026-08-22T12:00:00.000Z",
+};
 
 test("initializes missing and untracked local files from Google Docs", () => {
   assert.equal(
@@ -83,6 +91,7 @@ test("uses modification timestamps when both sides changed", () => {
 test("treats two-sided changes to an image document as a conflict", () => {
   const remote = {
     revisionId: "new-remote",
+    modifiedTime: "2026-08-23T12:00:00.000Z",
     document: {
       inlineObjects: {
         image: {
@@ -125,6 +134,177 @@ test("treats two-sided changes to an image document as a conflict", () => {
     }),
     true,
   );
+});
+
+test("does not treat a revision-only change as an image conflict", () => {
+  assert.equal(
+    hasImageConflict({
+      local: {
+        exists: true,
+        hash: "new-local",
+        content: "![Screenshot](note.assets/image.png)",
+      },
+      remote: {
+        revisionId: "normalized-remote",
+        modifiedTime: previous.remoteModifiedTime,
+        document: {
+          inlineObjects: {
+            image: {
+              inlineObjectProperties: {
+                embeddedObject: { imageProperties: { contentUri: "https://image" } },
+              },
+            },
+          },
+        },
+      },
+      previous,
+    }),
+    false,
+  );
+});
+
+test("refines metadata-only remote churn into a local push", () => {
+  assert.equal(
+    refineTwoSidedAction({
+      localHash: "new-local",
+      previousHash: "baseline",
+      remoteHash: "baseline",
+    }),
+    "push",
+  );
+  assert.equal(
+    refineTwoSidedAction({
+      localHash: "new-local",
+      previousHash: "baseline",
+      remoteHash: "new-local",
+    }),
+    "repair-status",
+  );
+  assert.equal(
+    refineTwoSidedAction({
+      localHash: "new-local",
+      previousHash: "baseline",
+      remoteHash: "different-remote",
+    }),
+    undefined,
+  );
+  assert.equal(
+    shouldRaiseImageConflict({
+      remoteContentVerifiedUnchanged: true,
+      local: {
+        exists: true,
+        hash: "new-local",
+        content: "![Screenshot](note.assets/image.png)",
+      },
+      remote: {
+        revisionId: "new-remote",
+        modifiedTime: "2026-08-23T12:00:00.000Z",
+        document: {
+          body: { content: [] },
+          inlineObjects: {
+            image: {
+              inlineObjectProperties: {
+                embeddedObject: { imageProperties: { contentUri: "https://image" } },
+              },
+            },
+          },
+        },
+      },
+      previous,
+    }),
+    false,
+  );
+});
+
+test("preserves a remote-managed native TOC while retaining local body edits", () => {
+  const local = [
+    "Intro",
+    "",
+    "**Table of Contents**",
+    "",
+    "[New section](#new-section)",
+    "",
+    "## Existing",
+    "",
+    "Existing body",
+    "",
+    "## New section",
+    "",
+    "New body",
+  ].join("\n");
+  const remote = [
+    "Old intro",
+    "",
+    "**Table of Contents**",
+    "",
+    "[Existing](#existing)",
+    "",
+    "## Existing",
+    "",
+    "Old body",
+  ].join("\n");
+
+  assert.equal(
+    preserveNativeTableOfContents(local, remote),
+    [
+      "Intro",
+      "",
+      "**Table of Contents**",
+      "",
+      "[Existing](#existing)",
+      "",
+      "## Existing",
+      "",
+      "Existing body",
+      "",
+      "## New section",
+      "",
+      "New body",
+    ].join("\n"),
+  );
+});
+
+test("compares image Markdown with the same asset-aware hash as local snapshots", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-compare-image-"));
+  const filePath = path.join(directory, "note.md");
+  const assets = path.join(directory, "note.assets");
+  await fs.mkdir(assets);
+  await fs.writeFile(path.join(assets, "image.png"), "image bytes");
+  const content = "![Screenshot](note.assets/image.png)\n";
+  const document = {
+    inlineObjects: {
+      image: {
+        inlineObjectProperties: {
+          embeddedObject: { imageProperties: { contentUri: "https://image" } },
+        },
+      },
+    },
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: 3,
+        paragraph: {
+          elements: [
+            {
+              startIndex: 1,
+              endIndex: 2,
+              inlineObjectElement: { inlineObjectId: "image" },
+            },
+            {
+              startIndex: 2,
+              endIndex: 3,
+              textRun: { content: "\n", textStyle: {} },
+            },
+          ],
+        },
+      }],
+    },
+  };
+
+  const hash = await comparableMarkdownHash(filePath, content, document);
+  assert.notEqual(hash, createHash("sha256").update(content).digest("hex"));
+  assert.equal(hash, await comparableMarkdownHash(filePath, content, document));
+  await fs.rm(directory, { recursive: true, force: true });
 });
 
 test("does not write a pulled local file before the remote status update succeeds", async () => {

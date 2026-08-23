@@ -223,8 +223,8 @@ configured and validated.
   document-level baseline and stop instead of overwriting either side.
 - [ ] Refine conflict detection to per-image baselines if the document-level
   stop proves too restrictive in routine use.
-- [ ] Add actionable logs and health checks without leaking signed URLs or
-  secrets.
+- [x] Add deduplicated actionable logs and delayed error/recovery email without
+  leaking signed URLs or secrets; keep transient desktop banners opt-in.
 - [ ] Test retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
 - [ ] Validate repeated use against live screenshot-heavy documents.
 - [ ] Add safe request planning for mixed text-and-image paragraphs and

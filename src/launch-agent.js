@@ -12,6 +12,10 @@ import {
   LOG_PATH,
 } from "./paths.js";
 import { ensureDirectory } from "./files.js";
+import {
+  migrateHeartbeatNotificationSettings,
+  saveNotificationSettings,
+} from "./config.js";
 
 function xmlEscape(value) {
   return String(value)
@@ -22,6 +26,7 @@ function xmlEscape(value) {
 }
 
 export async function installLaunchAgent() {
+  await migrateHeartbeatNotificationSettings();
   const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
@@ -36,6 +41,9 @@ export async function installLaunchAgent() {
     "GOOGLE_DOCS_SYNC_R2_BUCKET",
     "GOOGLE_DOCS_SYNC_DELETE_TO",
     "GOOGLE_DOCS_SYNC_DELETE_FROM",
+    "GOOGLE_DOCS_SYNC_ERROR_TO",
+    "GOOGLE_DOCS_SYNC_ERROR_FROM",
+    "GOOGLE_DOCS_SYNC_ERROR_EMAIL_DELAY_MS",
   ].flatMap((name) =>
     process.env[name]
       ? [
@@ -112,6 +120,12 @@ export async function installHeartbeatLaunchAgent({
   if (!recipient) {
     throw new Error("A heartbeat recipient is required. Pass --to EMAIL.");
   }
+  await saveNotificationSettings({
+    recipient,
+    sender,
+    errorEmailEnabled: true,
+    errorEmailDelayMinutes: 15,
+  });
   const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",

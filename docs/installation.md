@@ -339,7 +339,9 @@ Upgrading from GDMS 0.4.x or earlier requires running `gdms auth` once to
 grant the Drive write scope used for trash operations, followed by
 `gdms install-service` to refresh the background service configuration.
 
-## Optional weekly heartbeat
+## Optional email notifications and weekly heartbeat
 
-Continue with the [operations guide](operations.md#weekly-health-heartbeat) to install
-the independent success email and learn where to find service logs.
+Continue with the
+[operations guide](operations.md#email-notifications-and-weekly-health-heartbeat)
+to install the independent weekly success email. The same saved recipient
+receives persistent sync-error alerts by default.

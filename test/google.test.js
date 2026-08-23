@@ -962,6 +962,38 @@ test("refuses to patch inside a native Google Docs table of contents", () => {
   );
 });
 
+test("does not validate or rewrite native table-of-contents heading links", () => {
+  const tocItem = paragraph(1, "Old heading\n");
+  tocItem.paragraph.elements[0].textRun.textStyle.link = {
+    headingId: "heading-old",
+  };
+  const heading = paragraph(20, "New heading\n", "HEADING_2");
+  heading.paragraph.paragraphStyle.headingId = "heading-new";
+  const document = {
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: 13,
+        tableOfContents: { content: [tocItem] },
+      }, heading],
+    },
+  };
+
+  assert.deepEqual(
+    planHeadingLinkUpdate(
+      document,
+      "[Old heading](#old-heading)\n\n## New heading {#new-heading}",
+    ),
+    [],
+  );
+  assert.doesNotThrow(() =>
+    planIncrementalUpdate(
+      document,
+      "[Old heading](#old-heading)\n\n## New heading {#new-heading}",
+    ),
+  );
+});
+
 test("rejects a fragment that does not match a Markdown heading", () => {
   const document = {
     body: { content: [paragraph(1, "Purpose\n")] },

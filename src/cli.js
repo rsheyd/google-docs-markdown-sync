@@ -11,7 +11,11 @@ import {
 } from "./images.js";
 import { createR2Stager, loadR2Configuration } from "./r2.js";
 import { MANIFEST_NAME, R2_CONFIG_PATH, SETTINGS_PATH } from "./paths.js";
-import { loadSettings, saveDeletionPolicy } from "./config.js";
+import {
+  loadSettings,
+  saveDeletionPolicy,
+  saveNotificationSettings,
+} from "./config.js";
 import {
   createDocumentFromMarkdown,
   createGoogleServices,
@@ -76,7 +80,17 @@ function parseArguments(values) {
     const value = rest[index];
     if (!value.startsWith("--")) continue;
     const key = value.slice(2);
-    if (key === "all" || key === "dry-run" || key === "yes" || key === "disable" || key === "open") {
+    if ([
+      "all",
+      "dry-run",
+      "yes",
+      "disable",
+      "open",
+      "disable-error-email",
+      "enable-error-email",
+      "disable-desktop-notifications",
+      "enable-desktop-notifications",
+    ].includes(key)) {
       options[key] = true;
       continue;
     }
@@ -112,6 +126,9 @@ Commands:
   configure-r2 --account-id ID --bucket NAME --gateway-url URL
   configure-deletion --grace-period-minutes MINUTES --to EMAIL [--from SENDER]
   configure-deletion --disable
+  configure-notifications [--to EMAIL] [--from SENDER] [--error-email-delay-minutes MINUTES]
+                          [--enable-error-email | --disable-error-email]
+                          [--enable-desktop-notifications | --disable-desktop-notifications]
   sync-once
   daemon
   install-service
@@ -588,6 +605,56 @@ async function configureDeletion(options) {
   console.log("The running service will load this setting on its next sync pass.");
 }
 
+async function configureNotifications(options) {
+  if (options["enable-error-email"] && options["disable-error-email"]) {
+    throw new Error("Choose either --enable-error-email or --disable-error-email.");
+  }
+  if (
+    options["enable-desktop-notifications"] &&
+    options["disable-desktop-notifications"]
+  ) {
+    throw new Error(
+      "Choose either --enable-desktop-notifications or --disable-desktop-notifications.",
+    );
+  }
+  const current = (await loadSettings()).notifications;
+  const delay = options["error-email-delay-minutes"] === undefined
+    ? current.errorEmailDelayMinutes
+    : Number(options["error-email-delay-minutes"]);
+  const nextNotifications = {
+    ...current,
+    ...(options.to ? { recipient: options.to } : {}),
+    ...(options.from ? { sender: options.from } : {}),
+    errorEmailDelayMinutes: delay,
+    errorEmailEnabled: options["disable-error-email"]
+      ? false
+      : options["enable-error-email"]
+        ? true
+        : current.errorEmailEnabled,
+    desktopNotificationsEnabled: options["enable-desktop-notifications"]
+      ? true
+      : options["disable-desktop-notifications"]
+        ? false
+        : current.desktopNotificationsEnabled,
+  };
+  if (nextNotifications.errorEmailEnabled && !nextNotifications.recipient) {
+    throw new Error("Enabling error email requires --to EMAIL or an existing health-email recipient.");
+  }
+  const notifications = await saveNotificationSettings(nextNotifications);
+  await installLaunchAgent();
+  console.log(`Stored shared email notification settings in ${SETTINGS_PATH}`);
+  console.log(
+    notifications.errorEmailEnabled
+      ? `Persistent sync errors will email ${notifications.recipient} after ${notifications.errorEmailDelayMinutes} minute(s).`
+      : "Persistent sync-error email is disabled; durable error logs remain enabled.",
+  );
+  console.log(
+    notifications.desktopNotificationsEnabled
+      ? "Desktop error and recovery notifications are enabled."
+      : "Desktop notifications are disabled; durable logs and configured emails remain active.",
+  );
+}
+
 async function deleteDocument(options) {
   if (!options.file && !options["document-id"]) {
     throw new Error("delete requires --file or --document-id.");
@@ -733,6 +800,8 @@ async function main() {
     await configureR2(options);
   } else if (command === "configure-deletion") {
     await configureDeletion(options);
+  } else if (command === "configure-notifications") {
+    await configureNotifications(options);
   } else if (command === "delete") {
     await deleteDocument(options);
   } else if (command === "recover") {
@@ -775,12 +844,21 @@ async function main() {
       sender: options.from ?? process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_FROM,
     });
   } else if (command === "install-heartbeat") {
+    const settings = await loadSettings();
     const installedPath = await installHeartbeatLaunchAgent({
-      recipient: options.to ?? process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO,
+      recipient:
+        options.to ??
+        process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO ??
+        settings.notifications.recipient,
       sender:
-        options.from ?? "Google Docs Sync <onboarding@resend.dev>",
+        options.from ??
+        process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_FROM ??
+        settings.notifications.sender ??
+        "Google Docs Sync <onboarding@resend.dev>",
     });
+    await installLaunchAgent();
     console.log(`Installed weekly heartbeat ${installedPath}`);
+    console.log("Persistent sync-error email is enabled for the same recipient.");
   } else {
     console.error(`Unknown command: ${command}\n\n${helpText()}`);
     process.exitCode = 1;
