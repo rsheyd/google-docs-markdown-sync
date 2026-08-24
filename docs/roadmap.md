@@ -52,6 +52,14 @@ results, and remaining work are documented in the [image synchronization design]
 The phases, rollback guarantees, affected identifiers, and validation plan are
 documented in the [namespace migration plan](design/namespace-migration.md).
 
+## Later: packaged app and guided onboarding
+
+- Package GDMS as a signed and notarized macOS app that does not require Node.js, a source checkout, or manual background-service installation.
+- Add guided Google authorization, workspace selection, and first-document pairing.
+- Provide a simple interface for viewing pairings, sync health, conflicts, and recovery actions.
+- Reduce or eliminate the infrastructure users must configure for image synchronization.
+- Evaluate an optional managed service for shared infrastructure while keeping Markdown files local and making the privacy, security, and operating-cost tradeoffs explicit.
+
 ## Later: broader fidelity
 
 - Add explicit orphaned-asset review and cleanup tooling.

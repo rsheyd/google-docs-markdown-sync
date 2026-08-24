@@ -54,6 +54,7 @@
   CLI, launch-at-login and Finder Quick Action installers, and independent
   weekly Resend health heartbeat.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
+- `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
 - `cloudflare/image-gateway-worker.js`: HMAC-authenticated, short-lived image
   fetch gateway backed by the private R2 staging bucket.

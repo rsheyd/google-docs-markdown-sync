@@ -12,7 +12,6 @@ import {
   createWatcherManager,
   hasImageConflict,
   pullDocument,
-  preserveNativeTableOfContents,
   refineTwoSidedAction,
   runDaemon,
   shouldRaiseImageConflict,
@@ -216,54 +215,6 @@ test("refines metadata-only remote churn into a local push", () => {
   );
 });
 
-test("preserves a remote-managed native TOC while retaining local body edits", () => {
-  const local = [
-    "Intro",
-    "",
-    "**Table of Contents**",
-    "",
-    "[New section](#new-section)",
-    "",
-    "## Existing",
-    "",
-    "Existing body",
-    "",
-    "## New section",
-    "",
-    "New body",
-  ].join("\n");
-  const remote = [
-    "Old intro",
-    "",
-    "**Table of Contents**",
-    "",
-    "[Existing](#existing)",
-    "",
-    "## Existing",
-    "",
-    "Old body",
-  ].join("\n");
-
-  assert.equal(
-    preserveNativeTableOfContents(local, remote),
-    [
-      "Intro",
-      "",
-      "**Table of Contents**",
-      "",
-      "[Existing](#existing)",
-      "",
-      "## Existing",
-      "",
-      "Existing body",
-      "",
-      "## New section",
-      "",
-      "New body",
-    ].join("\n"),
-  );
-});
-
 test("compares image Markdown with the same asset-aware hash as local snapshots", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-compare-image-"));
   const filePath = path.join(directory, "note.md");
@@ -341,10 +292,10 @@ test("does not write a pulled local file before the remote status update succeed
   await fs.rm(directory, { recursive: true, force: true });
 });
 
-test("styles an unchanged Markdown pairing and records the new revision", async () => {
+test("repairs formatting on an unchanged Markdown pairing and records the new revision", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-spacing-"));
   const filePath = path.join(directory, "paired.md");
-  await fs.writeFile(filePath, "Paragraph\n\nSecond");
+  await fs.writeFile(filePath, "**Paragraph**\n\nSecond");
   const document = {
     revisionId: "old-revision",
     body: {
@@ -403,7 +354,7 @@ test("styles an unchanged Markdown pairing and records the new revision", async 
     name: "Paired",
   };
   const result = await syncPairing(services, pairing, {
-    localHash: createHash("sha256").update("Paragraph\n\nSecond").digest("hex"),
+    localHash: createHash("sha256").update("**Paragraph**\n\nSecond").digest("hex"),
     localModifiedTime: 1,
     remoteRevisionId: "old-revision",
     remoteModifiedTime: "2026-08-11T14:00:00Z",
@@ -415,7 +366,11 @@ test("styles an unchanged Markdown pairing and records the new revision", async 
   assert.equal(result.state.remoteRevisionId, "styled-revision");
   assert.equal(updates.length, 1);
   assert.deepEqual(
-    updates[0].requestBody.requests[0].updateParagraphStyle.paragraphStyle,
+    updates[0].requestBody.requests[0].updateTextStyle.textStyle,
+    { bold: true, italic: false, strikethrough: false, link: null },
+  );
+  assert.deepEqual(
+    updates[0].requestBody.requests[1].updateParagraphStyle.paragraphStyle,
     { spaceBelow: { magnitude: 8, unit: "PT" } },
   );
   await fs.rm(directory, { recursive: true, force: true });

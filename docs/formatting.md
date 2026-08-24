@@ -71,6 +71,40 @@ heading's appearance come from the Google Doc's named-style definition.
 Ordinary Markdown paragraphs use `Normal text`. Bold, italic, strikethrough,
 and links are applied as inline styles where supported.
 
+## Tables of contents
+
+An ordinary static Markdown table of contents is regular synchronized content.
+For example, `[Planning](#planning)` is sent to Google Docs as a heading link
+and is not rewritten by GDMS.
+
+When the Google Doc contains a native Google Docs table of contents, GDMS keeps
+that native element in Google Docs and represents it locally as a generated
+Markdown range:
+
+```md
+<!-- gdms:generated-toc:start | auto-generated from headings; edit headings, not this list -->
+
+**Table of Contents**
+
+[Planning](#planning)
+
+[Communication](#communication)
+
+<!-- gdms:generated-toc:end -->
+```
+
+The entries are generated from the Markdown headings. Edit the headings rather
+than the generated list; GDMS replaces changes inside the marked range during
+the next sync. The markers are invisible in rendered Markdown, and the visible
+content remains a normal linked table of contents.
+
+The local generated list and the native Google Docs table of contents are
+independent views. GDMS does not rewrite the native element or its links. After
+heading changes synchronize, refresh the native table of contents in Google
+Docs if you want its displayed entries updated immediately. To remove a native
+table of contents, delete it in Google Docs; removing only the generated local
+range does not request that structural deletion.
+
 ## Synchronization and normalization
 
 GDMS stores visual block separation as Google Docs paragraph `space below`, not

@@ -328,15 +328,20 @@ breaks become adjacent paragraphs without the added spacing. Headings, lists,
 tables, and managed status content retain their native spacing.
 
 Markdown fragment links become native Docs heading links. New headings require
-a second atomic batch after Google assigns their heading IDs. Native Google
-Docs tables of contents are preserved as read-only exported ranges because the
-Docs API cannot create or update them. A table of contents authored in Markdown
-becomes ordinary linked text or list items instead.
+a second atomic batch after Google assigns their heading IDs. A native Google
+Docs table of contents is preserved because the Docs API cannot create or
+update it. GDMS represents it locally with a marked, generated Markdown TOC;
+an unmarked table of contents authored in Markdown remains ordinary linked
+content. See the [formatting guide](formatting.md#tables-of-contents).
 
 Comments and suggestions are not represented in Markdown. Incremental updates
 preserve anchors in unchanged ranges, but an anchor inside a replaced range can
 be affected. Content omitted by Google's native Markdown export can be lost if
 its surrounding range is later replaced from Markdown.
+
+When content and revision tracking indicate that a pairing is unchanged, GDMS
+still reconciles inline formatting and paragraph spacing from Markdown using
+format-only Docs API requests. This repairs style drift without replacing text.
 
 ## Managed status artifacts
 
@@ -385,11 +390,12 @@ conflict, compare the Google Doc with the Markdown file and its
 asset directory before choosing which content to retain. GDMS does not yet
 create an automatic conflict copy.
 
-For a Google Doc with a native table of contents, the TOC is remote-managed.
-When a local editor regenerates that Markdown range, GDMS restores the current
-exported native TOC locally and pushes the remaining body changes. Refresh the
-TOC inside Google Docs when headings change; its refreshed entries then pull
-back to Markdown normally.
+For a Google Doc with a native table of contents, GDMS generates the entries
+inside the local `gdms:generated-toc` markers from the Markdown headings. Edits
+inside that range are overwritten, excluded from change detection, and never
+sent as static content. The native Docs element remains independent; refresh
+it inside Google Docs after heading changes. Delete a native TOC in Google Docs
+rather than removing only its local generated representation.
 
 ### A Markdown image cannot be pushed
 

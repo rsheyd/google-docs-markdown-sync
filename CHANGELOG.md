@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.3] - 2026-08-23
+
+### Changed
+
+- Represent native Google Docs tables of contents locally as marked Markdown
+  TOCs generated from current headings. Ignore changes inside the generated
+  range and preserve the native Docs element during pushes, while leaving
+  unmarked static Markdown TOCs as ordinary synchronized content.
+
+### Fixed
+
+- Repair bold, italic, strikethrough, link, and paragraph-spacing drift during
+  otherwise unchanged sync passes without replacing document text.
+
 ## [0.8.2] - 2026-08-23
 
 ### Fixed

@@ -129,7 +129,10 @@ falls back to serializing that subset through the Google Docs API. Headings,
 paragraphs, ordered and unordered lists, links, bold, italics, simple tables,
 blank-line spacing, heading links, and standalone images round-trip.
 Incremental pushes preserve unchanged document ranges and native tables of
-contents where the APIs allow it.
+contents where the APIs allow it. Native Docs tables of contents appear locally
+as marked Markdown TOCs generated from headings; ordinary unmarked Markdown
+TOCs remain synchronized content. See the
+[formatting guide](docs/formatting.md#tables-of-contents).
 
 Google Sheets pairings use one local directory per spreadsheet and one CSV per
 tab. Raw values and formulas round-trip. Formatting, charts, comments, filters,

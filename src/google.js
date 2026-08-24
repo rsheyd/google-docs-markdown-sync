@@ -890,10 +890,10 @@ export function planParagraphSpacingUpdate(document, markdown) {
   const requests = [];
   let currentIndex = 0;
   for (const desiredBlock of desired) {
-    const desiredFingerprint = fingerprint(desiredBlock);
+    const desiredFingerprint = formattingFingerprint(desiredBlock);
     while (
       currentIndex < current.length &&
-      fingerprint(current[currentIndex]) !== desiredFingerprint
+      formattingFingerprint(current[currentIndex]) !== desiredFingerprint
     ) {
       currentIndex += 1;
     }
@@ -922,6 +922,98 @@ export function planParagraphSpacingUpdate(document, markdown) {
         fields: "spaceBelow",
       },
     });
+  }
+  return requests;
+}
+
+function formattingFingerprint(block) {
+  if (block.type === "table") return undefined;
+  return JSON.stringify({
+    type: block.type,
+    ...(block.type === "text"
+      ? { paragraphStyle: block.paragraphStyle }
+      : { ordered: block.ordered, nestingLevel: block.nestingLevel ?? 0 }),
+    text: block.text,
+  });
+}
+
+function inlineStyleAt(block, offset) {
+  const style = {};
+  for (const range of block.styles ?? []) {
+    if (range.start > offset || range.end <= offset) continue;
+    if (range.style.bold) style.bold = true;
+    if (range.style.italic) style.italic = true;
+    if (range.style.strikethrough) style.strikethrough = true;
+    if (range.style.link && !range.style.link.startsWith("#")) {
+      style.link = range.style.link;
+    }
+  }
+  return style;
+}
+
+function textStyleRequest(block, start, end, style) {
+  return {
+    updateTextStyle: {
+      range: {
+        startIndex: block.startIndex + start,
+        endIndex: block.startIndex + end,
+      },
+      textStyle: {
+        bold: Boolean(style.bold),
+        italic: Boolean(style.italic),
+        strikethrough: Boolean(style.strikethrough),
+        link: style.link ? { url: style.link } : null,
+      },
+      fields: "bold,italic,strikethrough,link",
+    },
+  };
+}
+
+export function planInlineStyleUpdate(document, markdown) {
+  const desired = parseMarkdown(markdown);
+  const current = withoutManagedStatusBlocks(
+    withoutNativeTocStructuralSpacers(
+      withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
+    ),
+  );
+  const requests = [];
+  let currentIndex = 0;
+  for (const desiredBlock of desired) {
+    const desiredFingerprint = formattingFingerprint(desiredBlock);
+    if (!desiredFingerprint) continue;
+    while (
+      currentIndex < current.length &&
+      formattingFingerprint(current[currentIndex]) !== desiredFingerprint
+    ) {
+      currentIndex += 1;
+    }
+    if (currentIndex >= current.length) break;
+    const currentBlock = current[currentIndex];
+    currentIndex += 1;
+    if (currentBlock.nativeTableOfContents) continue;
+
+    let rangeStart;
+    let rangeStyle;
+    for (let offset = 0; offset <= desiredBlock.text.length; offset += 1) {
+      const desiredStyle = offset < desiredBlock.text.length
+        ? inlineStyleAt(desiredBlock, offset)
+        : undefined;
+      const currentStyle = offset < currentBlock.text.length
+        ? inlineStyleAt(currentBlock, offset)
+        : undefined;
+      const differs = JSON.stringify(desiredStyle) !== JSON.stringify(currentStyle);
+      const sameRangeStyle =
+        rangeStart !== undefined &&
+        JSON.stringify(desiredStyle) === JSON.stringify(rangeStyle);
+      if (differs && rangeStart === undefined) {
+        rangeStart = offset;
+        rangeStyle = desiredStyle;
+      } else if (rangeStart !== undefined && (!differs || !sameRangeStyle)) {
+        requests.push(textStyleRequest(currentBlock, rangeStart, offset, rangeStyle));
+        rangeStart = differs ? offset : undefined;
+        rangeStyle = differs ? desiredStyle : undefined;
+      }
+    }
   }
   return requests;
 }
@@ -1465,13 +1557,16 @@ export async function updateDocumentFromMarkdown(
   return getRemoteInfo(services, documentId);
 }
 
-export async function updateDocumentParagraphSpacing(
+export async function updateDocumentFormatting(
   services,
   documentId,
   document,
   markdown,
 ) {
-  const requests = planParagraphSpacingUpdate(document, markdown);
+  const requests = [
+    ...planInlineStyleUpdate(document, markdown),
+    ...planParagraphSpacingUpdate(document, markdown),
+  ];
   if (!requests.length) return undefined;
   await services.docs.documents.batchUpdate({
     documentId,

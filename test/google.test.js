@@ -8,6 +8,7 @@ import {
   exportMarkdown,
   markdownFromDocument,
   planHeadingLinkUpdate,
+  planInlineStyleUpdate,
   planIncrementalUpdate,
   planParagraphSpacingUpdate,
   planOrderedListNumberingUpdate,
@@ -843,6 +844,23 @@ test("does not write an unchanged document", () => {
   const plan = planIncrementalUpdate(document, "Hello");
   assert.equal(plan.mode, "incremental");
   assert.deepEqual(plan.requests, []);
+});
+
+test("repairs inline styles without replacing unchanged text", () => {
+  const item = paragraph(1, "Quick links\n");
+  const document = { body: { content: [item] } };
+  assert.deepEqual(planInlineStyleUpdate(document, "**Quick links**"), [{
+    updateTextStyle: {
+      range: { startIndex: 1, endIndex: 12 },
+      textStyle: {
+        bold: true,
+        italic: false,
+        strikethrough: false,
+        link: null,
+      },
+      fields: "bold,italic,strikethrough,link",
+    },
+  }]);
 });
 
 test("resolves a Markdown fragment to a Google Docs heading link", () => {

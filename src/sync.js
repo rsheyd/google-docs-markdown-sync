@@ -15,7 +15,7 @@ import {
   createGoogleServices,
   exportMarkdown,
   getRemoteInfo,
-  updateDocumentParagraphSpacing,
+  updateDocumentFormatting,
   updateDocumentFromMarkdown,
   updateDocumentStatus,
 } from "./google.js";
@@ -54,6 +54,14 @@ import {
   spreadsheetStatusMarkdown,
   stripDocumentStatus,
 } from "./status.js";
+import {
+  documentHasNativeTableOfContents,
+  refreshGeneratedTableOfContents,
+  representNativeTableOfContents,
+  representNativeTableOfContentsFromRemote,
+  restoreNativeTableOfContents,
+  stripGeneratedTableOfContents,
+} from "./toc.js";
 
 async function localSnapshot(filePath) {
   try {
@@ -61,43 +69,23 @@ async function localSnapshot(filePath) {
       fs.readFile(filePath, "utf8"),
       fs.stat(filePath),
     ]);
-    const content = stripDocumentStatus(text);
+    const rawContent = stripDocumentStatus(text);
+    const content = refreshGeneratedTableOfContents(rawContent);
     return {
       exists: true,
       text,
       content,
-      hash: await hashMarkdownWithAssets(filePath, content),
+      hash: await hashMarkdownWithAssets(
+        filePath,
+        stripGeneratedTableOfContents(content),
+      ),
+      managedContentChanged: content !== rawContent,
       modifiedTime: stat.mtimeMs,
     };
   } catch (error) {
     if (error.code === "ENOENT") return { exists: false };
     throw error;
   }
-}
-
-function markdownTocRange(markdown) {
-  const lines = markdown.replaceAll("\r\n", "\n").split("\n");
-  const start = lines.findIndex((line) => /^\*\*Table of Contents\*\*\s*$/.test(line));
-  if (start < 0) return undefined;
-  const headingOffset = lines.slice(start + 1).findIndex((line) => /^#{1,6}\s/.test(line));
-  if (headingOffset < 0) return undefined;
-  return { lines, start, end: start + 1 + headingOffset };
-}
-
-export function preserveNativeTableOfContents(localMarkdown, remoteMarkdown) {
-  const local = markdownTocRange(localMarkdown);
-  const remote = markdownTocRange(remoteMarkdown);
-  if (!local || !remote) return localMarkdown;
-  return [
-    ...local.lines.slice(0, local.start),
-    ...remote.lines.slice(remote.start, remote.end),
-    ...local.lines.slice(local.end),
-  ].join("\n");
-}
-
-function hasNativeTableOfContents(document) {
-  const body = document.body ?? document.tabs?.[0]?.documentTab?.body;
-  return (body?.content ?? []).some((element) => element.tableOfContents);
 }
 
 export async function pullDocument(services, pairing, remote) {
@@ -116,12 +104,15 @@ export async function pullDocument(services, pairing, remote) {
   const exported = await exportMarkdown(services, pairing.documentId, {
     document: updatedRemote.document,
   });
-  const content = await materializeRemoteImages(
+  const materialized = await materializeRemoteImages(
     services,
     pairing,
     updatedRemote.document,
     exported,
   );
+  const content = documentHasNativeTableOfContents(updatedRemote.document)
+    ? representNativeTableOfContents(materialized)
+    : materialized;
   status.content = content;
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
   const local = await localSnapshot(pairing.absolutePath);
@@ -136,14 +127,17 @@ export async function pullDocument(services, pairing, remote) {
 }
 
 async function push(services, pairing, local, before) {
-  const content = hasNativeTableOfContents(before.document)
-    ? preserveNativeTableOfContents(
-        local.content,
-        await exportMarkdown(services, pairing.documentId, { document: before.document }),
-      )
-    : local.content;
+  const remoteExport = documentHasNativeTableOfContents(before.document)
+    ? await exportMarkdown(services, pairing.documentId, { document: before.document })
+    : undefined;
+  const localContent = remoteExport
+    ? representNativeTableOfContentsFromRemote(local.content, remoteExport)
+    : refreshGeneratedTableOfContents(local.content);
+  const content = remoteExport
+    ? restoreNativeTableOfContents(localContent, remoteExport)
+    : localContent;
   const status = {
-    content,
+    content: localContent,
     lastWriter: "markdown",
     lastSuccessfulSync: new Date().toISOString(),
   };
@@ -262,9 +256,12 @@ export function shouldRaiseImageConflict({ remoteContentVerifiedUnchanged, ...sn
 }
 
 export async function comparableMarkdownHash(filePath, content, document = {}) {
+  const comparable = documentHasNativeTableOfContents(document)
+    ? stripGeneratedTableOfContents(representNativeTableOfContents(content))
+    : stripGeneratedTableOfContents(content);
   return hasImagesForSync(document, content)
-    ? hashMarkdownWithAssets(filePath, content)
-    : sha256(content);
+    ? hashMarkdownWithAssets(filePath, comparable)
+    : sha256(comparable);
 }
 
 export function refineTwoSidedAction({ localHash, previousHash, remoteHash }) {
@@ -363,7 +360,24 @@ export async function syncPairing(
   }
   if (action === "none") {
     if (!spreadsheet) {
-      const styledRemote = await updateDocumentParagraphSpacing(
+      let managedContent = local.content;
+      if (documentHasNativeTableOfContents(remote.document)) {
+        const remoteExport = await exportMarkdown(services, effectivePairing.documentId, {
+          document: remote.document,
+        });
+        managedContent = representNativeTableOfContentsFromRemote(local.content, remoteExport);
+      }
+      if (local.managedContentChanged || managedContent !== local.content) {
+        local.content = managedContent;
+        await writeTextAtomic(
+          effectivePairing.absolutePath,
+          documentStatusMarkdown(effectivePairing, {
+            ...previous,
+            content: managedContent,
+          }),
+        );
+      }
+      const styledRemote = await updateDocumentFormatting(
         services,
         effectivePairing.documentId,
         remote.document,

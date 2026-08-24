@@ -72,6 +72,14 @@ import {
   remoteDocumentStatusMarkdown,
   stripDocumentStatus,
 } from "./status.js";
+import {
+  documentHasNativeTableOfContents,
+  refreshGeneratedTableOfContents,
+  representNativeTableOfContents,
+  representNativeTableOfContentsFromRemote,
+  restoreNativeTableOfContents,
+  stripGeneratedTableOfContents,
+} from "./toc.js";
 
 function parseArguments(values) {
   const [command, ...rest] = values;
@@ -168,12 +176,15 @@ async function pair(options) {
       exportMarkdown(services, pairing.documentId),
       getRemoteInfo(services, pairing.documentId),
     ]);
-    const markdown = await materializeRemoteImages(
+    const materialized = await materializeRemoteImages(
       services,
       pairing,
       remote.document,
       exportedMarkdown,
     );
+    const markdown = documentHasNativeTableOfContents(remote.document)
+      ? representNativeTableOfContents(materialized)
+      : materialized;
     const status = {
       content: markdown,
       lastWriter: "google-docs",
@@ -188,7 +199,10 @@ async function pair(options) {
     const stat = await fs.stat(pairing.absolutePath);
     const state = await loadState();
     state.documents[stateKey(pairing)] = {
-      localHash: await hashMarkdownWithAssets(pairing.absolutePath, markdown),
+      localHash: await hashMarkdownWithAssets(
+        pairing.absolutePath,
+        stripGeneratedTableOfContents(markdown),
+      ),
       localModifiedTime: stat.mtimeMs,
       remoteRevisionId: finalRemote.revisionId,
       remoteModifiedTime: finalRemote.modifiedTime,
@@ -398,7 +412,16 @@ async function plan(options) {
     fs.readFile(pairing.absolutePath, "utf8"),
     getRemoteInfo(services, pairing.documentId),
   ]);
-  const content = stripDocumentStatus(markdown);
+  let localContent = refreshGeneratedTableOfContents(stripDocumentStatus(markdown));
+  const remoteExport = documentHasNativeTableOfContents(remote.document)
+    ? await exportMarkdown(services, pairing.documentId, { document: remote.document })
+    : undefined;
+  if (remoteExport) {
+    localContent = representNativeTableOfContentsFromRemote(localContent, remoteExport);
+  }
+  const content = remoteExport
+    ? restoreNativeTableOfContents(localContent, remoteExport)
+    : localContent;
   const result = planIncrementalUpdate(
     remote.document,
     content,
@@ -486,15 +509,24 @@ async function push(options) {
     fs.readFile(pairing.absolutePath, "utf8"),
     getAuthClient(),
   ]);
-  const content = stripDocumentStatus(markdown);
+  let localContent = refreshGeneratedTableOfContents(stripDocumentStatus(markdown));
+  const services = createGoogleServices(auth);
+  const before = await getRemoteInfo(services, pairing.documentId);
+  const remoteExport = documentHasNativeTableOfContents(before.document)
+    ? await exportMarkdown(services, pairing.documentId, { document: before.document })
+    : undefined;
+  if (remoteExport) {
+    localContent = representNativeTableOfContentsFromRemote(localContent, remoteExport);
+  }
   const status = {
-    content,
+    content: localContent,
     lastWriter: "markdown",
     lastSuccessfulSync: new Date().toISOString(),
   };
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
-  const services = createGoogleServices(auth);
-  const before = await getRemoteInfo(services, pairing.documentId);
+  const content = remoteExport
+    ? restoreNativeTableOfContents(localContent, remoteExport)
+    : localContent;
   const imageSync = hasImagesForSync(before.document, content)
     ? await prepareImagePush(
         services,
@@ -522,7 +554,10 @@ async function push(options) {
   const refreshedStat = await fs.stat(pairing.absolutePath);
   const state = await loadState();
   state.documents[stateKey(pairing)] = {
-    localHash: await hashMarkdownWithAssets(pairing.absolutePath, content),
+    localHash: await hashMarkdownWithAssets(
+      pairing.absolutePath,
+      stripGeneratedTableOfContents(localContent),
+    ),
     localModifiedTime: refreshedStat.mtimeMs,
     remoteRevisionId: remote.revisionId,
     remoteModifiedTime: remote.modifiedTime,
