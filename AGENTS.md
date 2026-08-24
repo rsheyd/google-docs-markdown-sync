@@ -45,6 +45,8 @@
 - `docs/images/`: User-facing documentation images referenced by project guides.
 - `local-only/`: Git-excluded personal drafts, outreach material, and other
   machine-local working files.
+- `local-only/openmagpie-gdms-setup.md`: Local runbook for using OpenMagpie to
+  find and review public discussions where GDMS may be relevant.
 - `.gitignore`: Generated dependency/build output exclusions.
 - `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.
