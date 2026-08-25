@@ -53,6 +53,18 @@ version-bump commit. Do not change the numeric `version` fields in
 `google-docs-sync.json`, `.google-sheets-sync.json`, or their examples; those
 are data-format schema versions, not application release versions.
 
+After the version bump and changelog entry are committed and pushed, create the
+GitHub release from the newest `CHANGELOG.md` section:
+
+```sh
+./scripts/create-github-release.sh --dry-run
+./scripts/create-github-release.sh
+```
+
+The script uses the first release heading as the `vVERSION` tag and release
+title, and uses that section's content as the release notes. It refuses to
+publish from a dirty worktree or replace an existing GitHub release.
+
 ## Validate the change
 
 Run the complete project check:

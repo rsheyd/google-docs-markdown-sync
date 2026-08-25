@@ -51,6 +51,7 @@
 - `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.
 - `package-lock.json`: Locked Node service dependency graph.
+- `scripts/create-github-release.sh`: Create the newest changelog release on GitHub after previewing and committing it.
 - `src/`: Synchronization service, Google API integration, pairing registry,
   Markdown, image, R2 staging, migrations, and CSV conversion, Docs and Sheets adapters,
   CLI, launch-at-login and Finder Quick Action installers, and independent
