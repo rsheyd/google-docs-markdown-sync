@@ -16,6 +16,10 @@ export const APP_SUPPORT_DIR = path.join(
   "google-docs-markdown-sync",
 );
 export const STATE_PATH = path.join(APP_SUPPORT_DIR, "state.json");
+export const NOTIFICATION_STATE_PATH = path.join(
+  APP_SUPPORT_DIR,
+  "notification-incidents.json",
+);
 export const R2_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "r2.json");
 export const SETTINGS_PATH = path.join(APP_SUPPORT_DIR, "settings.json");
 export const INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");

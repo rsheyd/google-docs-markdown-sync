@@ -9,11 +9,28 @@ import {
   organizeCsvFiles,
   parseCsv,
   pullSpreadsheet,
+  getSpreadsheetDriveInfo,
   pushSpreadsheet,
   readLocalSpreadsheet,
   sheetFilename,
   stringifyCsv,
 } from "../src/sheets.js";
+
+test("attaches the Google operation and elapsed time to spreadsheet failures", async () => {
+  const failure = Object.assign(new Error("The operation was aborted."), {
+    code: "ABORT_ERR",
+  });
+  await assert.rejects(
+    getSpreadsheetDriveInfo({
+      drive: { files: { get: async () => { throw failure; } } },
+    }, "spreadsheet"),
+    (error) => {
+      assert.equal(error.gdmsOperation, "drive.files.get");
+      assert.equal(Number.isFinite(error.gdmsElapsedMs), true);
+      return true;
+    },
+  );
+});
 
 test("sanitizes CSV filenames into valid initial tab names", () => {
   assert.equal(initialSheetTitle("Q1: Sales?.csv"), "Q1- Sales-");

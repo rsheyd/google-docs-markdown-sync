@@ -38,7 +38,8 @@ import { createTimestampLogger } from "./progress.js";
 import { createSyncErrorReporter } from "./notifications.js";
 import { readPackageVersion } from "./version.js";
 import {
-  getSpreadsheetInfo,
+  getSpreadsheetDetails,
+  getSpreadsheetDriveInfo,
   pullSpreadsheet,
   pushSpreadsheet,
   readLocalSpreadsheet,
@@ -277,9 +278,18 @@ export async function syncPairing(
   { deferMissingLocal } = {},
 ) {
   const spreadsheet = pairing.type === "spreadsheet";
-  const remote = spreadsheet
-    ? await getSpreadsheetInfo(services, pairing.spreadsheetId)
+  let remote = spreadsheet
+    ? await getSpreadsheetDriveInfo(services, pairing.spreadsheetId)
     : await getRemoteInfo(services, pairing.documentId);
+  const spreadsheetDetails = async () => {
+    if (!spreadsheet || remote.spreadsheet) return remote;
+    remote = await getSpreadsheetDetails(
+      services,
+      pairing.spreadsheetId,
+      remote,
+    );
+    return remote;
+  };
   const effectivePairing = spreadsheet ? pairing : await applyRemoteTitle(pairing, remote.name);
   const local = spreadsheet
     ? await readLocalSpreadsheet(effectivePairing.absolutePath)
@@ -350,6 +360,7 @@ export async function syncPairing(
     );
   }
   if (action === "pull") {
+    if (spreadsheet) await spreadsheetDetails();
     return {
       action: "pull",
       pairing: effectivePairing,
@@ -408,6 +419,10 @@ export async function syncPairing(
         })
       : local.text;
     const localStatusNeedsRepair = actualLocalStatus !== expectedLocalStatus;
+    if (spreadsheet && !localStatusNeedsRepair) {
+      return { action: "none", pairing: effectivePairing, state: previous };
+    }
+    if (spreadsheet) await spreadsheetDetails();
     const remoteStatusMissing = spreadsheet
       ? !hasSpreadsheetStatus(remote)
       : !hasRemoteDocumentStatus(remote.document);
@@ -420,6 +435,7 @@ export async function syncPairing(
     }
     return { action: "none", pairing: effectivePairing, state: previous };
   }
+  if (spreadsheet) await spreadsheetDetails();
   return {
     action: "push",
     pairing: effectivePairing,

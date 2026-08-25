@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.4] - 2026-08-25
+
+### Changed
+
+- Poll only the lightweight Drive revision for unchanged Google Sheets
+  pairings, fetching Sheets metadata and tab values only after a local or
+  remote change.
+- Classify sync failures as temporary connectivity or needing attention.
+  Preserve active failure and sent-email markers across service restarts,
+  group changing timeout and DNS messages into the same incident, and wait at
+  least 30 minutes before emailing about temporary connectivity failures.
+- Include the failed spreadsheet operation, elapsed time, and available error
+  code in daemon diagnostics.
+
+### Fixed
+
+- Serialize same-file JSON writes and use collision-safe temporary filenames
+  so overlapping runtime-state or pairing-index writes cannot race for the same
+  temporary file and terminate the daemon.
+
 ## [0.8.3] - 2026-08-23
 
 ### Changed

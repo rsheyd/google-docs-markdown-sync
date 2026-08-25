@@ -10,6 +10,17 @@ import {
 
 export const SHEETS_METADATA = ".google-sheets-sync.json";
 
+async function googleOperation(operation, callback, now = Date.now) {
+  const startedAt = now();
+  try {
+    return await callback();
+  } catch (error) {
+    error.gdmsOperation ??= operation;
+    error.gdmsElapsedMs ??= Math.max(0, now() - startedAt);
+    throw error;
+  }
+}
+
 function safeDirectoryName(value) {
   return String(value)
     .trim()
@@ -72,12 +83,12 @@ export function initialSheetTitle(filename) {
 }
 
 export async function createSpreadsheet(services, title, sheets) {
-  const response = await services.sheets.spreadsheets.create({
+  const response = await googleOperation("sheets.spreadsheets.create", () => services.sheets.spreadsheets.create({
     requestBody: {
       properties: { title },
       sheets: sheets.map((sheet) => ({ properties: { title: sheet.title } })),
     },
-  });
+  }));
   const spreadsheetId = response.data.spreadsheetId;
   if (!spreadsheetId) throw new Error("Google Sheets did not return a spreadsheet ID.");
   return {
@@ -187,17 +198,47 @@ export async function readLocalSpreadsheet(directory) {
   };
 }
 
-export async function getSpreadsheetInfo(services, spreadsheetId) {
-  const [fileResponse, spreadsheetResponse] = await Promise.all([
-    services.drive.files.get({ fileId: spreadsheetId, fields: "id,modifiedTime,name,version" }),
-    services.sheets.spreadsheets.get({ spreadsheetId, fields: "spreadsheetId,properties.title,sheets.properties" }),
-  ]);
+export async function getSpreadsheetDriveInfo(services, spreadsheetId) {
+  const fileResponse = await googleOperation(
+    "drive.files.get",
+    () => services.drive.files.get({
+      fileId: spreadsheetId,
+      fields: "id,modifiedTime,name,version",
+    }),
+  );
   return {
     modifiedTime: fileResponse.data.modifiedTime,
     name: fileResponse.data.name,
     revisionId: String(fileResponse.data.version ?? fileResponse.data.modifiedTime),
+  };
+}
+
+export async function getSpreadsheetDetails(services, spreadsheetId, driveInfo) {
+  const spreadsheetResponse = await googleOperation(
+    "sheets.spreadsheets.get",
+    () => services.sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: "spreadsheetId,properties.title,sheets.properties",
+    }),
+  );
+  return {
+    ...(driveInfo ?? await getSpreadsheetDriveInfo(services, spreadsheetId)),
     spreadsheet: spreadsheetResponse.data,
   };
+}
+
+export async function getSpreadsheetInfo(services, spreadsheetId) {
+  const [driveInfo, spreadsheetResponse] = await Promise.all([
+    getSpreadsheetDriveInfo(services, spreadsheetId),
+    googleOperation(
+      "sheets.spreadsheets.get",
+      () => services.sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: "spreadsheetId,properties.title,sheets.properties",
+      }),
+    ),
+  ]);
+  return { ...driveInfo, spreadsheet: spreadsheetResponse.data };
 }
 
 export function hasSpreadsheetStatus(remote) {
@@ -215,23 +256,23 @@ function contentSheetProperties(remote) {
 export async function writeSpreadsheetStatus(services, pairing, state, remote) {
   let current = remote ?? await getSpreadsheetInfo(services, pairing.spreadsheetId);
   if (!hasSpreadsheetStatus(current)) {
-    await services.sheets.spreadsheets.batchUpdate({
+    await googleOperation("sheets.spreadsheets.batchUpdate", () => services.sheets.spreadsheets.batchUpdate({
       spreadsheetId: pairing.spreadsheetId,
       requestBody: { requests: [{ addSheet: { properties: { title: SHEET_STATUS_TITLE } } }] },
-    });
+    }));
     current = await getSpreadsheetInfo(services, pairing.spreadsheetId);
   }
-  await services.sheets.spreadsheets.values.clear({
+  await googleOperation("sheets.values.clear", () => services.sheets.spreadsheets.values.clear({
     spreadsheetId: pairing.spreadsheetId,
     range: quoteSheet(SHEET_STATUS_TITLE),
     requestBody: {},
-  });
-  await services.sheets.spreadsheets.values.update({
+  }));
+  await googleOperation("sheets.values.update", () => services.sheets.spreadsheets.values.update({
     spreadsheetId: pairing.spreadsheetId,
     range: `${quoteSheet(SHEET_STATUS_TITLE)}!A1`,
     valueInputOption: "RAW",
     requestBody: { values: spreadsheetStatusValues(pairing, state) },
-  });
+  }));
   await writeTextAtomic(
     path.join(pairing.absolutePath, SHEET_STATUS_FILE),
     spreadsheetStatusMarkdown(pairing, state),
@@ -247,12 +288,12 @@ export async function pullSpreadsheet(services, pairing, remote) {
   const properties = contentSheetProperties(remote);
   const ranges = properties.map((sheet) => quoteSheet(sheet.title));
   const response = ranges.length
-    ? await services.sheets.spreadsheets.values.batchGet({
+    ? await googleOperation("sheets.values.batchGet", () => services.sheets.spreadsheets.values.batchGet({
         spreadsheetId: pairing.spreadsheetId,
         ranges,
         valueRenderOption: "FORMULA",
         dateTimeRenderOption: "SERIAL_NUMBER",
-      })
+      }))
     : { data: { valueRanges: [] } };
   const previous = await readLocalSpreadsheet(pairing.absolutePath);
   const previousById = new Map(previous.sheets.filter((sheet) => sheet.sheetId != null).map((sheet) => [sheet.sheetId, sheet]));
@@ -301,18 +342,30 @@ export async function pushSpreadsheet(services, pairing, local, remote) {
   requests.push(...remoteSheets
     .filter((sheet) => !localIds.has(sheet.sheetId))
     .map((sheet) => ({ deleteSheet: { sheetId: sheet.sheetId } })));
-  if (requests.length) await services.sheets.spreadsheets.batchUpdate({ spreadsheetId: pairing.spreadsheetId, requestBody: { requests } });
+  if (requests.length) {
+    await googleOperation(
+      "sheets.spreadsheets.batchUpdate",
+      () => services.sheets.spreadsheets.batchUpdate({
+        spreadsheetId: pairing.spreadsheetId,
+        requestBody: { requests },
+      }),
+    );
+  }
   const refreshed = await getSpreadsheetInfo(services, pairing.spreadsheetId);
   const byTitle = new Map((refreshed.spreadsheet.sheets ?? []).map((sheet) => [sheet.properties.title, sheet.properties]));
   for (const sheet of local.sheets) {
-    await services.sheets.spreadsheets.values.clear({ spreadsheetId: pairing.spreadsheetId, range: quoteSheet(sheet.title), requestBody: {} });
+    await googleOperation("sheets.values.clear", () => services.sheets.spreadsheets.values.clear({
+      spreadsheetId: pairing.spreadsheetId,
+      range: quoteSheet(sheet.title),
+      requestBody: {},
+    }));
     if (sheet.values.length) {
-      await services.sheets.spreadsheets.values.update({
+      await googleOperation("sheets.values.update", () => services.sheets.spreadsheets.values.update({
         spreadsheetId: pairing.spreadsheetId,
         range: `${quoteSheet(sheet.title)}!A1`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: sheet.values },
-      });
+      }));
     }
     sheet.sheetId = byTitle.get(sheet.title)?.sheetId;
   }

@@ -108,8 +108,10 @@ timestamps, and credentials remain outside Git under:
 
 OAuth and R2 credentials are stored in the macOS Keychain. The service watches
 Markdown, referenced image assets, and CSV directories locally; it polls paired
-Google Docs and Sheets every five seconds. Synchronization passes are
-single-flight, and failed remote requests use bounded exponential backoff.
+Google Docs and the lightweight Drive revision for paired Sheets every five
+seconds. Sheet metadata and tab values are fetched only after a remote or local
+change. Synchronization passes are single-flight, and failed remote requests use
+bounded exponential backoff.
 
 For the manifest format, see the [installation guide](docs/installation.md#pairing-manifest). For
 detailed synchronization semantics, service management, logs, heartbeat
@@ -149,9 +151,11 @@ Important current limitations:
   replaced range can be affected.
 - General simultaneous text edits use the later modification timestamp. If an
   image-bearing document changed on both sides, synchronization stops with an
-  explicit conflict. Background errors are deduplicated in durable logs. When
-  weekly health email is configured, persistent errors email the same recipient
-  after 15 minutes by default, followed by an email when synchronization recovers.
+  explicit conflict. Background errors are deduplicated in durable logs and
+  across service restarts. When weekly health email is configured, persistent
+  actionable errors email the same recipient after 15 minutes by default;
+  temporary connectivity failures wait at least 30 minutes. GDMS follows an
+  emailed incident with one recovery email when synchronization succeeds.
 - Floating images, drawings, linked charts, cropping, rotation, and other
   advanced visual effects are unsupported.
 - Deleting a generated status artifact does not unpair a document; it is

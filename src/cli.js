@@ -680,7 +680,7 @@ async function configureNotifications(options) {
   console.log(`Stored shared email notification settings in ${SETTINGS_PATH}`);
   console.log(
     notifications.errorEmailEnabled
-      ? `Persistent sync errors will email ${notifications.recipient} after ${notifications.errorEmailDelayMinutes} minute(s).`
+      ? `Persistent sync errors will email ${notifications.recipient} after ${notifications.errorEmailDelayMinutes} minute(s); temporary connectivity failures wait at least 30 minutes.`
       : "Persistent sync-error email is disabled; durable error logs remain enabled.",
   );
   console.log(

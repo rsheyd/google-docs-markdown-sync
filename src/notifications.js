@@ -1,7 +1,62 @@
 import { execFileSync } from "node:child_process";
 import { readResendToken } from "./heartbeat.js";
+import { readJson, writeJsonAtomic } from "./files.js";
+import { NOTIFICATION_STATE_PATH } from "./paths.js";
 
 const DEFAULT_ERROR_EMAIL_DELAY_MS = 15 * 60_000;
+const DEFAULT_TEMPORARY_ERROR_EMAIL_DELAY_MS = 30 * 60_000;
+let notificationWriteTail = Promise.resolve();
+
+function pairingKey(pairing) {
+  return pairing.type === "spreadsheet" || pairing.spreadsheetId
+    ? `spreadsheet:${pairing.spreadsheetId}`
+    : `document:${pairing.documentId}`;
+}
+
+function saveNotificationState(state) {
+  const result = notificationWriteTail.then(
+    () => writeJsonAtomic(NOTIFICATION_STATE_PATH, state),
+    () => writeJsonAtomic(NOTIFICATION_STATE_PATH, state),
+  );
+  notificationWriteTail = result.catch(() => undefined);
+  return result;
+}
+
+export function classifySyncError(error) {
+  const code = String(error.code ?? error.cause?.code ?? "").toUpperCase();
+  const status = Number(error.status ?? error.response?.status);
+  const message = String(error.message ?? "").toLowerCase();
+  if (
+    ["ABORT_ERR", "ECONNRESET", "ENETDOWN", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT"].includes(code) ||
+    status === 429 ||
+    status >= 500 ||
+    message.includes("operation was aborted") ||
+    message.includes("getaddrinfo") ||
+    message.includes("socket hang up")
+  ) {
+    return "temporary-connectivity";
+  }
+  return "needs-attention";
+}
+
+function errorDetails(error) {
+  return {
+    message: error.message,
+    ...(error.code ?? error.cause?.code ? { code: error.code ?? error.cause.code } : {}),
+    ...(error.gdmsOperation ? { operation: error.gdmsOperation } : {}),
+    ...(Number.isFinite(error.gdmsElapsedMs) ? { elapsedMs: error.gdmsElapsedMs } : {}),
+  };
+}
+
+function formattedError(error, kind) {
+  return [
+    `kind=${kind}`,
+    error.operation ? `operation=${error.operation}` : undefined,
+    Number.isFinite(error.elapsedMs) ? `elapsedMs=${error.elapsedMs}` : undefined,
+    error.code ? `code=${error.code}` : undefined,
+    `error=${error.message}`,
+  ].filter(Boolean).join(" ");
+}
 
 export function displaySyncNotification({ title, message, exec = execFileSync }) {
   exec(
@@ -29,6 +84,7 @@ export async function sendSyncErrorEmail({
     "Google Docs Sync <onboarding@resend.dev>",
   pairing,
   error,
+  errorKind,
   firstSeenAt,
   fetchImplementation = fetch,
 } = {}) {
@@ -50,7 +106,10 @@ export async function sendSyncErrorEmail({
         `Pairing: ${pairing.name ?? pairing.markdownPath ?? pairing.directoryPath}`,
         `Local path: ${pairing.absolutePath}`,
         pairing.documentUrl ? `Google Doc: ${pairing.documentUrl}` : undefined,
+        pairing.spreadsheetUrl ? `Google Sheet: ${pairing.spreadsheetUrl}` : undefined,
         `First seen: ${firstSeenAt}`,
+        errorKind ? `Kind: ${errorKind}` : undefined,
+        error.operation ? `Operation: ${error.operation}` : undefined,
         `Error: ${error.message}`,
         "",
         "GDMS will keep retrying safely and will not overwrite a detected conflict.",
@@ -120,25 +179,61 @@ export function createSyncErrorReporter({
   emailDelayMs = Number(
     process.env.GOOGLE_DOCS_SYNC_ERROR_EMAIL_DELAY_MS ?? DEFAULT_ERROR_EMAIL_DELAY_MS,
   ),
+  temporaryEmailDelayMs = Math.max(
+    DEFAULT_TEMPORARY_ERROR_EMAIL_DELAY_MS,
+    emailDelayMs,
+  ),
   emailRecipient = process.env.GOOGLE_DOCS_SYNC_ERROR_TO,
   emailSender = process.env.GOOGLE_DOCS_SYNC_ERROR_FROM,
   now = () => new Date(),
+  loadIncidents = () => readJson(
+    NOTIFICATION_STATE_PATH,
+    { version: 1, incidents: {} },
+  ),
+  persistIncidents = saveNotificationState,
 } = {}) {
   const active = new Map();
+  let loaded;
+
+  async function ensureLoaded() {
+    loaded ??= (async () => {
+      try {
+        const state = await loadIncidents();
+        for (const [key, record] of Object.entries(state.incidents ?? {})) {
+          active.set(key, record);
+        }
+      } catch (error) {
+        logger.error(`notification state: ${error.message}`);
+      }
+    })();
+    await loaded;
+  }
+
+  async function persist() {
+    try {
+      await persistIncidents({
+        version: 1,
+        incidents: Object.fromEntries(active),
+      });
+    } catch (error) {
+      logger.error(`notification state: ${error.message}`);
+    }
+  }
 
   async function report(pairing, error) {
-    const key = pairing.absolutePath;
-    const fingerprint = error.message;
+    await ensureLoaded();
+    const key = pairingKey(pairing);
+    const kind = classifySyncError(error);
     let record = active.get(key);
-    if (!record || record.fingerprint !== fingerprint) {
+    if (!record || record.kind !== kind) {
       record = {
-        fingerprint,
-        error,
+        kind,
+        error: errorDetails(error),
         firstSeenAt: now().toISOString(),
-        emailSent: false,
       };
       active.set(key, record);
-      logger.error(`${pairing.absolutePath}: ${error.message}`);
+      await persist();
+      logger.error(`${pairing.absolutePath}: ${formattedError(record.error, kind)}`);
       if (desktopNotificationsEnabled) {
         try {
           notify({
@@ -151,16 +246,21 @@ export function createSyncErrorReporter({
       }
     }
     const ageMs = now().getTime() - Date.parse(record.firstSeenAt);
-    if (emailRecipient && !record.emailSent && ageMs >= emailDelayMs) {
+    const delayMs = kind === "temporary-connectivity"
+      ? temporaryEmailDelayMs
+      : emailDelayMs;
+    if (emailRecipient && !record.emailSentAt && ageMs >= delayMs) {
       try {
         const email = await sendEmail({
           recipient: emailRecipient,
           sender: emailSender,
           pairing,
           error: record.error,
+          errorKind: record.kind,
           firstSeenAt: record.firstSeenAt,
         });
-        record.emailSent = true;
+        record.emailSentAt = now().toISOString();
+        await persist();
         logger.log(`sync-error email sent for ${pairing.absolutePath}: ${email.id}`);
       } catch (emailError) {
         logger.error(`sync-error email: ${emailError.message}`);
@@ -169,13 +269,16 @@ export function createSyncErrorReporter({
   }
 
   async function reconcile(results) {
+    await ensureLoaded();
     for (const result of results) {
       if (result.action === "error") continue;
-      const record = active.get(result.pairing.absolutePath);
+      const key = pairingKey(result.pairing);
+      const record = active.get(key);
       if (!record) continue;
-      active.delete(result.pairing.absolutePath);
+      active.delete(key);
+      await persist();
       logger.log(`recovered: ${result.pairing.absolutePath}`);
-      if (record.emailSent && emailRecipient) {
+      if (record.emailSentAt && emailRecipient) {
         try {
           await sendRecoveryEmail({
             recipient: emailRecipient,

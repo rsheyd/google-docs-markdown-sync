@@ -204,13 +204,19 @@ the Mac's current UTC offset, for example
 `2026-08-14T11:42:08-04:00`. Interactive `gdms sync-once` progress remains
 untimestamped because it is already observed live.
 
-The daemon records each distinct pairing error once instead of repeating it on
-every polling cycle. Desktop banners are disabled by default because they are
-transient and do not provide a dependable review queue.
+The daemon records each pairing failure once instead of repeating it on every
+polling cycle. It preserves the current failure and sent-email marker across
+service restarts, and treats timeout, abort, DNS, connection-reset, rate-limit,
+and Google server errors as one temporary-connectivity category. Log entries for
+spreadsheet requests include the failed Google operation, elapsed milliseconds,
+and available error code. Desktop banners are disabled by default because they
+are transient and do not provide a dependable review queue.
 
 Installing the weekly health email also enables persistent sync-error email to
-the same recipient after 15 minutes. Configure the shared recipient or delay
-directly with:
+the same recipient. Errors that need attention use the configured delay, 15
+minutes by default. Temporary connectivity failures wait at least 30 minutes
+or the configured delay, whichever is longer. Configure the shared recipient
+or delay directly with:
 
 ```sh
 gdms configure-notifications --to "you@example.com"
@@ -273,7 +279,9 @@ gdms install-heartbeat --to "you@example.com" \
 ## Synchronization timing
 
 Defaults are a 250 ms local stat interval, a 750 ms debounce, a five-second
-Google polling interval, and a 30-second request timeout. Optional overrides:
+Google polling interval, and a 30-second request timeout. Unchanged spreadsheet
+pairings poll only their lightweight Drive revision; GDMS fetches Sheets
+metadata and tab values after a local or remote change. Optional overrides:
 
 ```sh
 export GOOGLE_DOCS_SYNC_DEBOUNCE_MS=750
