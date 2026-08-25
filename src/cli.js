@@ -868,8 +868,10 @@ async function main() {
   } else if (command === "daemon") {
     await runDaemon();
   } else if (command === "install-service") {
-    const installedPath = await installLaunchAgent();
-    console.log(`Installed and started ${installedPath}`);
+    const installedPath = await installLaunchAgent({
+      onProgress: (message) => console.log(message),
+    });
+    console.log(`GDMS is running. Installed ${installedPath}`);
   } else if (command === "install-finder-action") {
     const installedPath = await installFinderQuickAction();
     console.log(`Installed Finder Quick Actions under ${path.dirname(installedPath)}`);

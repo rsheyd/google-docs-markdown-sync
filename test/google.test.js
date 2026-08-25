@@ -68,6 +68,19 @@ test("does not hide unrelated Drive export errors", async () => {
   await assert.rejects(exportMarkdown(services, "document"), denied);
 });
 
+test("uses Docs paragraph metadata to export a one-click indent as a blockquote", async () => {
+  const quoted = paragraph(1, "Quoted paragraph\n");
+  quoted.paragraph.paragraphStyle.indentStart = { magnitude: 36, unit: "PT" };
+  quoted.paragraph.paragraphStyle.indentFirstLine = { magnitude: 36, unit: "PT" };
+  const services = {
+    drive: { files: { export: async () => ({ data: "Quoted paragraph\n" }) } },
+    docs: { documents: { get: async () => ({
+      data: { body: { content: [quoted] } },
+    }) } },
+  };
+  assert.equal(await exportMarkdown(services, "document"), "> Quoted paragraph\n");
+});
+
 test("creates a Google Doc and populates it from Markdown", async () => {
   const calls = [];
   const progress = [];
@@ -743,6 +756,42 @@ test("adds visual spacing after Markdown paragraphs but not hard breaks", () => 
       fields: "spaceBelow",
     })),
   );
+});
+
+test("indents Markdown blockquotes without decorative formatting", () => {
+  const quoted = paragraph(1, "Quoted paragraph\n");
+  const requests = planParagraphSpacingUpdate(
+    { body: { content: [quoted] } },
+    "> Quoted paragraph",
+  );
+  assert.deepEqual(requests.map((request) => request.updateParagraphStyle), [{
+    range: { startIndex: quoted.startIndex, endIndex: quoted.endIndex },
+    paragraphStyle: {
+      indentStart: { magnitude: 36, unit: "PT" },
+      indentFirstLine: { magnitude: 36, unit: "PT" },
+    },
+    fields: "indentStart,indentFirstLine",
+  }]);
+});
+
+test("clears both indents when normalizing a blockquote back to ordinary text", () => {
+  const paragraphWithFirstLineArtifact = paragraph(1, "Ordinary paragraph\n");
+  paragraphWithFirstLineArtifact.paragraph.paragraphStyle.indentFirstLine = {
+    magnitude: 36,
+    unit: "PT",
+  };
+  const requests = planParagraphSpacingUpdate(
+    { body: { content: [paragraphWithFirstLineArtifact] } },
+    "Ordinary paragraph",
+  );
+  assert.deepEqual(requests.map((request) => request.updateParagraphStyle), [{
+    range: {
+      startIndex: paragraphWithFirstLineArtifact.startIndex,
+      endIndex: paragraphWithFirstLineArtifact.endIndex,
+    },
+    paragraphStyle: { indentFirstLine: { magnitude: 0, unit: "PT" } },
+    fields: "indentFirstLine",
+  }]);
 });
 
 test("adds visual spacing between a heading and following list", () => {

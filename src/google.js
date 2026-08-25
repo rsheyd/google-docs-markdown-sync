@@ -1,6 +1,10 @@
 import { google } from "googleapis";
 import { googleRequestTimeoutMs } from "./config.js";
 import {
+  hasBlockquoteIndent,
+  paragraphFormatting,
+} from "./formatting.js";
+import {
   INLINE_IMAGE_MARKER,
   parseMarkdown,
 } from "./markdown.js";
@@ -32,6 +36,13 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
       { fileId: documentId, mimeType: "text/markdown" },
       { responseType: "arraybuffer" },
     );
+    const source = document ?? (await services.docs.documents.get({
+      documentId,
+      suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
+    })).data;
+    if (blocksFromDocument(source).some(hasBlockquoteIndent)) {
+      return stripRemoteDocumentStatus(markdownFromDocument(source));
+    }
     return stripRemoteDocumentStatus(Buffer.from(response.data).toString("utf8"));
   } catch (error) {
     if (!exportSizeLimitExceeded(error)) throw error;
@@ -254,11 +265,19 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
   }
   const paragraphSpaceBelow =
     element.paragraph.paragraphStyle?.spaceBelow?.magnitude;
+  const paragraphIndentStart =
+    element.paragraph.paragraphStyle?.indentStart?.magnitude;
+  const paragraphIndentFirstLine =
+    element.paragraph.paragraphStyle?.indentFirstLine?.magnitude;
   return {
     type: "text",
     paragraphStyle:
       element.paragraph.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT",
     ...(paragraphSpaceBelow === undefined ? {} : { paragraphSpaceBelow }),
+    ...(paragraphIndentStart === undefined ? {} : { paragraphIndentStart }),
+    ...(paragraphIndentFirstLine === undefined
+      ? {}
+      : { paragraphIndentFirstLine }),
     text,
     styles,
     ...(images.length ? { images } : {}),
@@ -461,7 +480,13 @@ export function markdownFromDocument(document) {
 
     if (previousList !== undefined) lines.push("");
     const heading = String(block.paragraphStyle).match(/^HEADING_([1-6])$/);
-    lines.push(heading ? `${"#".repeat(Number(heading[1]))} ${content}` : content);
+    lines.push(
+      heading
+        ? `${"#".repeat(Number(heading[1]))} ${content}`
+        : hasBlockquoteIndent(block)
+          ? `> ${content.replace(/\n/g, "\n> ")}`
+          : content,
+    );
     lines.push("");
     previousList = undefined;
   }
@@ -908,18 +933,39 @@ export function planParagraphSpacingUpdate(document, markdown) {
     ) {
       continue;
     }
-    const target = desiredBlock.paragraphSpaceBelow ?? 0;
-    if ((currentBlock.paragraphSpaceBelow ?? 0) === target) continue;
+    const {
+      spaceBelow: targetSpacing,
+      indentStart: targetIndent,
+      indentFirstLine: targetFirstLineIndent,
+    } = paragraphFormatting(desiredBlock);
+    const paragraphStyle = {};
+    const fields = [];
+    if ((currentBlock.paragraphSpaceBelow ?? 0) !== targetSpacing) {
+      paragraphStyle.spaceBelow = { magnitude: targetSpacing, unit: "PT" };
+      fields.push("spaceBelow");
+    }
+    if ((currentBlock.paragraphIndentStart ?? 0) !== targetIndent) {
+      paragraphStyle.indentStart = { magnitude: targetIndent, unit: "PT" };
+      fields.push("indentStart");
+    }
+    if (
+      (currentBlock.paragraphIndentFirstLine ?? 0) !== targetFirstLineIndent
+    ) {
+      paragraphStyle.indentFirstLine = {
+        magnitude: targetFirstLineIndent,
+        unit: "PT",
+      };
+      fields.push("indentFirstLine");
+    }
+    if (!fields.length) continue;
     requests.push({
       updateParagraphStyle: {
         range: {
           startIndex: currentBlock.startIndex,
           endIndex: currentBlock.endIndex,
         },
-        paragraphStyle: {
-          spaceBelow: { magnitude: target, unit: "PT" },
-        },
-        fields: "spaceBelow",
+        paragraphStyle,
+        fields: fields.join(","),
       },
     });
   }
@@ -1198,11 +1244,24 @@ function insertionRequests(
     }
     if (group.type === "text") {
       const [{ block, visibleStart, blockEnd }] = group.items;
+      const { spaceBelow, indentStart, indentFirstLine } =
+        paragraphFormatting(block);
       const paragraphStyle = { namedStyleType: block.paragraphStyle };
       const fields = ["namedStyleType"];
+      if (block.blockquote) {
+        paragraphStyle.indentStart = {
+          magnitude: indentStart,
+          unit: "PT",
+        };
+        paragraphStyle.indentFirstLine = {
+          magnitude: indentFirstLine,
+          unit: "PT",
+        };
+        fields.push("indentStart", "indentFirstLine");
+      }
       if (applyParagraphSpacing) {
         paragraphStyle.spaceBelow = {
-          magnitude: block.paragraphSpaceBelow ?? 0,
+          magnitude: spaceBelow,
           unit: "PT",
         };
         fields.push("spaceBelow");

@@ -71,6 +71,8 @@ heading's appearance come from the Google Doc's named-style definition.
 Ordinary Markdown paragraphs use `Normal text`. Bold, italic, strikethrough,
 and links are applied as inline styles where supported.
 
+Markdown blockquotes use `Normal text` with a modest left indent. Separate quoted paragraphs and explicit hard line breaks remain separate paragraphs in Google Docs; no additional decorative styling is applied.
+
 ## Tables of contents
 
 An ordinary static Markdown table of contents is regular synchronized content.

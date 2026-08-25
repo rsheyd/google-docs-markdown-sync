@@ -116,6 +116,22 @@ test("splits Markdown hard breaks into separate Google paragraph blocks", () => 
   );
 });
 
+test("preserves blockquote paragraphs and hard breaks", () => {
+  const blocks = parseMarkdown("> First line  \n> continuation\n>\n> Second paragraph");
+  assert.deepEqual(
+    blocks.map(({ text, blockquote, paragraphSpaceBelow }) => ({
+      text,
+      blockquote,
+      paragraphSpaceBelow,
+    })),
+    [
+      { text: "First line", blockquote: true, paragraphSpaceBelow: undefined },
+      { text: "continuation", blockquote: true, paragraphSpaceBelow: 8 },
+      { text: "Second paragraph", blockquote: true, paragraphSpaceBelow: undefined },
+    ],
+  );
+});
+
 test("parses a simple GFM table", () => {
   const blocks = parseMarkdown("| Name | Value |\n| --- | --- |\n| A | **B** |");
   assert.equal(blocks[0].type, "table");

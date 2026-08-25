@@ -62,8 +62,10 @@ if gh release view "$tag" --repo rsheyd/google-docs-markdown-sync >/dev/null 2>&
 fi
 
 target=$(git -C "$repository_root" rev-parse HEAD)
-gh release create "$tag" \
+release_url=$(gh release create "$tag" \
   --repo rsheyd/google-docs-markdown-sync \
   --target "$target" \
   --title "$tag" \
-  --notes-file "$notes_file"
+  --notes-file "$notes_file")
+
+echo "Created GitHub release $tag: $release_url"

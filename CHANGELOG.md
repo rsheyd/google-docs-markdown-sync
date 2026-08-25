@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.5] - 2026-08-25
+
+### Changed
+
+- Represent Markdown blockquotes in Google Docs with a modest left indent while preserving separate quoted paragraphs and explicit hard line breaks.
+- Show configuration, shutdown, and startup progress while installing or restarting the synchronization service.
+
 ## [0.8.4] - 2026-08-25
 
 ### Changed

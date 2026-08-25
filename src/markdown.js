@@ -1,10 +1,10 @@
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
+import { PARAGRAPH_SPACE_BELOW_PT } from "./formatting.js";
 
 const parser = unified().use(remarkParse).use(remarkGfm);
 export const INLINE_IMAGE_MARKER = "\uFFFC";
-export const PARAGRAPH_SPACE_BELOW_PT = 8;
 const GOOGLE_IMAGE_REFERENCE_PREFIX = "gdocs-image-reference:";
 
 function normalizeGoogleImageReferences(markdown) {
@@ -217,14 +217,20 @@ export function parseMarkdown(markdown) {
         ),
       });
     } else if (node.type === "blockquote") {
-      const value = node.children
-        .filter((child) => child.type === "paragraph")
-        .map((child) => renderInlineNodes(child.children).text)
-        .join("\n");
-      appendTextLines(blocks, { text: value, styles: [] }, {
-        type: "text",
-        paragraphStyle: "NORMAL_TEXT",
-      });
+      const paragraphs = node.children.filter(
+        (child) => child.type === "paragraph",
+      );
+      for (const [index, paragraph] of paragraphs.entries()) {
+        const start = blocks.length;
+        appendTextLines(blocks, renderInlineNodes(paragraph.children), {
+          type: "text",
+          paragraphStyle: "NORMAL_TEXT",
+          blockquote: true,
+        });
+        if (index < paragraphs.length - 1 && blocks.length > start) {
+          blocks.at(-1).paragraphSpaceBelow = PARAGRAPH_SPACE_BELOW_PT;
+        }
+      }
     } else if (node.type === "code") {
       appendTextLines(blocks, { text: node.value, styles: [] }, {
         type: "text",

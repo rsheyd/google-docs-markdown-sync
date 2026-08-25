@@ -51,10 +51,7 @@ changes:
 gdms install-service
 ```
 
-The command rewrites the LaunchAgent configuration, stops the existing daemon,
-and starts it again. Authorization and pairings are preserved. After 0.7.0,
-ordinary versioned source updates restart automatically. Documentation, tests,
-examples, and synchronized content changes do not require a restart.
+The command rewrites the LaunchAgent configuration, stops the existing daemon, and starts it again. It prints each stage because stopping can briefly wait for an active synchronization pass to finish safely. Authorization and pairings are preserved. After 0.7.0, ordinary versioned source updates restart automatically. Documentation, tests, examples, and synchronized content changes do not require a restart.
 
 Check both loaded and on-disk versions with:
 

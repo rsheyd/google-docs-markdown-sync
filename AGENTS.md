@@ -56,6 +56,7 @@
   Markdown, image, R2 staging, migrations, and CSV conversion, Docs and Sheets adapters,
   CLI, launch-at-login and Finder Quick Action installers, and independent
   weekly Resend health heartbeat.
+- `src/formatting.js`: Shared Google Docs paragraph-formatting rules and measurements.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.

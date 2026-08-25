@@ -25,7 +25,8 @@ function xmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
-export async function installLaunchAgent() {
+export async function installLaunchAgent({ onProgress } = {}) {
+  onProgress?.("Updating service configuration…");
   await migrateHeartbeatNotificationSettings();
   const projectRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -91,6 +92,7 @@ ${optionalEnvironment}
     stdio: "inherit",
   });
   const domain = `gui/${process.getuid()}`;
+  onProgress?.("Stopping the existing GDMS daemon…");
   try {
     execFileSync("/bin/launchctl", [
       "bootout",
@@ -100,6 +102,7 @@ ${optionalEnvironment}
   } catch {
     // It is normal for a first installation not to have an existing service.
   }
+  onProgress?.("Starting GDMS…");
   execFileSync("/bin/launchctl", [
     "bootstrap",
     domain,
