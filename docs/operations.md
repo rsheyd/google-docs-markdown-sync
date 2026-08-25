@@ -209,6 +209,8 @@ spreadsheet requests include the failed Google operation, elapsed milliseconds,
 and available error code. Desktop banners are disabled by default because they
 are transient and do not provide a dependable review queue.
 
+Before scheduled polls and local-change syncs, the daemon checks whether the Google API hostname is reachable. When the Mac is offline or DNS is unavailable, it logs one `sync paused` entry and makes no Google requests, then resumes automatically after connectivity returns. If a polling timer is delayed long enough to indicate that the Mac probably slept, GDMS gives networking five seconds to settle before checking connectivity and syncing. Failures that occur while the Google API hostname is reachable still use the normal bounded backoff and persistent-error reporting described below.
+
 Installing the weekly health email also enables persistent sync-error email to
 the same recipient. Errors that need attention use the configured delay, 15
 minutes by default. Temporary connectivity failures wait at least 30 minutes

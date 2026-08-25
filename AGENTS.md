@@ -60,10 +60,12 @@
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
+- `src/network.js`: Google API reachability gating and post-sleep network-settling helpers.
 - `cloudflare/image-gateway-worker.js`: HMAC-authenticated, short-lived image
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,
   synchronization, and heartbeat checks.
+- `test/network.test.js`: Offline pause/resume and post-sleep network-settling coverage.
 - `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.

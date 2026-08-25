@@ -22,8 +22,9 @@ for command in awk gh git; do
 done
 
 release_header=$(awk '/^## \[[^]]+\] - / { print; exit }' "$changelog_path")
-if [[ ! $release_header =~ ^##\ \[([^]]+)\]\ -\ (.+)$ ]]; then
+if [[ ! $release_header =~ ^##\ \[([^]]+)\]\ -\ ([0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
   echo "Could not find a release heading like '## [0.8.4] - 2026-08-25' in CHANGELOG.md." >&2
+  echo "Replace an Unreleased marker with the release date before publishing." >&2
   exit 1
 fi
 

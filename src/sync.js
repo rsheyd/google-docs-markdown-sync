@@ -36,6 +36,7 @@ import {
 } from "./deletions.js";
 import { createTimestampLogger } from "./progress.js";
 import { createSyncErrorReporter } from "./notifications.js";
+import { createNetworkGate, timerLikelyCrossedSleep } from "./network.js";
 import { readPackageVersion } from "./version.js";
 import {
   getSpreadsheetDetails,
@@ -712,6 +713,10 @@ export async function runDaemon({
   getState = loadState,
   persistState = saveState,
   errorReporter,
+  networkAvailable,
+  networkSettleMs = Number(
+    process.env.GOOGLE_DOCS_SYNC_NETWORK_SETTLE_MS ?? 5_000,
+  ),
 } = {}) {
   logger = createTimestampLogger(logger);
   const settings = await loadSettings();
@@ -749,6 +754,11 @@ export async function runDaemon({
   const deferredMissingPaths = new Map();
   const enqueue = createSingleFlight();
   const root = workspaceRoot();
+  const networkGate = createNetworkGate({
+    isAvailable: networkAvailable,
+    logger,
+    settleMs: networkSettleMs,
+  });
 
   const watcherManager = createWatcherManager({
     logger,
@@ -779,14 +789,16 @@ export async function runDaemon({
                 );
               }
             }
-            return runSyncPass({
-              root,
-              targetPaths,
-              deferMissingLocal,
-              missingLocalWaitMs: intervalMs * 2,
-              logger,
-              errorReporter,
-            });
+            return networkGate.run(() =>
+              runSyncPass({
+                root,
+                targetPaths,
+                deferMissingLocal,
+                missingLocalWaitMs: intervalMs * 2,
+                logger,
+                errorReporter,
+              }),
+            );
           } finally {
             for (const [filePath, move] of moves) {
               if (pendingMoves.get(filePath) === move) {
@@ -830,26 +842,35 @@ export async function runDaemon({
       const pairings = await loadPairings(root);
       await watcherManager.refresh(pairings);
       const results = await enqueue(() =>
-        runSyncPass({
-          root,
-          pairings: pairings.filter(
-            (pairing) => !pendingMoves.has(pairing.absolutePath),
-          ),
-          deferMissingLocal,
-          missingLocalWaitMs: intervalMs * 2,
-          logger,
-          errorReporter,
-        }),
+        networkGate.run(() =>
+          runSyncPass({
+            root,
+            pairings: pairings.filter(
+              (pairing) => !pendingMoves.has(pairing.absolutePath),
+            ),
+            deferMissingLocal,
+            missingLocalWaitMs: intervalMs * 2,
+            logger,
+            errorReporter,
+          }),
+        ),
       );
-      consecutiveFailures = results.some((result) => result.action === "error")
+      consecutiveFailures = results?.some((result) => result.action === "error")
         ? consecutiveFailures + 1
         : 0;
       const waitMs = backoffDelay(intervalMs, consecutiveFailures);
+      const sleepStartedAt = Date.now();
       await new Promise((resolve) => {
         wakeSleep = resolve;
         sleepTimer = setTimeout(resolve, waitMs);
       });
       wakeSleep = undefined;
+      if (timerLikelyCrossedSleep({
+        startedAt: sleepStartedAt,
+        delayMs: waitMs,
+      })) {
+        networkGate.markWake();
+      }
     }
   } finally {
     watcherManager.close();
