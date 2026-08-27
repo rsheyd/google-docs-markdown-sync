@@ -57,8 +57,6 @@ export function generatedTableOfContents(markdown) {
   return [
     GENERATED_TOC_START,
     "",
-    "**Table of Contents**",
-    "",
     ...tocEntries(markdown).flatMap((entry) => [entry, ""]),
     GENERATED_TOC_END,
   ].join("\n");
@@ -78,11 +76,54 @@ export function refreshGeneratedTableOfContents(markdown) {
 
 function exportedNativeTocRange(markdown) {
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
-  const start = lines.findIndex((line) => /^\*\*Table of Contents\*\*\s*$/.test(line));
-  if (start < 0) return undefined;
-  const headingOffset = lines.slice(start + 1).findIndex((line) => /^#{1,6}\s/.test(line));
-  if (headingOffset < 0) return undefined;
-  return { lines, start, end: start + 1 + headingOffset };
+  const headings = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^#{1,6}\s+(.+?)\s*$/);
+    if (!match) continue;
+    const explicit = match[1].match(/^(.*?)\s+\{#([^}]+)\}\s*$/);
+    const text = explicit ? explicit[1] : match[1];
+    headings.push({ text, index });
+  }
+
+  const linkPattern = /^\s*\[(.+)\]\((#[^)]+)\)\s*$/;
+  const candidates = [];
+  for (let start = 0; start < lines.length; start += 1) {
+    if (!linkPattern.test(lines[start])) continue;
+    let end = start;
+    const links = [];
+    while (end < lines.length) {
+      const match = lines[end].match(linkPattern);
+      if (match) links.push({ label: match[1].replace(/\\([\[\]\\])/g, "$1"), index: end });
+      else if (lines[end].trim() !== "") break;
+      end += 1;
+    }
+    if (links.length === 0) continue;
+    let previousHeading = end - 1;
+    const matchesHeadings = links.every(({ label }) => {
+      const heading = headings.find(({ text, index }) => index > previousHeading && text === label);
+      if (!heading) return false;
+      previousHeading = heading.index;
+      return true;
+    });
+    if (matchesHeadings) {
+      let rangeStart = start;
+      while (rangeStart > 0 && lines[rangeStart - 1].trim() === "") rangeStart -= 1;
+      if (rangeStart > 0 && /^#{1,6}\s*$/.test(lines[rangeStart - 1])) rangeStart -= 1;
+      let rangeEnd = end;
+      if (rangeEnd < lines.length && /^#{1,6}\s*$/.test(lines[rangeEnd])) rangeEnd += 1;
+      while (rangeEnd < lines.length && lines[rangeEnd].trim() === "") rangeEnd += 1;
+      candidates.push({
+        lines,
+        start: rangeStart,
+        end: rangeEnd,
+        contentStart: start,
+        contentEnd: end,
+        linkCount: links.length,
+      });
+    }
+    start = Math.max(start, end - 1);
+  }
+  return candidates.sort((left, right) => right.linkCount - left.linkCount || left.start - right.start)[0];
 }
 
 export function representNativeTableOfContents(markdown) {
@@ -115,6 +156,12 @@ export function representNativeTableOfContentsFromRemote(markdown, remoteMarkdow
       ...lines.slice(localExportRange.end),
     ].join("\n");
   }
+  const remotePrefixIsEmpty = remote.lines
+    .slice(0, remote.start)
+    .every((line) => line.trim() === "" || /^#{1,6}\s*$/.test(line));
+  if (remotePrefixIsEmpty) {
+    return `${generatedTableOfContents(markdown)}\n\n${markdown}`;
+  }
   const headingIndex = lines.findIndex((line) => line === targetHeading);
   if (headingIndex < 0) {
     throw new Error("The local position corresponding to the native Google Docs table of contents could not be identified.");
@@ -131,7 +178,10 @@ export function restoreNativeTableOfContents(markdown, remoteMarkdown) {
   const generated = markerRange(markdown);
   const native = exportedNativeTocRange(remoteMarkdown);
   if (!generated || !native) return markdown;
-  const remoteRange = native.lines.slice(native.start, native.end).join("\n");
+  const remoteRange = native.lines
+    .slice(native.contentStart, native.contentEnd)
+    .filter((line) => line.trim() !== "")
+    .join("\n\n");
   return `${markdown.slice(0, generated.start)}${remoteRange}${markdown.slice(generated.end)}`;
 }
 

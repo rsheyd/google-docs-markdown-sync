@@ -5,6 +5,7 @@ import { createGoogleServices, getRemoteInfo } from "./google.js";
 import { loadPairings } from "./manifests.js";
 import { getSpreadsheetInfo } from "./sheets.js";
 import { loadSettings } from "./config.js";
+import { loadState } from "./state.js";
 
 export const RESEND_KEYCHAIN_SERVICE =
   "com.roman.google-docs-markdown-sync";
@@ -50,6 +51,7 @@ export async function verifySyncHealth({
   makeServices = createGoogleServices,
   readRemote = getRemoteInfo,
   readSpreadsheet = getSpreadsheetInfo,
+  getState = loadState,
 } = {}) {
   assertRunning();
   const pairings = await getPairings();
@@ -60,9 +62,12 @@ export async function verifySyncHealth({
       ? readSpreadsheet(services, pairing.spreadsheetId)
       : readRemote(services, pairing.documentId)),
   );
+  const state = await getState();
   return {
     documents: pairings.filter((pairing) => pairing.type !== "spreadsheet").length,
     spreadsheets: pairings.filter((pairing) => pairing.type === "spreadsheet").length,
+    lastRemotePollAt: state.remoteChanges?.lastPolledAt,
+    lastReconciledAt: state.remoteChanges?.lastReconciledAt,
   };
 }
 
@@ -98,6 +103,8 @@ export async function sendHeartbeatEmail({
         `Synchronization daemon: running`,
         `Google documents checked: ${result.documents}`,
         `Google spreadsheets checked: ${result.spreadsheets ?? 0}`,
+        `Last successful remote poll: ${result.lastRemotePollAt ?? "not recorded"}`,
+        `Last complete reconciliation: ${result.lastReconciledAt ?? "not recorded"}`,
         `Checked: ${checkedAt}`,
         "",
         "If this weekly email does not arrive, check the sync service and heartbeat LaunchAgent.",

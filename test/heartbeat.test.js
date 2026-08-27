@@ -60,9 +60,10 @@ test("checks every paired document without synchronizing content", async () => {
     ],
     makeServices: () => "services",
     readRemote: async (_services, id) => checked.push(id),
+    getState: async () => ({ remoteChanges: { lastPolledAt: "2026-08-27T12:00:00.000Z", lastReconciledAt: "2026-08-27T11:00:00.000Z" } }),
   });
   assert.deepEqual(checked.sort(), ["one", "two"]);
-  assert.deepEqual(result, { documents: 2, spreadsheets: 0 });
+  assert.deepEqual(result, { documents: 2, spreadsheets: 0, lastRemotePollAt: "2026-08-27T12:00:00.000Z", lastReconciledAt: "2026-08-27T11:00:00.000Z" });
 });
 
 test("checks paired spreadsheets through the Sheets API", async () => {
@@ -73,9 +74,10 @@ test("checks paired spreadsheets through the Sheets API", async () => {
     getPairings: async () => [{ type: "spreadsheet", spreadsheetId: "sheet-one" }],
     makeServices: () => "services",
     readSpreadsheet: async (_services, id) => checked.push(id),
+    getState: async () => ({}),
   });
   assert.deepEqual(checked, ["sheet-one"]);
-  assert.deepEqual(result, { documents: 0, spreadsheets: 1 });
+  assert.deepEqual(result, { documents: 0, spreadsheets: 1, lastRemotePollAt: undefined, lastReconciledAt: undefined });
 });
 
 test("sends the success heartbeat to the configured recipient", async () => {
@@ -94,5 +96,6 @@ test("sends the success heartbeat to the configured recipient", async () => {
   assert.equal(request.url, "https://api.resend.com/emails");
   assert.deepEqual(body.to, ["person@example.com"]);
   assert.match(body.text, /Google documents checked: 2/);
+  assert.match(body.text, /Last complete reconciliation: not recorded/);
   assert.deepEqual(result, { id: "email-1" });
 });

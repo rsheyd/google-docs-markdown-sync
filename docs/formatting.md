@@ -75,18 +75,12 @@ Markdown blockquotes use `Normal text` with a modest left indent. Separate quote
 
 ## Tables of contents
 
-An ordinary static Markdown table of contents is regular synchronized content.
-For example, `[Planning](#planning)` is sent to Google Docs as a heading link
-and is not rewritten by GDMS.
+An ordinary static Markdown table of contents is regular synchronized content. For example, `[Planning](#planning)` is sent to Google Docs as a heading link and is not rewritten by GDMS.
 
-When the Google Doc contains a native Google Docs table of contents, GDMS keeps
-that native element in Google Docs and represents it locally as a generated
-Markdown range:
+GDMS identifies a native table of contents from the Google Docs document structure, then locates its Markdown export by matching the exported heading links to the document headings. A nearby `Table of Contents` label is ordinary user-authored content: GDMS preserves it but does not use it to detect the native element or generate another label. The native element appears locally as a generated Markdown range:
 
 ```md
 <!-- gdms:generated-toc:start | auto-generated from headings; edit headings, not this list -->
-
-**Table of Contents**
 
 [Planning](#planning)
 
@@ -95,17 +89,9 @@ Markdown range:
 <!-- gdms:generated-toc:end -->
 ```
 
-The entries are generated from the Markdown headings. Edit the headings rather
-than the generated list; GDMS replaces changes inside the marked range during
-the next sync. The markers are invisible in rendered Markdown, and the visible
-content remains a normal linked table of contents.
+The entries are generated from the Markdown headings. Edit the headings rather than the generated list; GDMS replaces changes inside the marked range during the next sync. The markers are invisible in rendered Markdown, and the visible content remains a normal linked table of contents.
 
-The local generated list and the native Google Docs table of contents are
-independent views. GDMS does not rewrite the native element or its links. After
-heading changes synchronize, refresh the native table of contents in Google
-Docs if you want its displayed entries updated immediately. To remove a native
-table of contents, delete it in Google Docs; removing only the generated local
-range does not request that structural deletion.
+The local generated list and the native Google Docs table of contents are independent views. GDMS does not rewrite the native element or its links. After heading changes synchronize, refresh the native table of contents in Google Docs if you want its displayed entries updated immediately. To remove a native table of contents, delete it in Google Docs; removing only the generated local range does not request that structural deletion.
 
 ## Synchronization and normalization
 

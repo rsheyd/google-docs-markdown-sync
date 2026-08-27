@@ -209,7 +209,9 @@ spreadsheet requests include the failed Google operation, elapsed milliseconds,
 and available error code. Desktop banners are disabled by default because they
 are transient and do not provide a dependable review queue.
 
-Before scheduled polls and local-change syncs, the daemon checks whether the Google API hostname is reachable. When the Mac is offline or DNS is unavailable, it logs one `sync paused` entry and makes no Google requests, then resumes automatically after connectivity returns. If a polling timer is delayed long enough to indicate that the Mac probably slept, GDMS gives networking five seconds to settle before checking connectivity and syncing. Failures that occur while the Google API hostname is reachable still use the normal bounded backoff and persistent-error reporting described below.
+Before scheduled polls and local-change syncs, the daemon checks whether the Google API hostname is reachable. When the Mac is offline or DNS is unavailable, it logs one `sync paused` entry and makes no Google requests, then resumes automatically after connectivity returns. An independent liveness monitor detects scheduling gaps that indicate likely laptop sleep, including sleep during an active pass. GDMS discards the interrupted pass before persisting its results or applying error and recovery notifications, gives networking 15 seconds to settle, checks connectivity, and starts a fresh pass. Failures that occur during stable awake operation while the Google API hostname is reachable still use the normal bounded backoff and persistent-error reporting described below.
+
+Routine remote polling reads the Google Drive changes feed and synchronizes only paired files reported as changed, so a quiet cycle uses one paginated changes query rather than one request per pairing. The machine-local cursor advances only after targeted synchronization state is saved; a crash, sleep interruption, or changed-pairing error therefore replays the same changes safely. On first use, or when Google expires a cursor, GDMS obtains a fresh cursor and completes one full reconciliation before recording it; isolated reconciliation errors remain visible through normal pairing incidents but do not trap the daemon in repeated full scans. Changes to unpaired Drive files are ignored, and discovery failures are logged once at daemon level with bounded retry rather than reported as pairing incidents.
 
 Installing the weekly health email also enables persistent sync-error email to
 the same recipient. Errors that need attention use the configured delay, 15
@@ -277,15 +279,14 @@ gdms install-heartbeat --to "you@example.com" \
 
 ## Synchronization timing
 
-Defaults are a 250 ms local stat interval, a 750 ms debounce, a five-second
-Google polling interval, and a 30-second request timeout. Unchanged spreadsheet
-pairings poll only their lightweight Drive revision; GDMS fetches Sheets
-metadata and tab values after a local or remote change. Optional overrides:
+Defaults are a 250 ms local stat interval, a 750 ms debounce, a five-second Google changes-feed polling interval, a 15-second post-wake network-settling interval, a 30-second request timeout, and one complete reconciliation every 24 hours. A remote changes-feed hit first checks the pairing's lightweight Drive metadata. GDMS fetches the complete Docs structure or Sheets metadata and tab values after a local or remote change, when initializing the lightweight baseline, during reconciliation, or when status and formatting work requires the richer representation. Reconciliation runs through the same wake-safe, single-flight coordinator and records its completion time in machine-local state and weekly heartbeat output. Optional overrides:
 
 ```sh
 export GOOGLE_DOCS_SYNC_DEBOUNCE_MS=750
 export GOOGLE_DOCS_SYNC_INTERVAL_MS=5000
+export GOOGLE_DOCS_SYNC_NETWORK_SETTLE_MS=15000
 export GOOGLE_DOCS_SYNC_REQUEST_TIMEOUT_MS=30000
+export GOOGLE_DOCS_SYNC_RECONCILIATION_INTERVAL_MS=86400000
 ```
 
 Local and remote passes are serialized. Remote failures retry with exponential

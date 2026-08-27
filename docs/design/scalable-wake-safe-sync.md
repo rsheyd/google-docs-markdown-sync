@@ -99,7 +99,11 @@ Do not persist the wake generation. A daemon restart naturally begins a new exec
 
 ## Implementation sequence
 
+Implement and validate the work as four ordered phases. Each phase should remain an atomic, independently testable checkpoint. Do not begin the next phase until the preceding phase passes its automated tests, installed-service smoke test, and phase-specific live checks. Keep the complete scanner available through Phase 3 so every checkpoint has a conservative fallback and rollback does not depend on newer cursor state. Intermediate development versions may be consolidated when they were never published.
+
 ### Phase 1: wake-safe lifecycle
+
+Status: implemented for the consolidated version 0.8.5 release.
 
 - Add an independent liveness timer and wake generation tracking around daemon cycles.
 - Prevent interrupted results from persisting state or reaching notification reconciliation.
@@ -108,7 +112,11 @@ Do not persist the wake generation. A daemon restart naturally begins a new exec
 
 This phase directly stops the observed overnight alert storm and provides the cancellation boundary needed by later incremental polling.
 
+Phase 1 is complete when closing the laptop during an active pass, waking without networking, and later regaining networking produce no interrupted-work error or recovery email and one fresh pass succeeds after wake.
+
 ### Phase 2: lightweight unchanged checks
+
+Status: implemented for the consolidated version 0.8.5 release.
 
 - Split Google Doc Drive metadata lookup from complete Docs retrieval.
 - Use Drive revision and local state to skip complete document retrieval when both sides are unchanged.
@@ -117,21 +125,49 @@ This phase directly stops the observed overnight alert storm and provides the ca
 
 This phase reduces load immediately while keeping the existing complete-scan loop as a fallback.
 
+Phase 2 is complete when request-count tests and live instrumentation confirm that an unchanged Google Doc requires only lightweight Drive metadata, while remote edits, local edits, formatting repair, status repair, and conflict handling still fetch full content when required.
+
 ### Phase 3: incremental Drive polling
+
+Status: implemented for the consolidated version 0.8.5 release.
 
 - Add start-token acquisition, paginated change polling, paired-ID filtering, cursor persistence, and invalid-cursor recovery.
 - Replace routine complete scans with targeted sync batches derived from Drive changes.
 - Merge local and remote target signals without losing changes received while a batch is running.
 - Add replay, crash-before-cursor-write, pagination, unpaired-change, trashed-file, restart, and cursor-reset tests.
 
-### Phase 4: bounded concurrency and reconciliation
+Phase 3 is complete when quiet polling has constant request cost with respect to pairing count, local and remote edits remain timely, a daemon restart resumes from its saved cursor, interrupted cycles safely replay changes, and invalid-cursor recovery completes through reconciliation without losing edits.
 
-- Add a four-pairing concurrency limit for targeted batches.
-- Apply state and notification effects deterministically after concurrent work.
+### Phase 4: reconciliation and measured concurrency
+
+Status: implemented for the consolidated version 0.8.5 release. Daily reconciliation, state and heartbeat timing, and scale fixtures were added. Synthetic quiet polls remained one discovery request at 100, 1,000, and 10,000 pairings. Live sequential timings were approximately 0.5 seconds for one target, under 10 seconds for five active targets, and under 18 seconds for a 38-pair reconciliation, so bounded concurrency was not added; the deterministic single-owner state coordinator remains responsive enough for current use.
+
 - Schedule daily complete reconciliation and expose its timing in logs and health output.
 - Validate behavior with synthetic registries containing 100, 1,000, and 10,000 inert pairings without making live API calls for every fixture.
+- Measure targeted batch latency and backlog behavior after Phase 3 under routine and bursty workloads.
+- Add a four-pairing concurrency limit only if measurements show that sequential targeted batches create meaningful delay.
+- If concurrency is added, apply state and notification effects deterministically after concurrent work and prove that each pairing remains serialized.
 
-Phases may ship together if validation remains manageable, but keeping their boundaries explicit makes regressions easier to isolate.
+Phase 4 is complete when scheduled reconciliation repairs simulated cursor or state drift without indefinitely blocking targeted work and scale fixtures remain bounded in memory and API demand. Concurrency is not an exit requirement if Phase 3 measurements show that sequential targeted processing is already responsive.
+
+## Future reconciliation scaling trigger
+
+The current sequential reconciliation is appropriate for the active installation: a live 38-pair scan completed in under 18 seconds, while ordinary polling remains constant-cost and targeted. Revisit the reconciliation scheduler when a complete scan regularly exceeds 30–60 seconds, local edits are observably delayed behind reconciliation, the pairing registry grows into the hundreds, or routine burst batches become noticeably slow. Synthetic 10,000-pair tests prove that quiet change discovery is bounded; they do not prove that a complete sequential reconciliation is fast enough at that scale.
+
+The recommended upgrade is a cooperative batch scheduler rather than a general job queue:
+
+1. Divide reconciliation into bounded batches, initially around 20 pairings.
+2. Commit each completed batch through one state coordinator in stable pairing order.
+3. Between batches, drain pending local watcher and Drive-change targets so maintenance cannot starve ordinary synchronization.
+4. After the batching boundary is proven, process up to four independent pairings concurrently within a batch.
+5. Preserve serialization for each pairing, bounded Google backoff, wake-generation checks, deterministic notification handling, and cursor-last persistence.
+6. Record `lastReconciledAt` only after every batch finishes; interrupted work may safely restart or resume without claiming a complete reconciliation.
+
+Adding concurrency requires separating pairing computation from shared side effects. Workers should read local and Google state and return proposed results without writing the shared state file or reconciling notifications. A single coordinator should then apply results, state changes, deletion retries, and notification transitions atomically and deterministically. Sequential batching should be implemented first because it fixes local-edit starvation with less risk; four-way concurrency should follow only when measurements show that batch duration itself remains problematic.
+
+Validation for this upgrade should measure total reconciliation time, maximum delay imposed on a local edit, pending-target drain latency, Google request and rate-limit behavior, memory use, crash replay, sleep interruption, and deterministic state and notification results at 100, 1,000, and 10,000 pairings. A useful success criterion is that local and incremental remote targets begin within one batch duration even while a large reconciliation is underway.
+
+The phases remain distinct implementation and validation checkpoints. Because none of the intermediate versions after 0.8.4 were published, all four phases are consolidated into the 0.8.5 release and changelog entry.
 
 ## Validation and observability
 
@@ -163,4 +199,4 @@ Before release, run the complete test suite, restart the installed LaunchAgent, 
 
 ## Documentation and release impact
 
-Implementation changes the user-visible polling, wake, retry, and notification behavior. The release must increase the package version and add matching `CHANGELOG.md` notes. Update `docs/operations.md` with incremental polling, reconciliation timing, wake settling, configuration defaults, and troubleshooting; update the README only if its high-level synchronization description or scale expectations need clarification.
+Each implemented phase changes user-visible polling, wake, retry, performance, or notification behavior and must increase the package version with matching `CHANGELOG.md` notes. Update `docs/operations.md` in each phase with the behavior and defaults introduced by that phase; update the README only if its high-level synchronization description or scale expectations need clarification.

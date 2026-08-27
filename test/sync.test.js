@@ -5,10 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { readLocalSpreadsheet } from "../src/sheets.js";
-import { spreadsheetStatusMarkdown } from "../src/status.js";
+import { documentStatusMarkdown, spreadsheetStatusMarkdown } from "../src/status.js";
 import {
   backoffDelay,
   chooseSyncAction,
+  commitSyncPass,
   comparableMarkdownHash,
   createSingleFlight,
   createWatcherManager,
@@ -406,6 +407,29 @@ test("serializes overlapping sync operations", async () => {
   ]);
 });
 
+test("does not persist or reconcile an interrupted sync pass", async () => {
+  const events = [];
+  await assert.rejects(
+    commitSyncPass({
+      results: [{
+        action: "error",
+        pairing: { absolutePath: "/paired.md" },
+        error: new Error("request aborted"),
+      }],
+      state: { version: 1, documents: {} },
+      isCurrent: () => false,
+      errorReporter: {
+        report: async () => events.push("report"),
+        reconcile: async () => events.push("reconcile"),
+      },
+      retryNotifications: async () => events.push("retry"),
+      persistState: async () => events.push("persist"),
+    }),
+    { name: "SyncPassInterruptedError" },
+  );
+  assert.deepEqual(events, []);
+});
+
 test("polls only Drive for an unchanged spreadsheet", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gsheets-poll-"));
   const pairing = {
@@ -448,6 +472,140 @@ test("polls only Drive for an unchanged spreadsheet", async () => {
     const result = await syncPairing(services, pairing, baseline);
     assert.equal(result.action, "none");
     assert.equal(sheetsRequests, 0);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("polls only Drive for an unchanged Google Doc with a lightweight baseline", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdocs-lightweight-poll-"));
+  const filePath = path.join(directory, "paired.md");
+  const pairing = {
+    documentId: "document",
+    documentUrl: "https://docs.google.com/document/d/document/edit",
+    workspace: directory,
+    markdownPath: "paired.md",
+    absolutePath: filePath,
+    name: "Paired",
+  };
+  const content = "Unchanged content\n";
+  const baseline = {
+    localHash: createHash("sha256").update(content).digest("hex"),
+    localModifiedTime: 1,
+    remoteRevisionId: "docs-revision-7",
+    remoteDriveRevisionId: "drive-version-7",
+    remoteModifiedTime: "2026-08-27T12:00:00.000Z",
+    lastWriter: "google-docs",
+    lastSuccessfulSync: "2026-08-27T12:00:00.000Z",
+  };
+  await fs.writeFile(filePath, documentStatusMarkdown(pairing, { ...baseline, content }));
+  let driveRequests = 0;
+  let docsRequests = 0;
+  const services = {
+    drive: { files: { get: async () => {
+      driveRequests += 1;
+      return { data: {
+        modifiedTime: baseline.remoteModifiedTime,
+        name: pairing.name,
+        version: baseline.remoteDriveRevisionId,
+      } };
+    } } },
+    docs: { documents: { get: async () => {
+      docsRequests += 1;
+      throw new Error("Docs details should not be requested");
+    } } },
+  };
+  try {
+    const result = await syncPairing(services, pairing, baseline);
+    assert.equal(result.action, "none");
+    assert.equal(driveRequests, 1);
+    assert.equal(docsRequests, 0);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("fetches Google Docs details when the lightweight Drive version changes", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdocs-detail-poll-"));
+  const filePath = path.join(directory, "paired.md");
+  const pairing = {
+    documentId: "document",
+    documentUrl: "https://docs.google.com/document/d/document/edit",
+    workspace: directory,
+    markdownPath: "paired.md",
+    absolutePath: filePath,
+    name: "Paired",
+  };
+  const content = "Unchanged content\n";
+  const baseline = {
+    localHash: createHash("sha256").update(content).digest("hex"),
+    localModifiedTime: 1,
+    remoteRevisionId: "docs-revision-7",
+    remoteDriveRevisionId: "drive-version-7",
+    remoteModifiedTime: "2026-08-27T12:00:00.000Z",
+    lastWriter: "google-docs",
+    lastSuccessfulSync: "2026-08-27T12:00:00.000Z",
+  };
+  await fs.writeFile(filePath, documentStatusMarkdown(pairing, { ...baseline, content }));
+  let docsRequests = 0;
+  const services = {
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: "2026-08-27T12:01:00.000Z",
+      name: pairing.name,
+      version: "drive-version-8",
+    } }) } },
+    docs: { documents: { get: async () => {
+      docsRequests += 1;
+      throw new Error("detail fetch observed");
+    } } },
+  };
+  try {
+    await assert.rejects(syncPairing(services, pairing, baseline), /detail fetch observed/);
+    assert.equal(docsRequests, 1);
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("fetches Google Docs details when local Markdown changes", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdocs-local-detail-"));
+  const filePath = path.join(directory, "paired.md");
+  const pairing = {
+    documentId: "document",
+    documentUrl: "https://docs.google.com/document/d/document/edit",
+    workspace: directory,
+    markdownPath: "paired.md",
+    absolutePath: filePath,
+    name: "Paired",
+  };
+  const baseline = {
+    localHash: createHash("sha256").update("Original content\n").digest("hex"),
+    localModifiedTime: 1,
+    remoteRevisionId: "docs-revision-7",
+    remoteDriveRevisionId: "drive-version-7",
+    remoteModifiedTime: "2026-08-27T12:00:00.000Z",
+    lastWriter: "google-docs",
+    lastSuccessfulSync: "2026-08-27T12:00:00.000Z",
+  };
+  await fs.writeFile(
+    filePath,
+    documentStatusMarkdown(pairing, { ...baseline, content: "Changed content\n" }),
+  );
+  let docsRequests = 0;
+  const services = {
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: baseline.remoteModifiedTime,
+      name: pairing.name,
+      version: baseline.remoteDriveRevisionId,
+    } }) } },
+    docs: { documents: { get: async () => {
+      docsRequests += 1;
+      throw new Error("local detail fetch observed");
+    } } },
+  };
+  try {
+    await assert.rejects(syncPairing(services, pairing, baseline), /local detail fetch observed/);
+    assert.equal(docsRequests, 1);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

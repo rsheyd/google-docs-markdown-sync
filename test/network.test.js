@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createNetworkGate,
+  createWakeMonitor,
   googleApiHostAvailable,
-  timerLikelyCrossedSleep,
 } from "../src/network.js";
 
 test("checks Google API DNS reachability", async () => {
@@ -52,7 +52,52 @@ test("allows connectivity to settle after a likely wake", async () => {
   ]);
 });
 
-test("detects timers delayed substantially beyond their scheduled wake", () => {
-  assert.equal(timerLikelyCrossedSleep({ startedAt: 1_000, delayMs: 5_000, finishedAt: 12_000 }), false);
-  assert.equal(timerLikelyCrossedSleep({ startedAt: 1_000, delayMs: 5_000, finishedAt: 17_000 }), true);
+test("increments the wake generation after a delayed liveness tick", () => {
+  let currentTime = 1_000;
+  let tick;
+  let cleared;
+  const wakes = [];
+  const monitor = createWakeMonitor({
+    intervalMs: 1_000,
+    toleranceMs: 10_000,
+    now: () => currentTime,
+    onWake: (event) => wakes.push(event),
+    setIntervalImplementation: (callback) => {
+      tick = callback;
+      return 42;
+    },
+    clearIntervalImplementation: (timer) => {
+      cleared = timer;
+    },
+  });
+  const cycle = monitor.beginCycle();
+  currentTime = 3_000;
+  tick();
+  assert.equal(cycle.isCurrent(), true);
+  currentTime = 20_000;
+  assert.equal(cycle.isCurrent(), false);
+  assert.deepEqual(wakes, [{ elapsedMs: 17_000, generation: 1 }]);
+  monitor.close();
+  assert.equal(cleared, 42);
+});
+
+test("settles once after wake and stays paused until connectivity returns", async () => {
+  const events = [];
+  const availability = [false, true];
+  const gate = createNetworkGate({
+    isAvailable: async () => availability.shift(),
+    logger: { log: (message) => events.push(message) },
+    settleMs: 15_000,
+    wait: async (delayMs) => events.push(`wait:${delayMs}`),
+  });
+  gate.markWake();
+  assert.equal(await gate.run(() => events.push("first sync")), undefined);
+  await gate.run(() => events.push("second sync"));
+  assert.deepEqual(events, [
+    "wake: waiting 15000ms for network connectivity to settle.",
+    "wait:15000",
+    "sync paused: Google API hostname is not reachable; waiting for network connectivity.",
+    "sync resumed: network connectivity is available.",
+    "second sync",
+  ]);
 });

@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.8.5] - Unreleased
+## [0.8.5] - 2026-08-27
 
 ### Changed
 
@@ -10,6 +10,15 @@ All notable changes to this project are documented in this file.
 - Show configuration, shutdown, and startup progress while installing or restarting the synchronization service.
 - Pause scheduled and local-change synchronization without reporting pairing errors when the Google API hostname is unreachable, and resume automatically when connectivity returns.
 - Detect polling timers delayed by likely laptop sleep and allow the network to settle before checking connectivity or issuing Google requests.
+- Detect likely laptop sleep independently of polling, discard interrupted synchronization results before state and notification handling, wait 15 seconds for post-wake networking to settle, and start a fresh pass without sending sleep-induced error or recovery email.
+- Poll unchanged Google Docs with one lightweight Drive metadata request, fetching the complete Docs structure only after a local change, remote Drive-version change, missing baseline, or status and formatting work that requires document details.
+- Poll the Google Drive changes feed during routine daemon cycles and synchronize only paired Docs or Sheets reported as changed, keeping quiet polling cost constant as the pairing count grows.
+- Save the Drive changes cursor only after targeted synchronization succeeds, replay uncommitted changes after interruption or restart, and recover an expired cursor through a complete reconciliation without creating per-pairing discovery incidents.
+- Run a complete reconciliation every 24 hours, record its completion in machine-local state and heartbeat output, and retain sequential targeted processing after scale and live latency measurements showed no need for concurrent state mutation.
+
+### Fixed
+
+- Identify native Google Docs tables of contents from the Docs structure and their exported heading-link sequence instead of requiring a user-authored `Table of Contents` label. Preserve labels as ordinary content, handle Google's unlabeled empty-heading wrappers and extra export spacing, and recover a missing leading local TOC range even when the following heading changed.
 
 ## [0.8.4] - 2026-08-25
 

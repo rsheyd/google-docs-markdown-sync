@@ -54,11 +54,43 @@ export function createNetworkGate({
   return { markWake, run };
 }
 
-export function timerLikelyCrossedSleep({
-  startedAt,
-  delayMs,
-  finishedAt = Date.now(),
-  toleranceMs = Math.max(10_000, delayMs * 2),
-}) {
-  return finishedAt - startedAt > delayMs + toleranceMs;
+export function createWakeMonitor({
+  intervalMs = 1_000,
+  toleranceMs = 10_000,
+  now = Date.now,
+  onWake = () => {},
+  setIntervalImplementation = setInterval,
+  clearIntervalImplementation = clearInterval,
+} = {}) {
+  let generation = 0;
+  let lastObservedAt = now();
+
+  function observe() {
+    const observedAt = now();
+    const elapsedMs = observedAt - lastObservedAt;
+    if (elapsedMs > intervalMs + toleranceMs) {
+      generation += 1;
+      onWake({ elapsedMs, generation });
+    }
+    lastObservedAt = observedAt;
+    return generation;
+  }
+
+  const timer = setIntervalImplementation(observe, intervalMs);
+  timer?.unref?.();
+
+  function beginCycle() {
+    const startingGeneration = observe();
+    return {
+      isCurrent() {
+        return observe() === startingGeneration;
+      },
+    };
+  }
+
+  function close() {
+    clearIntervalImplementation(timer);
+  }
+
+  return { beginCycle, close, observe };
 }

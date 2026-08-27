@@ -22,6 +22,7 @@ results, and remaining work are documented in the [image synchronization design]
 - Keep Google Docs and Markdown pairings convergent under routine local and
   remote edits.
 - Make synchronization wake-safe and replace routine full-pairing polling with incremental Drive change discovery so normal work scales with actual changes.
+- Keep daily reconciliation sequential while current scans remain comfortably below one minute; if registry growth or observed local-sync delays cross that threshold, introduce cooperative batches that yield to ordinary work and then measured four-way concurrency if needed.
 - Add actionable image-sync logs and health checks without exposing secrets or
   signed staging URLs.
 - Exercise retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
@@ -30,7 +31,7 @@ results, and remaining work are documented in the [image synchronization design]
 - Continue live validation of incremental paragraph, list, link, table, and
   status updates.
 
-The combined lifecycle, change-discovery, bounded-concurrency, reconciliation, and validation plan is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md).
+The completed lifecycle, change-discovery, and reconciliation work is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md). Its [future reconciliation scaling trigger](design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) records when and how to add cooperative batching and measured concurrency without prematurely complicating the current state coordinator.
 
 ## Next: safer conflicts and pairing controls
 

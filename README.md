@@ -98,24 +98,15 @@ flowchart LR
     F["google-docs-sync.json"] --> B
 ```
 
-Each workspace tracks a visible `google-docs-sync.json` containing portable
-relative paths and Google document IDs. Machine-specific hashes, revisions,
-timestamps, and credentials remain outside Git under:
+Each workspace tracks a visible `google-docs-sync.json` containing portable relative paths and Google document IDs. Machine-specific hashes, revisions, timestamps, and credentials remain outside Git under:
 
 ```text
 ~/Library/Application Support/google-docs-markdown-sync/
 ```
 
-OAuth and R2 credentials are stored in the macOS Keychain. The service watches
-Markdown, referenced image assets, and CSV directories locally; it polls paired
-Google Docs and the lightweight Drive revision for paired Sheets every five
-seconds. Sheet metadata and tab values are fetched only after a remote or local
-change. Synchronization passes are single-flight, and failed remote requests use
-bounded exponential backoff.
+OAuth and R2 credentials are stored in the macOS Keychain. The service watches Markdown, referenced image assets, and CSV directories locally; it polls the Google Drive changes feed every five seconds and synchronizes only changed pairings. Full Docs or Sheets content is fetched only after a remote or local change. Synchronization passes are single-flight, failed remote requests use bounded exponential backoff, and a sequential daily reconciliation checks for drift. Quiet polling remains constant-cost as the pairing count grows; if reconciliation eventually exceeds one minute or noticeably delays ordinary work, the [documented scaling path](docs/design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) adds cooperative batching before measured concurrency.
 
-For the manifest format, see the [installation guide](docs/installation.md#pairing-manifest). For
-detailed synchronization semantics, service management, logs, heartbeat
-configuration, and troubleshooting, see the [operations guide](docs/operations.md).
+For the manifest format, see the [installation guide](docs/installation.md#pairing-manifest). For detailed synchronization semantics, service management, logs, heartbeat configuration, and troubleshooting, see the [operations guide](docs/operations.md).
 The consolidated [command reference](docs/operations.md#command-reference) lists
 every `gdms` command, its arguments, and what it can modify.
 For the user-visible mapping from Markdown blank lines, headings, paragraphs,

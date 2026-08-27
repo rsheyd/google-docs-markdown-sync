@@ -14,6 +14,8 @@ import { createR2Stager, loadR2Configuration } from "./r2.js";
 import {
   createGoogleServices,
   exportMarkdown,
+  getDocumentDetails,
+  getDocumentDriveInfo,
   getRemoteInfo,
   updateDocumentFormatting,
   updateDocumentFromMarkdown,
@@ -36,7 +38,8 @@ import {
 } from "./deletions.js";
 import { createTimestampLogger } from "./progress.js";
 import { createSyncErrorReporter } from "./notifications.js";
-import { createNetworkGate, timerLikelyCrossedSleep } from "./network.js";
+import { createNetworkGate, createWakeMonitor } from "./network.js";
+import { reconciliationDue, runDriveChangeCycle } from "./drive-changes.js";
 import { readPackageVersion } from "./version.js";
 import {
   getSpreadsheetDetails,
@@ -122,6 +125,7 @@ export async function pullDocument(services, pairing, remote) {
     localHash: local.hash,
     localModifiedTime: local.modifiedTime,
     remoteRevisionId: updatedRemote.revisionId,
+    remoteDriveRevisionId: updatedRemote.driveRevisionId,
     remoteModifiedTime: updatedRemote.modifiedTime,
     lastWriter: "google-docs",
     lastSuccessfulSync: new Date().toISOString(),
@@ -173,6 +177,7 @@ async function push(services, pairing, local, before) {
     localHash: refreshed.hash,
     localModifiedTime: refreshed.modifiedTime,
     remoteRevisionId: remote.revisionId,
+    remoteDriveRevisionId: remote.driveRevisionId,
     remoteModifiedTime: remote.modifiedTime,
     lastWriter: "markdown",
     lastSuccessfulSync: new Date().toISOString(),
@@ -228,6 +233,7 @@ async function repairStatus(services, pairing, previous, local, remote) {
     localHash: refreshed.hash,
     localModifiedTime: refreshed.modifiedTime,
     remoteRevisionId: updated.revisionId,
+    remoteDriveRevisionId: updated.driveRevisionId,
     remoteModifiedTime: updated.modifiedTime,
   };
 }
@@ -281,7 +287,16 @@ export async function syncPairing(
   const spreadsheet = pairing.type === "spreadsheet";
   let remote = spreadsheet
     ? await getSpreadsheetDriveInfo(services, pairing.spreadsheetId)
-    : await getRemoteInfo(services, pairing.documentId);
+    : await getDocumentDriveInfo(services, pairing.documentId);
+  const documentDetails = async () => {
+    if (spreadsheet || remote.document) return remote;
+    remote = await getDocumentDetails(
+      services,
+      pairing.documentId,
+      remote,
+    );
+    return remote;
+  };
   const spreadsheetDetails = async () => {
     if (!spreadsheet || remote.spreadsheet) return remote;
     remote = await getSpreadsheetDetails(
@@ -302,6 +317,21 @@ export async function syncPairing(
       state: previous,
     };
   }
+  if (
+    !spreadsheet &&
+    previous?.remoteDriveRevisionId &&
+    local.exists &&
+    !local.managedContentChanged &&
+    local.hash === previous.localHash &&
+    remote.driveRevisionId === previous.remoteDriveRevisionId &&
+    local.text === documentStatusMarkdown(effectivePairing, {
+      ...previous,
+      content: local.content,
+    })
+  ) {
+    return { action: "none", pairing: effectivePairing, state: previous };
+  }
+  if (!spreadsheet) await documentDetails();
   let action = chooseSyncAction({ local, remote, previous });
   let remoteContentVerifiedUnchanged = false;
   if (
@@ -402,6 +432,7 @@ export async function syncPairing(
           state: {
             ...previous,
             remoteRevisionId: styledRemote.revisionId,
+            remoteDriveRevisionId: styledRemote.driveRevisionId,
             remoteModifiedTime: styledRemote.modifiedTime,
           },
         };
@@ -434,7 +465,13 @@ export async function syncPairing(
         state: await repairStatus(services, effectivePairing, previous, local, remote),
       };
     }
-    return { action: "none", pairing: effectivePairing, state: previous };
+    return {
+      action: "none",
+      pairing: effectivePairing,
+      state: spreadsheet
+        ? previous
+        : { ...previous, remoteDriveRevisionId: remote.driveRevisionId },
+    };
   }
   if (spreadsheet) await spreadsheetDetails();
   return {
@@ -444,6 +481,47 @@ export async function syncPairing(
       ? await pushSheet(services, effectivePairing, local, remote)
       : await push(services, effectivePairing, local, remote),
   };
+}
+
+export class SyncPassInterruptedError extends Error {
+  constructor() {
+    super("sleep/wake transition detected");
+    this.name = "SyncPassInterruptedError";
+  }
+}
+
+export function assertCurrentSyncPass(isCurrent = () => true) {
+  if (!isCurrent()) throw new SyncPassInterruptedError();
+}
+
+export async function commitSyncPass({
+  results,
+  state,
+  logger = console,
+  errorReporter,
+  reportErrors = true,
+  isCurrent = () => true,
+  persistState = saveState,
+  retryNotifications = retryDeletionNotifications,
+} = {}) {
+  assertCurrentSyncPass(isCurrent);
+  for (const result of results) {
+    if (result.action !== "error") continue;
+    assertCurrentSyncPass(isCurrent);
+    if (reportErrors) {
+      if (errorReporter) await errorReporter.report(result.pairing, result.error);
+      else logger.error(`${result.pairing.absolutePath}: ${result.error.message}`);
+    }
+  }
+  assertCurrentSyncPass(isCurrent);
+  await retryNotifications(state, {
+    persistState,
+    logger,
+  });
+  assertCurrentSyncPass(isCurrent);
+  await persistState(state);
+  assertCurrentSyncPass(isCurrent);
+  await errorReporter?.reconcile(results);
 }
 
 export async function runSyncPass({
@@ -456,6 +534,7 @@ export async function runSyncPass({
   deferMissingLocal,
   onProgress,
   missingLocalWaitMs,
+  isCurrent = () => true,
 } = {}) {
   const auth = await getAuthClient({ interactive: interactiveAuth });
   const services = createGoogleServices(auth);
@@ -474,6 +553,7 @@ export async function runSyncPass({
   const results = [];
 
   for (const pairing of pairings) {
+    assertCurrentSyncPass(isCurrent);
     const current = results.length + 1;
     onProgress?.({ type: "start", current, total: pairings.length, pairing });
     const key = stateKey(pairing);
@@ -553,6 +633,7 @@ export async function runSyncPass({
       const result = await syncPairing(services, pairing, state.documents[key], {
         deferMissingLocal,
       });
+      assertCurrentSyncPass(isCurrent);
       state.documents[key] = result.state;
       const completed = {
         pairing: result.pairing,
@@ -581,21 +662,20 @@ export async function runSyncPass({
         );
       }
     } catch (error) {
+      if (error instanceof SyncPassInterruptedError) throw error;
       const completed = { pairing, action: "error", error };
       results.push(completed);
       onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
-      if (!onProgress) {
-        if (errorReporter) await errorReporter.report(pairing, error);
-        else logger.error(`${pairing.absolutePath}: ${error.message}`);
-      }
     }
   }
-  await retryDeletionNotifications(state, {
-    persistState: saveState,
+  await commitSyncPass({
+    results,
+    state,
     logger,
+    errorReporter,
+    reportErrors: !onProgress,
+    isCurrent,
   });
-  await saveState(state);
-  await errorReporter?.reconcile(results);
   return results;
 }
 
@@ -715,7 +795,12 @@ export async function runDaemon({
   errorReporter,
   networkAvailable,
   networkSettleMs = Number(
-    process.env.GOOGLE_DOCS_SYNC_NETWORK_SETTLE_MS ?? 5_000,
+    process.env.GOOGLE_DOCS_SYNC_NETWORK_SETTLE_MS ?? 15_000,
+  ),
+  wakeMonitorIntervalMs = 1_000,
+  wakeMonitorToleranceMs = 10_000,
+  reconciliationIntervalMs = Number(
+    process.env.GOOGLE_DOCS_SYNC_RECONCILIATION_INTERVAL_MS ?? 86_400_000,
   ),
 } = {}) {
   logger = createTimestampLogger(logger);
@@ -759,6 +844,89 @@ export async function runDaemon({
     logger,
     settleMs: networkSettleMs,
   });
+  const wakeMonitor = createWakeMonitor({
+    intervalMs: wakeMonitorIntervalMs,
+    toleranceMs: wakeMonitorToleranceMs,
+    onWake: () => networkGate.markWake(),
+  });
+
+  async function runWakeSafe(operation) {
+    const cycle = wakeMonitor.beginCycle();
+    try {
+      const value = await networkGate.run(() => operation(cycle.isCurrent));
+      return { interrupted: false, value };
+    } catch (error) {
+      if (!(error instanceof SyncPassInterruptedError)) throw error;
+      logger.log("sync interrupted: sleep/wake transition detected; discarding pass results.");
+      return { interrupted: true };
+    }
+  }
+
+  function runWakeSafeSync(options) {
+    return runWakeSafe(async (isCurrent) => ({
+      results: await runSyncPass({ ...options, isCurrent }),
+    })).then((outcome) => ({
+      ...outcome,
+      results: outcome.value?.results,
+    }));
+  }
+
+  async function persistDriveCursor(pageToken, { reconciled = false } = {}) {
+    const state = await getState();
+    const persistedAt = new Date().toISOString();
+    state.remoteChanges = {
+      ...state.remoteChanges,
+      version: 1,
+      pageToken,
+      lastPolledAt: persistedAt,
+      ...(reconciled ? { lastReconciledAt: persistedAt } : {}),
+    };
+    await persistState(state);
+  }
+
+  async function pollRemoteChanges(pairings, isCurrent) {
+    const auth = await getAuthClient();
+    const services = createGoogleServices(auth);
+    const state = await getState();
+    const startedAt = Date.now();
+    const forceReconciliation = Boolean(state.remoteChanges?.pageToken) &&
+      reconciliationDue(state, reconciliationIntervalMs, startedAt);
+    if (forceReconciliation) {
+      logger.log(`reconciliation: starting complete scan of ${pairings.length} pairing(s).`);
+    }
+    const outcome = await runDriveChangeCycle({
+      services,
+      pairings,
+      state,
+      assertCurrent: () => assertCurrentSyncPass(isCurrent),
+      syncPairings: (targets) => runSyncPass({
+        root,
+        pairings: targets.filter(
+          (pairing) => !pendingMoves.has(pairing.absolutePath),
+        ),
+        deferMissingLocal,
+        missingLocalWaitMs: intervalMs * 2,
+        logger,
+        errorReporter,
+        isCurrent,
+      }),
+      persistCursor: persistDriveCursor,
+      forceReconciliation,
+    });
+    if (outcome.reset) logger.log("remote discovery: stored Drive cursor expired; completed a fresh reconciliation.");
+    else if (outcome.initialized) logger.log("remote discovery: initialized Drive cursor after a complete reconciliation.");
+    else if (outcome.reconciled) {
+      logger.log(
+        `reconciliation: completed ${outcome.results.length} pairing(s) with ${outcome.errorCount} error(s) in ${Date.now() - startedAt}ms.`,
+      );
+    }
+    if (outcome.initialized || outcome.changeCount > 0) {
+      logger.log(
+        `remote discovery: ${outcome.changeCount} change(s), ${outcome.targetCount} paired target(s), ${outcome.results.length} synchronized, ${outcome.errorCount} error(s), ${Date.now() - startedAt}ms.`,
+      );
+    }
+    return outcome;
+  }
 
   const watcherManager = createWatcherManager({
     logger,
@@ -789,16 +957,14 @@ export async function runDaemon({
                 );
               }
             }
-            return networkGate.run(() =>
-              runSyncPass({
-                root,
-                targetPaths,
-                deferMissingLocal,
-                missingLocalWaitMs: intervalMs * 2,
-                logger,
-                errorReporter,
-              }),
-            );
+            return runWakeSafeSync({
+              root,
+              targetPaths,
+              deferMissingLocal,
+              missingLocalWaitMs: intervalMs * 2,
+              logger,
+              errorReporter,
+            });
           } finally {
             for (const [filePath, move] of moves) {
               if (pendingMoves.get(filePath) === move) {
@@ -830,6 +996,7 @@ export async function runDaemon({
   process.on("SIGTERM", stop);
 
   let consecutiveFailures = 0;
+  let remoteDiscoveryFailed = false;
   try {
     while (!stopping) {
       const onDiskVersion = await getVersion();
@@ -841,39 +1008,40 @@ export async function runDaemon({
       }
       const pairings = await loadPairings(root);
       await watcherManager.refresh(pairings);
-      const results = await enqueue(() =>
-        networkGate.run(() =>
-          runSyncPass({
-            root,
-            pairings: pairings.filter(
-              (pairing) => !pendingMoves.has(pairing.absolutePath),
-            ),
-            deferMissingLocal,
-            missingLocalWaitMs: intervalMs * 2,
-            logger,
-            errorReporter,
-          }),
-        ),
-      );
+      let outcome;
+      try {
+        outcome = await enqueue(() =>
+          runWakeSafe((isCurrent) => pollRemoteChanges(pairings, isCurrent)),
+        );
+      } catch (error) {
+        if (!remoteDiscoveryFailed) logger.error(`remote discovery paused: ${error.message}`);
+        remoteDiscoveryFailed = true;
+        consecutiveFailures += 1;
+        const waitMs = backoffDelay(intervalMs, consecutiveFailures);
+        await new Promise((resolve) => {
+          wakeSleep = resolve;
+          sleepTimer = setTimeout(resolve, waitMs);
+        });
+        wakeSleep = undefined;
+        continue;
+      }
+      if (outcome.interrupted) continue;
+      if (remoteDiscoveryFailed) logger.log("remote discovery resumed.");
+      remoteDiscoveryFailed = false;
+      const results = outcome.value?.results;
       consecutiveFailures = results?.some((result) => result.action === "error")
         ? consecutiveFailures + 1
         : 0;
       const waitMs = backoffDelay(intervalMs, consecutiveFailures);
-      const sleepStartedAt = Date.now();
       await new Promise((resolve) => {
         wakeSleep = resolve;
         sleepTimer = setTimeout(resolve, waitMs);
       });
       wakeSleep = undefined;
-      if (timerLikelyCrossedSleep({
-        startedAt: sleepStartedAt,
-        delayMs: waitMs,
-      })) {
-        networkGate.markWake();
-      }
     }
   } finally {
     watcherManager.close();
+    wakeMonitor.close();
     process.off("SIGINT", stop);
     process.off("SIGTERM", stop);
   }

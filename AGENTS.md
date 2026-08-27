@@ -62,6 +62,7 @@
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
 - `src/network.js`: Google API reachability gating and post-sleep network-settling helpers.
+- `src/drive-changes.js`: Paginated Google Drive change discovery, cursor validation, and pairing filtering.
 - `cloudflare/image-gateway-worker.js`: HMAC-authenticated, short-lived image
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,

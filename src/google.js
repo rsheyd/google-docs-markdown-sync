@@ -54,20 +54,43 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
   }
 }
 
+export async function getDocumentDriveInfo(services, documentId) {
+  const fileResponse = await services.drive.files.get({
+    fileId: documentId,
+    fields: "id,modifiedTime,name,version",
+  });
+  return {
+    modifiedTime: fileResponse.data.modifiedTime,
+    name: fileResponse.data.name,
+    driveRevisionId: String(
+      fileResponse.data.version ?? fileResponse.data.modifiedTime,
+    ),
+  };
+}
+
+export async function getDocumentDetails(services, documentId, driveInfo) {
+  const info = driveInfo ?? await getDocumentDriveInfo(services, documentId);
+  const documentResponse = await services.docs.documents.get({
+    documentId,
+    suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
+  });
+  return {
+    ...info,
+    revisionId: documentResponse.data.revisionId,
+    document: documentResponse.data,
+  };
+}
+
 export async function getRemoteInfo(services, documentId) {
-  const [fileResponse, documentResponse] = await Promise.all([
-    services.drive.files.get({
-      fileId: documentId,
-      fields: "id,modifiedTime,name",
-    }),
+  const [driveInfo, documentResponse] = await Promise.all([
+    getDocumentDriveInfo(services, documentId),
     services.docs.documents.get({
       documentId,
       suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
     }),
   ]);
   return {
-    modifiedTime: fileResponse.data.modifiedTime,
-    name: fileResponse.data.name,
+    ...driveInfo,
     revisionId: documentResponse.data.revisionId,
     document: documentResponse.data,
   };
