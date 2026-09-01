@@ -1,4 +1,5 @@
 const ACTION_LABELS = {
+  checked: "checked and refreshed status",
   none: "unchanged",
   pull: "pulled",
   push: "pushed",

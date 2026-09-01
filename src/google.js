@@ -5,8 +5,10 @@ import {
   paragraphFormatting,
 } from "./formatting.js";
 import {
+  addTableColumnWidths,
   INLINE_IMAGE_MARKER,
   parseMarkdown,
+  tableColumnWidthMarker,
 } from "./markdown.js";
 import { DOC_STATUS_TITLE, stripRemoteDocumentStatus } from "./status.js";
 
@@ -30,6 +32,13 @@ function exportSizeLimitExceeded(error) {
   );
 }
 
+function hasTableCellBreak(block) {
+  return (
+    block.type === "table" &&
+    block.rows.some((row) => row.some((cell) => /[\n\u000b]/.test(cell.text)))
+  );
+}
+
 export async function exportMarkdown(services, documentId, { document } = {}) {
   try {
     const response = await services.drive.files.export(
@@ -40,10 +49,19 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
       documentId,
       suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
     })).data;
-    if (blocksFromDocument(source).some(hasBlockquoteIndent)) {
+    const sourceBlocks = blocksFromDocument(source);
+    if (
+      sourceBlocks.some(hasBlockquoteIndent) ||
+      sourceBlocks.some(hasTableCellBreak)
+    ) {
       return stripRemoteDocumentStatus(markdownFromDocument(source));
     }
-    return stripRemoteDocumentStatus(Buffer.from(response.data).toString("utf8"));
+    return stripRemoteDocumentStatus(addTableColumnWidths(
+      Buffer.from(response.data).toString("utf8"),
+      sourceBlocks
+        .filter((block) => block.type === "table")
+        .map((block) => block.columnWidths),
+    ));
   } catch (error) {
     if (!exportSizeLimitExceeded(error)) throw error;
     const source = document ?? (await services.docs.documents.get({
@@ -141,7 +159,8 @@ function inlineObjectsOf(document) {
 function paragraphText(element) {
   const text = (element.paragraph?.elements ?? [])
     .map((content) => content.textRun?.content ?? "")
-    .join("");
+    .join("")
+    .replace(/\u000b/g, "\n");
   return text.endsWith("\n") ? text.slice(0, -1) : text;
 }
 
@@ -242,7 +261,7 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
       });
       continue;
     }
-    const value = content.textRun?.content ?? "";
+    const value = (content.textRun?.content ?? "").replace(/\u000b/g, "\n");
     const start = text.length;
     text += value;
     const style = normalizedTextStyle(
@@ -270,6 +289,8 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
         String(level.glyphFormat ?? "").includes("%"));
     return {
       type: "listItem",
+      paragraphStyle:
+        element.paragraph.paragraphStyle?.namedStyleType ?? "NORMAL_TEXT",
       ordered,
       listId: bullet.listId,
       nestingLevel: bullet.nestingLevel ?? 0,
@@ -310,8 +331,25 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
 }
 
 function tableFromDocument(element, document, idToFragment = new Map()) {
+  const columnProperties = element.table.tableStyle?.tableColumnProperties ?? [];
+  const columns =
+    element.table.columns ??
+    Math.max(0, ...(element.table.tableRows ?? []).map((row) => row.tableCells?.length ?? 0));
+  const widthMagnitudes = columnProperties.map(
+    (properties) => properties.width?.magnitude,
+  );
   return {
     type: "table",
+    ...(widthMagnitudes.length === columns &&
+    columnProperties.every(
+      (properties) =>
+        properties.widthType === "FIXED_WIDTH" &&
+        Number(properties.width?.magnitude) >= 5,
+    )
+      ? {
+          columnWidths: widthMagnitudes.map(Number),
+        }
+      : {}),
     rows: (element.table.tableRows ?? []).map((row) =>
       (row.tableCells ?? []).map((cell) => {
         const paragraphs = (cell.content ?? [])
@@ -461,7 +499,7 @@ function styledMarkdown(text, styles = [], images = [], imageReference) {
 function tableCellMarkdown(cell, imageReference) {
   return styledMarkdown(cell.text, cell.styles, cell.images, imageReference)
     .replace(/\|/g, "\\|")
-    .replace(/\s*\n\s*/g, "<br>");
+    .replace(/ {2}\n/g, "<br>");
 }
 
 export function markdownFromDocument(document) {
@@ -480,6 +518,8 @@ export function markdownFromDocument(document) {
         ...row,
         ...Array.from({ length: columns - row.length }, () => ""),
       ]);
+      const marker = tableColumnWidthMarker(block.columnWidths);
+      if (marker) lines.push(marker);
       lines.push(`| ${normalized[0].join(" | ")} |`);
       lines.push(`| ${Array.from({ length: columns }, () => "---").join(" | ")} |`);
       for (const row of normalized.slice(1)) lines.push(`| ${row.join(" | ")} |`);
@@ -963,6 +1003,13 @@ export function planParagraphSpacingUpdate(document, markdown) {
     } = paragraphFormatting(desiredBlock);
     const paragraphStyle = {};
     const fields = [];
+    if (
+      desiredBlock.type === "listItem" &&
+      currentBlock.paragraphStyle !== "NORMAL_TEXT"
+    ) {
+      paragraphStyle.namedStyleType = "NORMAL_TEXT";
+      fields.push("namedStyleType");
+    }
     if ((currentBlock.paragraphSpaceBelow ?? 0) !== targetSpacing) {
       paragraphStyle.spaceBelow = { magnitude: targetSpacing, unit: "PT" };
       fields.push("spaceBelow");
@@ -1156,6 +1203,47 @@ export function planListFormattingMigration(document, markdown) {
   ];
 }
 
+function tableColumnWidthRequests(currentBlock, desiredBlock) {
+  if (!desiredBlock.columnWidths?.length) return [];
+  const columns = Math.max(0, ...desiredBlock.rows.map((row) => row.length));
+  if (desiredBlock.columnWidths.length !== columns) {
+    throw new Error(
+      `Table column-width metadata has ${desiredBlock.columnWidths.length} ` +
+        `values, but the following table has ${columns} columns.`,
+    );
+  }
+  return desiredBlock.columnWidths.flatMap((width, columnIndex) => {
+    if (
+      Math.abs(Number(currentBlock.columnWidths?.[columnIndex]) - width) < 0.05
+    ) {
+      return [];
+    }
+    return [{
+      updateTableColumnProperties: {
+        tableStartLocation: { index: currentBlock.startIndex },
+        columnIndices: [columnIndex],
+        tableColumnProperties: {
+          widthType: "FIXED_WIDTH",
+          width: { magnitude: width, unit: "PT" },
+        },
+        fields: "widthType,width",
+      },
+    }];
+  });
+}
+
+export function planTableColumnWidthUpdate(document, markdown) {
+  const desired = parseMarkdown(markdown);
+  const current = withoutNativeTocStructuralSpacers(
+    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
+  );
+  if (current.length !== desired.length) return [];
+  return desired.flatMap((desiredBlock, index) => {
+    if (desiredBlock.type !== "table" || current[index]?.type !== "table") return [];
+    return tableColumnWidthRequests(current[index], desiredBlock);
+  });
+}
+
 function insertionRequests(
   startIndex,
   blocks,
@@ -1299,6 +1387,13 @@ function insertionRequests(
     } else {
       const first = group.items[0];
       const last = group.items[group.items.length - 1];
+      requests.push({
+        updateParagraphStyle: {
+          range: { startIndex: first.blockStart, endIndex: last.blockEnd },
+          paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          fields: "namedStyleType",
+        },
+      });
       if (applyParagraphSpacing) {
         const { block, visibleStart, blockEnd } = last;
         requests.push({
@@ -1601,6 +1696,7 @@ async function reconcileHeadingLinks(services, documentId, markdown) {
   const requests = [
     ...planHeadingLinkUpdate(document, markdown),
     ...planParagraphSpacingUpdate(document, markdown),
+    ...planTableColumnWidthUpdate(document, markdown),
   ];
   if (requests.length) {
     await services.docs.documents.batchUpdate({
@@ -1648,6 +1744,7 @@ export async function updateDocumentFormatting(
   const requests = [
     ...planInlineStyleUpdate(document, markdown),
     ...planParagraphSpacingUpdate(document, markdown),
+    ...planTableColumnWidthUpdate(document, markdown),
   ];
   if (!requests.length) return undefined;
   await services.docs.documents.batchUpdate({
@@ -1796,6 +1893,20 @@ async function appendTable(services, documentId, block) {
       documentId,
       requestBody: { requests: styleRequests },
     });
+  }
+  if (block.columnWidths?.length) {
+    document = await currentDocument(services, documentId);
+    const tableElement = lastTable(document);
+    const widthRequests = tableColumnWidthRequests(
+      tableFromDocument(tableElement, document),
+      block,
+    );
+    if (widthRequests.length) {
+      await services.docs.documents.batchUpdate({
+        documentId,
+        requestBody: { requests: widthRequests },
+      });
+    }
   }
 }
 

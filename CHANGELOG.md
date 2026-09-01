@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.6] - 2026-08-31
+
+### Added
+
+- Round-trip fixed Google Docs table-column widths through invisible `gdms:table-column-widths` Markdown metadata using the API-native point values, and apply width-only edits without rebuilding table content.
+- Round-trip explicit and consecutive line breaks inside table cells as inline Markdown `<br>` elements while preserving inline formatting across the breaks.
+- Add a **Sync Paired File Now (GDMS)** Finder Quick Action and targeted `gdms sync-once --file FILE` support for immediately reconciling selected Markdown/Google Docs pairings, refreshing their successful-sync timestamps, and reporting the result in a completion or error dialog.
+
+### Fixed
+
+- Normalize inserted list paragraphs to `Normal text` so adjacent heading styles do not produce stray Markdown heading markers inside list items.
+- Repair existing list paragraphs whose Google Docs named style disagrees with ordinary Markdown list syntax, while preserving inline bold and other text formatting.
+
 ## [0.8.5] - 2026-08-27
 
 ### Changed

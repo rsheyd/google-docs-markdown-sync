@@ -64,10 +64,11 @@ test("summarizes sync results by user-facing action", () => {
     syncSummary([
       { action: "pull" },
       { action: "push" },
+      { action: "checked" },
       { action: "none" },
       { action: "error" },
     ]),
-    "1 pulled, 1 pushed, 1 unchanged, 1 error",
+    "1 pulled, 1 pushed, 1 checked and refreshed status, 1 unchanged, 1 error",
   );
 });
 

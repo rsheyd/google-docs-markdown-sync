@@ -23,10 +23,10 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
 | `gdms configure-notifications` | Existing health-email recipient or `--to EMAIL` | Local settings + local system | Configure the shared email recipient, persistent-error delay, or error-email opt-out, then restart the sync service. |
 | `gdms configure-r2` | `--account-id ID --bucket NAME --gateway-url URL` | Local settings | Store non-secret R2 image-staging configuration. |
-| `gdms sync-once` | — | Local + Google | Run one synchronization pass and exit. |
+| `gdms sync-once` | Optional repeatable `--file FILE` | Local + Google | Run one synchronization pass and exit, optionally limited to selected paired paths. |
 | `gdms daemon` | — | Local + Google | Run the foreground synchronization loop. |
 | `gdms install-service` | — | Local system | Install or restart the per-user synchronization LaunchAgent. |
-| `gdms install-finder-action` | — | Local system | Install both Finder actions and open the Quick Actions pane where both can be enabled. |
+| `gdms install-finder-action` | — | Local system | Install the Finder actions and open the Quick Actions pane where they can be enabled. |
 | `gdms heartbeat` | `--to EMAIL` unless configured | Email + Google reads | Check the daemon and pairings, then send a success email; optionally pass `--from`. |
 | `gdms install-heartbeat` | `--to EMAIL` | Local system | Install the weekly heartbeat LaunchAgent; optionally pass `--from`. |
 | `gdms version`, `gdms --version` | — | None | Print the CLI version and the live daemon version when running. |
@@ -77,6 +77,14 @@ Run one synchronization pass without starting the daemon:
 ```sh
 gdms sync-once
 ```
+
+Pass one or more paired Markdown paths to reconcile only those files immediately:
+
+```sh
+gdms sync-once --file /path/to/one.md --file /path/to/two.md
+```
+
+This is the command used by the **Sync Paired File Now (GDMS)** Finder Quick Action. Every explicitly selected path must already have a pairing. A targeted no-change check refreshes the successful-sync timestamp; ordinary automatic no-change polling remains write-free.
 
 The command reports the current pairing and total, replaces the in-progress
 line with its result in an interactive terminal, and finishes with action

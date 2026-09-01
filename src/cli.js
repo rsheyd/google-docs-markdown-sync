@@ -137,7 +137,7 @@ Commands:
   configure-notifications [--to EMAIL] [--from SENDER] [--error-email-delay-minutes MINUTES]
                           [--enable-error-email | --disable-error-email]
                           [--enable-desktop-notifications | --disable-desktop-notifications]
-  sync-once
+  sync-once [--file FILE ...]
   daemon
   install-service
   install-finder-action
@@ -842,8 +842,21 @@ async function main() {
   } else if (command === "recover") {
     await recoverDocument(options);
   } else if (command === "sync-once") {
+    const requestedPaths = new Set(
+      optionValues(options.file).map((file) => path.resolve(file)),
+    );
+    if (requestedPaths.size) {
+      const pairings = await loadPairings();
+      const pairedPaths = new Set(pairings.map((pairing) => pairing.absolutePath));
+      const unmatched = [...requestedPaths].filter((file) => !pairedPaths.has(file));
+      if (unmatched.length) {
+        throw new Error(`No pairing found for: ${unmatched.join(", ")}`);
+      }
+    }
     let announced = false;
     const results = await runSyncPass({
+      ...(requestedPaths.size ? { targetPaths: requestedPaths } : {}),
+      refreshStatus: requestedPaths.size > 0,
       onProgress(event) {
         if (!announced) {
           console.log(`Syncing ${event.total} pairing(s)…`);

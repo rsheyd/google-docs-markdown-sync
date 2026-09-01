@@ -26,8 +26,7 @@ synchronized; repositories and unrelated files are never copied to Drive.
 - Synchronizes standalone PNG, JPEG, and GIF images through portable sibling
   asset directories.
 - Preserves document IDs, URLs, and unchanged Google Docs ranges.
-- Creates and pairs Docs from Markdown or Sheets from CSV through Finder Quick
-  Actions.
+- Creates and pairs Docs from Markdown or Sheets from CSV through Finder Quick Actions, and immediately synchronizes selected paired Markdown files on demand.
 - Pairs the active Doc or Sheet from Safari or a supported Chromium browser
   through an optional Raycast command.
 - Runs automatically after login and can send an independent weekly health
@@ -78,8 +77,7 @@ Then choose one starting point:
   or Microsoft Edge and run **Pair Google Doc or Sheet with GDMS** from
   Raycast.
 - Control-click local Markdown files in Finder and use **Sync MDs with New
-  Google Docs (GDMS)**, or select CSV files and use **Combine & Sync CSVs with
-  New Google Sheet (GDMS)**.
+  Google Docs (GDMS)**, use **Sync Paired File Now (GDMS)** for an existing pairing, or select CSV files and use **Combine & Sync CSVs with New Google Sheet (GDMS)**.
 - Pair or create a document directly with the commands in
   [installation guide](docs/installation.md#pair-your-first-document).
 
@@ -116,16 +114,7 @@ For common questions about sharing and synchronization, see the
 
 ## Supported content and important limits
 
-Google Docs' native Markdown export normally defines the supported Docs →
-Markdown subset. When Drive's export-size limit rejects a large document, GDMS
-falls back to serializing that subset through the Google Docs API. Headings,
-paragraphs, ordered and unordered lists, links, bold, italics, simple tables,
-blank-line spacing, heading links, and standalone images round-trip.
-Incremental pushes preserve unchanged document ranges and native tables of
-contents where the APIs allow it. Native Docs tables of contents appear locally
-as marked Markdown TOCs generated from headings; ordinary unmarked Markdown
-TOCs remain synchronized content. See the
-[formatting guide](docs/formatting.md#tables-of-contents).
+Google Docs' native Markdown export normally defines the supported Docs → Markdown subset. When Drive's export-size limit rejects a large document, GDMS falls back to serializing that subset through the Google Docs API. Headings, paragraphs, ordered and unordered lists, links, bold, italics, simple tables, blank-line spacing, heading links, and standalone images round-trip. Fixed Google Docs table-column widths round-trip through invisible, API-native point-width metadata immediately before each applicable Markdown table, and explicit within-cell breaks use inline `<br>` elements. Incremental pushes preserve unchanged document ranges and native tables of contents where the APIs allow it. Native Docs tables of contents appear locally as marked Markdown TOCs generated from headings; ordinary unmarked Markdown TOCs remain synchronized content. See the [formatting guide](docs/formatting.md#tables) and its [table-of-contents notes](docs/formatting.md#tables-of-contents).
 
 Google Sheets pairings use one local directory per spreadsheet and one CSV per
 tab. Raw values and formulas round-trip. Formatting, charts, comments, filters,

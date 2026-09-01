@@ -57,9 +57,10 @@ so their displayed markers continue as `1`, `2`, `3`, and so on. Unordered
 Markdown items become native Google Docs bullets. Nested items retain their
 nesting level.
 
-GDMS applies list formatting to the list range rather than inserting literal
-number or bullet characters. Editing the Markdown list may therefore normalize
-manually customized Google Docs list glyphs within the changed range.
+GDMS applies list formatting to the list range rather than inserting literal number or bullet characters. Editing the Markdown list may therefore normalize manually customized Google Docs list glyphs within the changed range.
+
+List paragraphs are also normalized to `Normal text` so an adjacent heading's named style cannot leak into the list and export as heading markers inside bullets.
+This applies to both newly inserted and already-existing list items; heading styles are reserved for explicit Markdown heading syntax.
 
 ## Headings and other paragraph styles
 
@@ -72,6 +73,22 @@ Ordinary Markdown paragraphs use `Normal text`. Bold, italic, strikethrough,
 and links are applied as inline styles where supported.
 
 Markdown blockquotes use `Normal text` with a modest left indent. Separate quoted paragraphs and explicit hard line breaks remain separate paragraphs in Google Docs; no additional decorative styling is applied.
+
+## Tables
+
+GFM tables synchronize as native Google Docs tables. When every Google Docs column has a fixed width, GDMS records those API-native point widths in an invisible HTML comment immediately before the table:
+
+```md
+<!-- gdms:table-column-widths: 90pt, 270pt, 180pt -->
+| Dates | Work | Input |
+| --- | --- | --- |
+```
+
+The marker remains invisible in rendered Markdown. Editing its point values updates only the corresponding Google Docs column widths; it does not rebuild an otherwise unchanged table. Each value must be at least `5pt`, as required by the Google Docs API, and the number of values must equal the number of table columns. A marker must immediately precede its table.
+
+Tables whose columns use Google Docs' evenly distributed mode do not receive width metadata. To begin managing their widths from Markdown, add a valid fixed-width marker or resize the columns in Google Docs so the API reports fixed widths.
+
+Explicit breaks inside table cells use inline HTML `<br>` elements because a physical Markdown newline would end the table row. Consecutive breaks remain consecutive, so an empty paragraph between two populated cell paragraphs round-trips as `<br><br>`. Inline bold, italic, strikethrough, links, and images retain their positions across these breaks. Automatic visual wrapping is not stored as breaks; Google Docs recalculates it from the synchronized column width.
 
 ## Tables of contents
 
@@ -117,13 +134,7 @@ document, resumability, and failure behavior.
 
 ## Current boundaries
 
-Google Docs' native Markdown export normally defines much of the supported
-round-trip subset. If Drive rejects a large document with its export-size
-limit, GDMS serializes supported headings, paragraphs, lists, tables, inline
-styles, links, and images from the Google Docs API instead. Advanced layout,
-floating images, drawings, and other Docs-only visual effects are not
-represented by either path. Tables also have structural spacing requirements
-of their own and do not yet use the universal text-block gap rule.
+Google Docs' native Markdown export normally defines much of the supported round-trip subset. If Drive rejects a large document with its export-size limit, GDMS serializes supported headings, paragraphs, lists, tables, inline styles, links, and images from the Google Docs API instead. Advanced layout, floating images, drawings, and other Docs-only visual effects are not represented by either path. Fixed table column widths are the supported exception to general advanced layout: GDMS preserves them with the metadata described above. Tables also have structural spacing requirements of their own and do not yet use the universal text-block gap rule.
 
 See the [README](../README.md#supported-content-and-important-limits) for the full
 supported-content summary and current limitations.

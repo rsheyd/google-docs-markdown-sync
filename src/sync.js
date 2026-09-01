@@ -282,7 +282,7 @@ export async function syncPairing(
   services,
   pairing,
   previous,
-  { deferMissingLocal } = {},
+  { deferMissingLocal, refreshStatus = false } = {},
 ) {
   const spreadsheet = pairing.type === "spreadsheet";
   let remote = spreadsheet
@@ -319,6 +319,7 @@ export async function syncPairing(
   }
   if (
     !spreadsheet &&
+    !refreshStatus &&
     previous?.remoteDriveRevisionId &&
     local.exists &&
     !local.managedContentChanged &&
@@ -465,6 +466,23 @@ export async function syncPairing(
         state: await repairStatus(services, effectivePairing, previous, local, remote),
       };
     }
+    if (refreshStatus) {
+      const refreshedStatus = {
+        ...previous,
+        lastSuccessfulSync: new Date().toISOString(),
+      };
+      return {
+        action: "checked",
+        pairing: effectivePairing,
+        state: await repairStatus(
+          services,
+          effectivePairing,
+          refreshedStatus,
+          local,
+          remote,
+        ),
+      };
+    }
     return {
       action: "none",
       pairing: effectivePairing,
@@ -531,6 +549,7 @@ export async function runSyncPass({
   errorReporter,
   pairings: suppliedPairings,
   targetPaths,
+  refreshStatus = false,
   deferMissingLocal,
   onProgress,
   missingLocalWaitMs,
@@ -632,6 +651,7 @@ export async function runSyncPass({
       }
       const result = await syncPairing(services, pairing, state.documents[key], {
         deferMissingLocal,
+        refreshStatus,
       });
       assertCurrentSyncPass(isCurrent);
       state.documents[key] = result.state;

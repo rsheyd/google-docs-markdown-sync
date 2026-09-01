@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export const FINDER_QUICK_ACTION_NAME = "Sync MDs with New Google Docs (GDMS)";
+export const SYNC_PAIRED_FILE_QUICK_ACTION_NAME = "Sync Paired File Now (GDMS)";
 export const CSV_FINDER_QUICK_ACTION_NAME = "Combine & Sync CSVs with New Google Sheet (GDMS)";
 const LEGACY_FINDER_QUICK_ACTION_NAMES = ["Sync with Google Docs (GDMS)"];
 const LEGACY_CSV_FINDER_QUICK_ACTION_NAMES = [
@@ -54,6 +55,35 @@ done
   -e 'display notification ((item 1 of argv) & " new Google Docs created and synced.") with title "GDMS"' \
   -e 'end run' \
   "$created_count" >/dev/null 2>&1 || true`;
+}
+
+export function syncPairedFileQuickActionShellCommand({ nodePath, cliPath }) {
+  return `set -e
+if (( $# == 0 )); then
+  echo "GDMS requires at least one paired Markdown file." >&2
+  exit 64
+fi
+file_arguments=()
+for markdown_file in "$@"; do
+  case "$markdown_file" in
+    *.md) file_arguments+=(--file "$markdown_file") ;;
+    *) echo "GDMS only accepts Markdown (.md) files: $markdown_file" >&2; exit 64 ;;
+  esac
+done
+if sync_result="$(${shellQuote(nodePath)} ${shellQuote(cliPath)} sync-once "${"${file_arguments[@]}"}" 2>&1)"; then
+  /usr/bin/osascript \\
+    -e 'on run argv' \\
+    -e 'display dialog (item 1 of argv) with title "GDMS Sync Complete" buttons {"OK"} default button "OK"' \\
+    -e 'end run' \\
+    "$sync_result"
+else
+  /usr/bin/osascript \\
+    -e 'on run argv' \\
+    -e 'display alert "GDMS Sync Failed" message (item 1 of argv)' \\
+    -e 'end run' \\
+    "$sync_result"
+  exit 1
+fi`;
 }
 
 export function csvFinderQuickActionShellCommand({ nodePath, cliPath }) {
@@ -177,6 +207,12 @@ export function finderQuickActionWorkflow({ nodePath, cliPath }) {
   return quickActionWorkflow(finderQuickActionShellCommand({ nodePath, cliPath }));
 }
 
+export function syncPairedFileQuickActionWorkflow({ nodePath, cliPath }) {
+  return quickActionWorkflow(
+    syncPairedFileQuickActionShellCommand({ nodePath, cliPath }),
+  );
+}
+
 export function csvFinderQuickActionWorkflow({ nodePath, cliPath }) {
   return quickActionWorkflow(csvFinderQuickActionShellCommand({ nodePath, cliPath }));
 }
@@ -205,6 +241,10 @@ function quickActionInfoPlist(name, uti) {
 
 export function finderQuickActionInfoPlist() {
   return quickActionInfoPlist(FINDER_QUICK_ACTION_NAME, MARKDOWN_UTI);
+}
+
+export function syncPairedFileQuickActionInfoPlist() {
+  return quickActionInfoPlist(SYNC_PAIRED_FILE_QUICK_ACTION_NAME, MARKDOWN_UTI);
 }
 
 export function csvFinderQuickActionInfoPlist() {
@@ -243,6 +283,12 @@ export async function installFinderQuickAction({
     "Services",
     `${name}.workflow`,
   ), { recursive: true, force: true })));
+  await writeQuickAction(
+    homeDirectory,
+    SYNC_PAIRED_FILE_QUICK_ACTION_NAME,
+    syncPairedFileQuickActionWorkflow({ nodePath: process.execPath, cliPath }),
+    syncPairedFileQuickActionInfoPlist(),
+  );
   await writeQuickAction(
     homeDirectory,
     CSV_FINDER_QUICK_ACTION_NAME,

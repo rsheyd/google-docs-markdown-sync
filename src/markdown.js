@@ -6,6 +6,47 @@ import { PARAGRAPH_SPACE_BELOW_PT } from "./formatting.js";
 const parser = unified().use(remarkParse).use(remarkGfm);
 export const INLINE_IMAGE_MARKER = "\uFFFC";
 const GOOGLE_IMAGE_REFERENCE_PREFIX = "gdocs-image-reference:";
+const TABLE_COLUMN_WIDTHS_PATTERN =
+  /^<!--\s*gdms:table-column-widths:\s*([^>]+?)\s*-->$/i;
+
+function parseTableColumnWidths(value) {
+  const widths = value.split(",").map((part) => {
+    const match = part.trim().match(/^([0-9]+(?:\.[0-9]+)?)pt$/i);
+    return match ? Number(match[1]) : NaN;
+  });
+  if (!widths.length || widths.some((width) => !Number.isFinite(width) || width < 5)) {
+    throw new Error(
+      "Table column widths must be a comma-separated list of point values of at least 5pt.",
+    );
+  }
+  return widths;
+}
+
+function formattedTableColumnWidths(widths) {
+  return widths
+    .map((width) => `${Number(width.toFixed(4))}pt`)
+    .join(", ");
+}
+
+export function tableColumnWidthMarker(widths) {
+  return widths?.length
+    ? `<!-- gdms:table-column-widths: ${formattedTableColumnWidths(widths)} -->`
+    : undefined;
+}
+
+export function addTableColumnWidths(markdown, widthsByTable) {
+  const tables = parser
+    .parse(normalizeGoogleImageReferences(markdown))
+    .children.filter((node) => node.type === "table");
+  let result = markdown;
+  for (let index = tables.length - 1; index >= 0; index -= 1) {
+    const marker = tableColumnWidthMarker(widthsByTable[index]);
+    const offset = tables[index].position?.start.offset;
+    if (!marker || offset === undefined) continue;
+    result = `${result.slice(0, offset)}${marker}\n${result.slice(offset)}`;
+  }
+  return result;
+}
 
 function normalizeGoogleImageReferences(markdown) {
   return markdown.replace(
@@ -38,6 +79,8 @@ function renderInlineNodes(nodes, inherited = {}) {
     if (node.type === "text" || node.type === "inlineCode") {
       append(node.value, merged);
     } else if (node.type === "break") {
+      append("\n", merged);
+    } else if (node.type === "html" && /^<br\s*\/?\s*>$/i.test(node.value)) {
       append("\n", merged);
     } else if (node.type === "image" || node.type === "imageReference") {
       const offset = text.length;
@@ -172,8 +215,32 @@ export function parseMarkdown(markdown) {
   const blocks = [];
   let previousEndLine = 0;
   let previousBlockEnd = 0;
+  let pendingTableColumnWidths;
+  let pendingTableColumnWidthsLine;
+  let pendingTableColumnWidthsEndLine;
   for (const node of tree.children) {
-    const startLine = node.position?.start.line ?? previousEndLine + 1;
+    if (node.type === "html") {
+      const match = node.value.trim().match(TABLE_COLUMN_WIDTHS_PATTERN);
+      if (match) {
+        pendingTableColumnWidths = parseTableColumnWidths(match[1]);
+        pendingTableColumnWidthsLine = node.position?.start.line;
+        pendingTableColumnWidthsEndLine = node.position?.end.line;
+        continue;
+      }
+    }
+    if (pendingTableColumnWidths && node.type !== "table") {
+      throw new Error("Table column-width metadata must immediately precede a Markdown table.");
+    }
+    if (
+      pendingTableColumnWidthsEndLine &&
+      node.position?.start.line !== pendingTableColumnWidthsEndLine + 1
+    ) {
+      throw new Error("Table column-width metadata must immediately precede a Markdown table.");
+    }
+    const startLine =
+      pendingTableColumnWidthsLine ??
+      node.position?.start.line ??
+      previousEndLine + 1;
     if (
       previousEndLine &&
       startLine > previousEndLine + 1 &&
@@ -210,12 +277,31 @@ export function parseMarkdown(markdown) {
     } else if (node.type === "list") {
       appendList(blocks, node);
     } else if (node.type === "table") {
+      const columns = Math.max(
+        0,
+        ...node.children.map((row) => row.children.length),
+      );
+      if (
+        pendingTableColumnWidths &&
+        pendingTableColumnWidths.length !== columns
+      ) {
+        throw new Error(
+          `Table column-width metadata has ${pendingTableColumnWidths.length} ` +
+            `values, but the following table has ${columns} columns.`,
+        );
+      }
       blocks.push({
         type: "table",
+        ...(pendingTableColumnWidths
+          ? { columnWidths: pendingTableColumnWidths }
+          : {}),
         rows: node.children.map((row) =>
           row.children.map((cell) => renderInlineNodes(cell.children)),
         ),
       });
+      pendingTableColumnWidths = undefined;
+      pendingTableColumnWidthsLine = undefined;
+      pendingTableColumnWidthsEndLine = undefined;
     } else if (node.type === "blockquote") {
       const paragraphs = node.children.filter(
         (child) => child.type === "paragraph",
@@ -246,6 +332,9 @@ export function parseMarkdown(markdown) {
     }
     previousEndLine = node.position?.end.line ?? startLine;
     previousBlockEnd = blocks.length;
+  }
+  if (pendingTableColumnWidths) {
+    throw new Error("Table column-width metadata must be followed by a Markdown table.");
   }
   return blocks;
 }

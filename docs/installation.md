@@ -200,7 +200,7 @@ Google Sheet to trash.
 
 ## Finder Quick Actions
 
-Install both Finder actions with:
+Install the Finder actions with:
 
 ```sh
 gdms install-finder-action
@@ -212,6 +212,8 @@ registers each pairing. A single new Doc opens in the default browser. For a
 multi-file selection, GDMS avoids opening many tabs and instead shows a
 completion notification with the number of Docs created.
 
+To synchronize existing pairings immediately, Control-click one or more paired `.md` files and choose **Quick Actions → Sync Paired File Now (GDMS)**. GDMS runs its normal two-way reconciliation only for the selected files, refreshes the successful-sync timestamp even when content is unchanged, and shows a completion dialog with the result. Failures show an error dialog, and an unpaired selection fails without creating a new Google Doc.
+
 For Sheets, select one or more `.csv` files in the same directory and choose
 **Quick Actions → Combine & Sync CSVs with New Google Sheet (GDMS)**. GDMS
 prompts for a name, creates a collision-safe sibling directory, moves the files
@@ -221,8 +223,7 @@ If remote creation fails, the files remain together in the new directory so
 the operation can be retried.
 
 After installing, the Finder Quick Actions pane opens automatically. Turn on
-**Sync MDs with New Google Docs (GDMS)** and **Combine & Sync CSVs with New
-Google Sheet (GDMS)**, then click the pane's **Done** button.
+**Sync MDs with New Google Docs (GDMS)**, **Sync Paired File Now (GDMS)**, and **Combine & Sync CSVs with New Google Sheet (GDMS)**, then click the pane's **Done** button.
 
 If an action is not visible in Finder afterward, Control-click a compatible
 `.md` or `.csv` file and choose **Quick Actions → Customize…**, then enable the
@@ -230,7 +231,7 @@ matching GDMS action.
 
 Re-run the installer after moving the repository or changing the Node
 executable because the workflows store absolute paths. The settings pane opens
-again so you can confirm that both actions remain enabled.
+again so you can confirm that the actions remain enabled.
 
 ## Raycast setup
 

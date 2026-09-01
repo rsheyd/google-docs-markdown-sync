@@ -13,6 +13,7 @@ import {
   planParagraphSpacingUpdate,
   planOrderedListNumberingUpdate,
   planSpacingCleanup,
+  planTableColumnWidthUpdate,
   replaceDocumentFromMarkdown,
   updateDocumentStatus,
   updateDocumentFromMarkdown,
@@ -296,6 +297,12 @@ test("serializes Docs API headings, styles, lists, tables, and image references"
           startIndex: tableStart,
           endIndex: tableStart + 8,
           table: {
+            tableStyle: {
+              tableColumnProperties: [
+                { widthType: "FIXED_WIDTH", width: { magnitude: 90, unit: "PT" } },
+                { widthType: "FIXED_WIDTH", width: { magnitude: 270, unit: "PT" } },
+              ],
+            },
             tableRows: [{
               tableCells: [
                 { content: [paragraph(tableStart + 1, "A\n")] },
@@ -317,10 +324,197 @@ test("serializes Docs API headings, styles, lists, tables, and image references"
     "",
     "![Diagram][image1]",
     "",
+    "<!-- gdms:table-column-widths: 90pt, 270pt -->",
     "| A | B |",
     "| --- | --- |",
     "",
   ].join("\n"));
+});
+
+test("adds fixed table widths to native Drive Markdown export", async () => {
+  const document = {
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: 7,
+        table: {
+          tableStyle: {
+            tableColumnProperties: [
+              { widthType: "FIXED_WIDTH", width: { magnitude: 72, unit: "PT" } },
+              { widthType: "FIXED_WIDTH", width: { magnitude: 216, unit: "PT" } },
+            ],
+          },
+          tableRows: [{ tableCells: [
+            { content: [paragraph(2, "A\n")] },
+            { content: [paragraph(4, "B\n")] },
+          ] }],
+        },
+      }],
+    },
+  };
+  const services = {
+    drive: { files: { export: async () => ({
+      data: "```text\n| not a table |\n```\n\n| A | B |\n|---|---|\n",
+    }) } },
+    docs: { documents: { get: async () => ({ data: document }) } },
+  };
+  assert.equal(
+    await exportMarkdown(services, "document"),
+    "```text\n| not a table |\n```\n\n<!-- gdms:table-column-widths: 72pt, 216pt -->\n| A | B |\n|---|---|\n",
+  );
+});
+
+test("serializes consecutive cell paragraphs as consecutive HTML breaks", async () => {
+  const first = paragraph(2, "First paragraph.\n");
+  const empty = paragraph(first.endIndex, "\n");
+  const milestone = paragraph(empty.endIndex, "Milestone ready.\n");
+  milestone.paragraph.elements[0].textRun.textStyle = { bold: true };
+  const document = {
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: milestone.endIndex + 1,
+        table: {
+          tableRows: [{ tableCells: [{ content: [first, empty, milestone] }] }],
+        },
+      }],
+    },
+  };
+  assert.equal(markdownFromDocument(document), [
+    "| First paragraph.<br><br>**Milestone ready.** |",
+    "| --- |",
+    "",
+  ].join("\n"));
+  const services = {
+    drive: { files: { export: async () => ({ data: "| Flattened cell |\n| --- |\n" }) } },
+    docs: { documents: { get: async () => ({ data: document }) } },
+  };
+  assert.equal(
+    await exportMarkdown(services, "document"),
+    "| First paragraph.<br><br>**Milestone ready.** |\n| --- |\n",
+  );
+});
+
+test("normalizes Google Docs vertical-tab cell breaks to HTML breaks", async () => {
+  const cellParagraph = paragraph(2, "First paragraph.\u000b\u000bMilestone ready.\n");
+  const document = {
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: cellParagraph.endIndex + 1,
+        table: {
+          tableRows: [{ tableCells: [{ content: [cellParagraph] }] }],
+        },
+      }],
+    },
+  };
+  const services = {
+    drive: { files: { export: async () => ({
+      data: "| First paragraph.\u000b\u000bMilestone ready. |\n| --- |\n",
+    }) } },
+    docs: { documents: { get: async () => ({ data: document }) } },
+  };
+  assert.equal(
+    await exportMarkdown(services, "document"),
+    "| First paragraph.<br><br>Milestone ready. |\n| --- |\n",
+  );
+});
+
+test("plans targeted fixed table column-width updates", () => {
+  const document = {
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: 7,
+        table: {
+          tableStyle: {
+            tableColumnProperties: [
+              { widthType: "FIXED_WIDTH", width: { magnitude: 100, unit: "PT" } },
+              { widthType: "FIXED_WIDTH", width: { magnitude: 100, unit: "PT" } },
+            ],
+          },
+          tableRows: [{ tableCells: [
+            { content: [paragraph(2, "A\n")] },
+            { content: [paragraph(4, "B\n")] },
+          ] }],
+        },
+      }],
+    },
+  };
+  const markdown = [
+    "<!-- gdms:table-column-widths: 80pt,220pt -->",
+    "| A | B |",
+    "| --- | --- |",
+  ].join("\n");
+  assert.deepEqual(planIncrementalUpdate(document, markdown).hunks, []);
+  assert.deepEqual(planTableColumnWidthUpdate(document, markdown), [
+    {
+      updateTableColumnProperties: {
+        tableStartLocation: { index: 1 },
+        columnIndices: [0],
+        tableColumnProperties: {
+          widthType: "FIXED_WIDTH",
+          width: { magnitude: 80, unit: "PT" },
+        },
+        fields: "widthType,width",
+      },
+    },
+    {
+      updateTableColumnProperties: {
+        tableStartLocation: { index: 1 },
+        columnIndices: [1],
+        tableColumnProperties: {
+          widthType: "FIXED_WIDTH",
+          width: { magnitude: 220, unit: "PT" },
+        },
+        fields: "widthType,width",
+      },
+    },
+  ]);
+});
+
+test("applies width-only table edits without rebuilding content", async () => {
+  const document = {
+    revisionId: "revision-1",
+    body: {
+      content: [{
+        startIndex: 1,
+        endIndex: 7,
+        table: {
+          tableStyle: {
+            tableColumnProperties: [
+              { widthType: "FIXED_WIDTH", width: { magnitude: 100, unit: "PT" } },
+              { widthType: "FIXED_WIDTH", width: { magnitude: 100, unit: "PT" } },
+            ],
+          },
+          tableRows: [{ tableCells: [
+            { content: [paragraph(2, "A\n")] },
+            { content: [paragraph(4, "B\n")] },
+          ] }],
+        },
+      }],
+    },
+  };
+  const updates = [];
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async (request) => { updates.push(request); return { data: {} }; },
+    } },
+    drive: { files: { get: async () => ({
+      data: { modifiedTime: "2026-08-28T12:00:00Z", name: "Widths", version: "2" },
+    }) } },
+  };
+  await updateDocumentFromMarkdown(services, "document", [
+    "<!-- gdms:table-column-widths: 80pt, 220pt -->",
+    "| A | B |",
+    "| --- | --- |",
+  ].join("\n"));
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].requestBody.requests.length, 2);
+  assert.ok(updates[0].requestBody.requests.every(
+    (request) => request.updateTableColumnProperties,
+  ));
 });
 
 test("extracts document paragraphs and ignores the terminal empty paragraph", () => {
@@ -633,6 +827,29 @@ test("plans nested list insertion without dropping child items", () => {
   });
 });
 
+test("resets inserted list paragraphs to normal text before creating bullets", () => {
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [paragraph(1, "Role\n", "HEADING_3")] },
+  };
+  const plan = planIncrementalUpdate(document, "### Role\n\n- Responsibility");
+  const bulletIndex = plan.requests.findIndex(
+    (request) => request.createParagraphBullets,
+  );
+  const styleIndex = plan.requests.findIndex(
+    (request) =>
+      request.updateParagraphStyle?.fields === "namedStyleType" &&
+      request.updateParagraphStyle.paragraphStyle.namedStyleType === "NORMAL_TEXT",
+  );
+
+  assert.ok(styleIndex >= 0);
+  assert.ok(styleIndex < bulletIndex);
+  assert.deepEqual(
+    plan.requests[styleIndex].updateParagraphStyle.range,
+    plan.requests[bulletIndex].createParagraphBullets.range,
+  );
+});
+
 test("creates one bullet range so ordered list numbering continues", () => {
   const document = {
     revisionId: "revision-1",
@@ -816,6 +1033,36 @@ test("adds visual spacing between a heading and following list", () => {
     paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
     fields: "spaceBelow",
   }]);
+});
+
+test("normalizes an existing heading-styled list item to normal text", () => {
+  const item = bulletParagraph(1, "AI-Assisted Development: Codex\n");
+  item.paragraph.paragraphStyle.namedStyleType = "HEADING_2";
+  item.paragraph.elements[0].textRun.textStyle = { bold: true };
+  const document = {
+    lists: {
+      bullets: {
+        listProperties: {
+          nestingLevels: [{ glyphSymbol: "●", glyphFormat: "%0" }],
+        },
+      },
+    },
+    body: { content: [item] },
+  };
+
+  assert.deepEqual(
+    planParagraphSpacingUpdate(
+      document,
+      "- **AI-Assisted Development: Codex**",
+    ),
+    [{
+      updateParagraphStyle: {
+        range: { startIndex: item.startIndex, endIndex: item.endIndex },
+        paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+        fields: "namedStyleType",
+      },
+    }],
+  );
 });
 
 test("clears paragraph spacing on an explicit Markdown blank line", () => {

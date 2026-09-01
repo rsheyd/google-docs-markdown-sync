@@ -9,6 +9,7 @@ import {
   FINDER_QUICK_ACTION_SETTINGS_URL,
   FINDER_QUICK_ACTION_NAME,
   MARKDOWN_UTI,
+  SYNC_PAIRED_FILE_QUICK_ACTION_NAME,
   csvFinderQuickActionInfoPlist,
   csvFinderQuickActionShellCommand,
   csvFinderQuickActionWorkflow,
@@ -16,6 +17,9 @@ import {
   finderQuickActionShellCommand,
   finderQuickActionWorkflow,
   installFinderQuickAction,
+  syncPairedFileQuickActionInfoPlist,
+  syncPairedFileQuickActionShellCommand,
+  syncPairedFileQuickActionWorkflow,
 } from "../src/finder-quick-action.js";
 
 test("CSV Finder Quick Action groups selected files into one create-sheet command", () => {
@@ -60,6 +64,22 @@ test("Finder Quick Action passes selected Markdown paths to GDMS create", () => 
   assert.match(command, /\*\.md\)/);
 });
 
+test("paired-file Finder Quick Action requests an immediate targeted sync", () => {
+  const command = syncPairedFileQuickActionShellCommand({
+    nodePath: "/path with spaces/node",
+    cliPath: "/project/src/cli.js",
+  });
+  assert.match(command, /for markdown_file in "\$@"/);
+  assert.match(command, /file_arguments\+=\(--file "\$markdown_file"\)/);
+  assert.match(command, /sync-once/);
+  assert.match(command, /"\$\{file_arguments\[@\]\}"/);
+  assert.match(command, /display dialog/);
+  assert.match(command, /GDMS Sync Complete/);
+  assert.match(command, /display alert/);
+  assert.match(command, /GDMS Sync Failed/);
+  assert.match(command, /\*\.md\)/);
+});
+
 test("Finder Quick Action workflow is a Finder service with escaped XML", () => {
   const workflow = finderQuickActionWorkflow({
     nodePath: "/opt/node&node",
@@ -81,6 +101,24 @@ test("Finder Quick Action registers only for Markdown files", () => {
   assert.match(info, new RegExp(MARKDOWN_UTI.replaceAll(".", "\\.")));
   assert.match(info, /runWorkflowAsService/);
   assert.equal(FINDER_QUICK_ACTION_NAME, "Sync MDs with New Google Docs (GDMS)");
+});
+
+test("paired-file Finder Quick Action registers only for Markdown files", () => {
+  const workflow = syncPairedFileQuickActionWorkflow({
+    nodePath: "/node",
+    cliPath: "/cli",
+  });
+  assert.match(workflow, /sync-once/);
+  const info = syncPairedFileQuickActionInfoPlist();
+  assert.match(
+    info,
+    new RegExp(SYNC_PAIRED_FILE_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")),
+  );
+  assert.match(info, new RegExp(MARKDOWN_UTI.replaceAll(".", "\\.")));
+  assert.equal(
+    SYNC_PAIRED_FILE_QUICK_ACTION_NAME,
+    "Sync Paired File Now (GDMS)",
+  );
 });
 
 test("installer writes the named workflow under Library Services", async () => {
@@ -116,6 +154,22 @@ test("installer writes the named workflow under Library Services", async () => {
   );
   const csvInfo = await fs.readFile(path.join(csvInstalled, "Contents", "Info.plist"), "utf8");
   assert.match(csvInfo, /public\.comma-separated-values-text/);
+  const pairedFileInstalled = path.join(
+    homeDirectory,
+    "Library",
+    "Services",
+    `${SYNC_PAIRED_FILE_QUICK_ACTION_NAME}.workflow`,
+  );
+  const pairedFileWorkflow = await fs.readFile(
+    path.join(pairedFileInstalled, "Contents", "document.wflow"),
+    "utf8",
+  );
+  assert.match(pairedFileWorkflow, /sync-once/);
+  const pairedFileInfo = await fs.readFile(
+    path.join(pairedFileInstalled, "Contents", "Info.plist"),
+    "utf8",
+  );
+  assert.match(pairedFileInfo, /net\.daringfireball\.markdown/);
   await Promise.all(legacyCsvInstalled.map((directory) => assert.rejects(fs.access(directory))));
   await assert.rejects(fs.access(legacyMarkdownInstalled));
 });

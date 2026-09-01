@@ -139,6 +139,55 @@ test("parses a simple GFM table", () => {
   assert.deepEqual(blocks[0].rows[1][1].styles[0].style, { bold: true });
 });
 
+test("parses API-native table column-width metadata", () => {
+  const [block] = parseMarkdown([
+    "<!-- gdms:table-column-widths: 90pt, 270.5pt -->",
+    "| Name | Value |",
+    "| --- | --- |",
+    "| A | B |",
+  ].join("\n"));
+  assert.equal(block.type, "table");
+  assert.deepEqual(block.columnWidths, [90, 270.5]);
+});
+
+test("preserves consecutive HTML line breaks inside table cells", () => {
+  const [block] = parseMarkdown([
+    "| Work |",
+    "| --- |",
+    "| First paragraph.<br><br />**Milestone ready.** |",
+  ].join("\n"));
+  assert.equal(block.rows[1][0].text, "First paragraph.\n\nMilestone ready.");
+  assert.deepEqual(block.rows[1][0].styles, [{
+    start: 18,
+    end: 34,
+    style: { bold: true },
+  }]);
+});
+
+test("validates table column-width metadata", () => {
+  assert.throws(
+    () => parseMarkdown([
+      "<!-- gdms:table-column-widths: 90pt -->",
+      "| Name | Value |",
+      "| --- | --- |",
+    ].join("\n")),
+    /has 1 values.*has 2 columns/,
+  );
+  assert.throws(
+    () => parseMarkdown("<!-- gdms:table-column-widths: 4pt -->"),
+    /at least 5pt/,
+  );
+  assert.throws(
+    () => parseMarkdown([
+      "<!-- gdms:table-column-widths: 90pt, 270pt -->",
+      "",
+      "| Name | Value |",
+      "| --- | --- |",
+    ].join("\n")),
+    /must immediately precede/,
+  );
+});
+
 test("represents inline images structurally instead of flattening alt text", () => {
   const [block] = parseMarkdown(
     "Before ![Login screen](project.assets/login.png \"Current login\") after.",
