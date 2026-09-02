@@ -269,6 +269,7 @@ export async function applyLocalMove(pairing, identity) {
   const occupied = manifest.pairings.find(
     (item, itemIndex) =>
       itemIndex !== index &&
+      item.markdownPath &&
       path.normalize(item.markdownPath) === path.normalize(nextRelativePath),
   );
   if (occupied) {
@@ -281,9 +282,7 @@ export async function applyLocalMove(pairing, identity) {
     ...manifest.pairings[index],
     markdownPath: nextRelativePath,
   };
-  manifest.pairings.sort((a, b) =>
-    a.markdownPath.localeCompare(b.markdownPath),
-  );
+  manifest.pairings.sort(comparePairingLocalPaths);
   const assetRelocation = await relocateAssetDirectory(
     pairing.absolutePath,
     nextAbsolutePath,

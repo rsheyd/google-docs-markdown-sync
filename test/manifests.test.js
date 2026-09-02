@@ -210,6 +210,45 @@ test("adopts a paired Markdown file moved into a subfolder", async () => {
   }
 });
 
+test("adopts a moved Markdown file from a mixed document and spreadsheet manifest", async () => {
+  const workspace = await fs.mkdtemp(
+    path.join(os.tmpdir(), "gdocs-sync-mixed-local-move-"),
+  );
+  const manifestPath = path.join(workspace, "google-docs-sync.json");
+  const oldPath = path.join(workspace, "note.md");
+  const newPath = path.join(workspace, "archive", "note.md");
+  const manifest = {
+    version: 1,
+    pairings: [
+      { documentId: "abc", markdownPath: "note.md" },
+      { type: "spreadsheet", spreadsheetId: "sheet", directoryPath: "data" },
+    ],
+  };
+  await fs.writeFile(oldPath, "content\n");
+  await fs.writeFile(manifestPath, `${JSON.stringify(manifest)}\n`);
+
+  try {
+    const identity = await fs.stat(oldPath);
+    await fs.mkdir(path.dirname(newPath));
+    await fs.rename(oldPath, newPath);
+    const [pairing] = validateManifest(manifest, manifestPath);
+    const updated = await applyLocalMove(pairing, identity);
+
+    assert.equal(updated.markdownPath, path.join("archive", "note.md"));
+    const stored = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+    assert.equal(
+      stored.pairings.find((item) => item.documentId === "abc").markdownPath,
+      path.join("archive", "note.md"),
+    );
+    assert.equal(
+      stored.pairings.find((item) => item.spreadsheetId === "sheet").directoryPath,
+      "data",
+    );
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("does not adopt a copied file with a different filesystem identity", async () => {
   const workspace = await fs.mkdtemp(
     path.join(os.tmpdir(), "gdocs-sync-local-copy-"),

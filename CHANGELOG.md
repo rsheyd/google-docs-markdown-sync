@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.7] - 2026-09-01
+
+### Fixed
+
+- Adopt moved Markdown files correctly when their workspace manifest also contains Google Sheets pairings, instead of leaving the old path pending deletion.
+
 ## [0.8.6] - 2026-08-31
 
 ### Added
