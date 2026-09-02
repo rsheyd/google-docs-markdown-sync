@@ -35,10 +35,10 @@ The completed lifecycle, change-discovery, and reconciliation work is documented
 
 ## Completed: unified sync-location registry
 
-- Replace the privileged discovery root and separate Raycast location storage with one GDMS-owned registry of explicitly selected sync locations.
-- Keep configured locations authoritative, treat the manifest index as rebuildable derived state, and scan only when adding a location, explicitly finding existing pairings, or recovering a missing index.
-- Preserve `workspaces.json` rollback compatibility and the deprecated `--workspace` CLI alias during migration.
-- Give project trees and document archives the same CLI, Raycast, daemon, browsing, and recovery capabilities without recursive routine polling.
+- Replaced the privileged discovery root and separate Raycast location storage with one GDMS-owned registry of explicitly selected sync locations.
+- Made configured locations authoritative, kept the manifest index as rebuildable derived state, and limited scanning to location addition, explicit pairing discovery, and missing-index recovery.
+- Preserved `workspaces.json` rollback compatibility and the deprecated `--workspace` CLI alias during migration.
+- Gave project trees and document archives the same CLI, Raycast, daemon, browsing, and recovery capabilities without recursive routine polling.
 
 The justification, storage model, migration requirements, implementation phases, risks, and acceptance criteria are documented in the [unified sync-location registry design](design/unified-sync-location-registry.md).
 
@@ -68,7 +68,7 @@ documented in the [namespace migration plan](design/namespace-migration.md).
 ## Later: packaged app and guided onboarding
 
 - Package GDMS as a signed and notarized macOS app that does not require Node.js, a source checkout, or manual background-service installation.
-- Add guided Google authorization, sync-location selection, and first-document pairing.
+- Add guided Google authorization, sync-location selection backed by the existing shared registry, and first-document pairing without introducing another configuration store.
 - Provide a simple interface for viewing pairings, sync health, conflicts, and recovery actions.
 - Reduce or eliminate the infrastructure users must configure for image synchronization.
 - Evaluate an optional managed service for shared infrastructure while keeping Markdown files local and making the privacy, security, and operating-cost tradeoffs explicit.
@@ -86,6 +86,7 @@ documented in the [namespace migration plan](design/namespace-migration.md).
 - Evaluate an explicit managed-folder pairing that continuously synchronizes
   all Markdown and CSV files beneath one deliberately enrolled local root with
   one bounded Google Drive subtree.
+- Require each managed folder to live inside a registered sync location, index its portable manifest through the existing derived manifest index, and keep managed-folder identity independent of the machine-local location ID.
 - Preview initial enrollment before creating Drive folders, Docs, Sheets, or
   tabs, and keep the folder rule and child pairings visible in a portable
   manifest inside the managed root.
@@ -99,6 +100,7 @@ documented in the [namespace migration plan](design/namespace-migration.md).
   begin with explicit enrollment and local-authoritative folder structure.
 - Establish operation journaling, conflict recovery, notifications, API-load
   limits, and non-destructive bulk unpairing before unattended discovery.
+- Use scoped watchers and incremental managed-root inventory so folder automation does not reintroduce recursive polling of entire sync locations.
 
 The proposed product contract, safety model, CSV mapping alternatives, phased
 delivery, and unresolved decisions are documented in the

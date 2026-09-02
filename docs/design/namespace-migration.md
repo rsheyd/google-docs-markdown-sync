@@ -47,10 +47,7 @@ and legacy labels and paths. It then bootstraps exactly one new job and verifies
 that its label is loaded. The sync daemon and heartbeat job must be migrated
 independently because users may install only one of them.
 
-Do not delete legacy plist files until the corresponding new job has loaded
-successfully. After verification, remove only the known legacy plist file; do
-not touch other LaunchAgents. Existing logs and Application Support state stay
-in place.
+Do not delete legacy plist files until the corresponding new job has loaded successfully. After verification, remove only the known legacy plist file; do not touch other LaunchAgents. Application Support state and the standard `~/Library/Logs/google-docs-markdown-sync/` log directory stay in place.
 
 Rollback remains possible because Phase 1 leaves legacy Keychain entries
 intact. Reinstalling an older checkout can therefore restore the legacy

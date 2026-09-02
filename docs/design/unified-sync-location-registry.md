@@ -47,7 +47,7 @@ Machine-local configuration belongs under the existing standard Application Supp
 └── state.json
 ```
 
-OAuth refresh tokens, R2 secrets, and email credentials remain in the macOS Keychain. Logs should move to `~/Library/Logs/google-docs-markdown-sync/` in the second phase. Rebuildable caches, if introduced, belong under `~/Library/Caches/google-docs-markdown-sync/`. LaunchAgent property lists remain under `~/Library/LaunchAgents/`.
+OAuth refresh tokens, R2 secrets, and email credentials remain in the macOS Keychain. Service logs reside under `~/Library/Logs/google-docs-markdown-sync/`. Rebuildable caches, if introduced, belong under `~/Library/Caches/google-docs-markdown-sync/`. LaunchAgent property lists remain under `~/Library/LaunchAgents/`.
 
 Absolute sync-location paths are intentionally machine-specific and must not be written into portable pairing manifests or Git-tracked files.
 

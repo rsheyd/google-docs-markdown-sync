@@ -27,6 +27,8 @@ each Markdown file    ↔ one Google Doc
 each CSV directory    ↔ one Google Sheet, with one CSV per tab
 ```
 
+A managed folder is not a sync location. A sync location is a machine-local directory registered with this GDMS installation; a managed folder is a portable, manifest-controlled subtree inside one registered sync location. Initial enrollment must require containment within a registered location or explicitly offer to register an appropriate parent first. The same sync location may contain ordinary pairing manifests and multiple non-nested managed-folder manifests.
+
 Using one Sheet per CSV directory is the leading recommendation, not yet a
 settled requirement. It preserves GDMS's existing spreadsheet abstraction,
 avoids encoding recursive paths into globally unique tab names, and makes the
@@ -40,8 +42,7 @@ Managed folders fit GDMS if enrollment stays explicit, scope stays bounded,
 and destructive changes remain conservative and recoverable. The design
 continues these existing principles:
 
-- Portable, inspectable sync-location metadata identifies the local and remote
-  objects under management.
+- Portable, inspectable pairing manifests inside sync locations identify the local and remote objects under management; the sync-location registry itself remains machine-local configuration.
 - Stable Google IDs are authoritative; filenames and titles are not identities.
 - Runtime hashes, revisions, filesystem identities, timestamps, operation
   journals, and credentials remain outside Git.
@@ -73,13 +74,14 @@ Action and an equivalent CLI command. Initial enrollment should:
 5. Create or identify one Drive folder as the remote boundary.
 6. Register completed child objects incrementally so an interrupted run can be
    resumed without creating duplicates.
+7. Register the managed-folder manifest in the machine-local manifest index so ordinary daemon loading finds it without recursively scanning the surrounding sync location.
 
 All `.md` and `.csv` files recursively beneath the enrolled root are intended
 to be included. No general user-authored include/exclude language is currently
 proposed. GDMS must nevertheless ignore its own operational artifacts and
 files that cannot safely represent user content, including:
 
-- the sync-location manifest and managed status files;
+- pairing manifests and managed status files;
 - spreadsheet tab-map metadata;
 - Markdown image asset directories;
 - hidden operating-system files such as `.DS_Store`;
@@ -125,6 +127,8 @@ required; a backward-compatible folder-rule field may be preferable. The
 chosen format must keep paths relative and portable and must exclude hashes,
 revisions, timestamps, filesystem inode data, pending operations, and tokens.
 
+The manifest index remains derived state: deleting it and explicitly scanning the containing sync location must rediscover the managed-folder manifest without reconstructing any portable pairing data. The stable machine-local sync-location ID may associate an indexed manifest with its configured location, but it must not become the portable identity of the managed folder. The Drive folder ID and manifest-relative structure provide the durable cross-machine identity.
+
 Paths cannot be the sole identity because paths change during renames and
 moves. Google object IDs provide stable remote identity. Runtime state should
 also retain local filesystem identity when available so GDMS can distinguish a
@@ -133,6 +137,8 @@ the daemon is stopped, and cross-filesystem moves need recovery heuristics and
 must fail safely when identity is ambiguous.
 
 ## Local-to-Google behavior
+
+Ongoing managed-folder synchronization necessarily observes the enrolled subtree, but it must not restore broad recursive sync-location polling. The daemon should attach scoped filesystem watchers to enrolled managed roots, maintain incremental inventory state, and reserve complete subtree walks for enrollment, explicit reconciliation, or recovery. Unrelated portions of a broad location such as `~/dev` or a cloud archive must remain outside that work.
 
 ### Directories and Markdown
 
@@ -223,6 +229,8 @@ deletion propagation ships.
 Bulk unpairing must distinguish three operations: stop managing the tree while
 leaving both sides intact, remove only local representations, and trash remote
 content. Only the first should be a routine non-destructive default.
+
+Removing the containing sync location is broader but still non-destructive: it pauses every ordinary pairing and managed folder indexed beneath that location without changing portable manifests or deleting local or Google content. Re-adding and scanning the location restores discovery. Stopping management of one managed folder must remain a separate, explicit operation.
 
 ## Partial operations and idempotency
 
@@ -323,6 +331,8 @@ commands, recoverable conflict copies, actionable notifications, and reliable
 operation-level retry and recovery. The design should be validated against
 Drive API behavior for folder moves, duplicate names, shortcuts, ownership,
 shared drives, trashed parents, and partially accessible subtrees.
+
+The existing sync-location registry, manifest index, explicit scan operation, and non-destructive location removal provide the machine-local enrollment foundation, but they do not replace pairing-level listing, unpairing, managed-folder status, or recovery controls.
 
 Tests should cover initial preview and enrollment, interruption after every
 remote write, daemon restart recovery, rename and move identity, copy-delete
