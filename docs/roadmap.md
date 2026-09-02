@@ -106,6 +106,14 @@ The proposed product contract, safety model, CSV mapping alternatives, phased
 delivery, and unresolved decisions are documented in the
 [managed folder synchronization design](design/managed-folder-sync.md).
 
+## Potential offshoot: hosted Drive–GitHub synchronization
+
+A separate hosted product could synchronize one explicitly selected Google Drive folder tree with one folder in a public or private GitHub repository. Unlike local GDMS, it would use Google and GitHub webhooks, durable cloud workers, service-side encrypted credentials and baselines, and guarded Git commits to provide two-way Docs/Markdown and Sheets/CSV synchronization without requiring a local clone. Automatic deletion would remain deferred until a recoverable policy is designed.
+
+The product boundary, managed-cloud architecture, two-way reconciliation model, security requirements, delivery phases, and open decisions are documented in the [hosted Google Drive–GitHub synchronization design](design/hosted-drive-github-sync.md).
+
+A second hosted offshoot could synchronize Google Docs and Sheets with ordinary Markdown and CSV sidecars stored beside them in the same bounded Drive folder tree. It would use the same cloud worker and conflict model without GitHub, trading version-control workflows for a simpler single-provider folder, identity, permission, and notification boundary. The proposal is documented in the [hosted Google Drive sidecar synchronization design](design/hosted-drive-sidecar-sync.md).
+
 ## Out of scope for the current roadmap
 
 - General-purpose Google Drive mirroring.

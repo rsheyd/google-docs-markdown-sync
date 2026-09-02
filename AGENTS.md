@@ -40,6 +40,8 @@
   legacy application, launchd, and Keychain namespace.
 - `docs/design/scalable-wake-safe-sync.md`: Design and phased implementation plan for incremental remote polling, bounded concurrency, reconciliation, and sleep-safe sync lifecycle handling.
 - `docs/design/unified-sync-location-registry.md`: Design and two-phase migration plan for one GDMS-owned sync-location registry shared by Raycast, the CLI, and the daemon.
+- `docs/design/hosted-drive-github-sync.md`: Exploratory offshoot design for hosted two-way synchronization between a bounded Google Drive tree and a GitHub repository folder.
+- `docs/design/hosted-drive-sidecar-sync.md`: Exploratory offshoot design for hosted two-way synchronization between Google-native documents and adjacent Markdown/CSV files within one bounded Drive tree.
 - `docs/design/managed-folder-sync.md`: Exploratory product and engineering
   design for explicitly enrolled local folder trees and bounded Drive subtrees.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
