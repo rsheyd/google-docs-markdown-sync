@@ -7,7 +7,7 @@
 - Keep local-change handling debounced and all sync passes single-flight; use
   bounded exponential backoff for remote errors.
 - Keep credentials, OAuth tokens, and machine-specific secrets out of Git.
-- Keep tracked workspace pairing files portable: use relative Markdown paths
+- Keep tracked sync-location pairing files portable: use relative Markdown paths
   and exclude hashes, revisions, timestamps, and tokens.
 - Prefer a standard Markdown AST and explicit, testable Google Docs update
   requests over ad hoc text replacement.
@@ -39,6 +39,7 @@
 - `docs/design/namespace-migration.md`: Compatibility and rollout plan for replacing the
   legacy application, launchd, and Keychain namespace.
 - `docs/design/scalable-wake-safe-sync.md`: Design and phased implementation plan for incremental remote polling, bounded concurrency, reconciliation, and sleep-safe sync lifecycle handling.
+- `docs/design/unified-sync-location-registry.md`: Design and two-phase migration plan for one GDMS-owned sync-location registry shared by Raycast, the CLI, and the daemon.
 - `docs/design/managed-folder-sync.md`: Exploratory product and engineering
   design for explicitly enrolled local folder trees and bounded Drive subtrees.
 - `PROJECT-STATUS.md`: Untracked working status, decisions, blockers, and next
@@ -58,6 +59,7 @@
   CLI, launch-at-login and Finder Quick Action installers, and independent
   weekly Resend health heartbeat.
 - `src/formatting.js`: Shared Google Docs paragraph-formatting rules and measurements.
+- `src/locations.js`: Shared sync-location registry, rebuildable manifest index, legacy migration, bounded scans, and location lifecycle operations.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
@@ -68,8 +70,10 @@
 - `test/`: Node unit tests for portable manifests, Markdown conversion,
   synchronization, and heartbeat checks.
 - `test/network.test.js`: Offline pause/resume and post-sleep network-settling coverage.
+- `test/locations.test.js`: Sync-location migration, scanning, index reconstruction, overlap, concurrency, and non-destructive removal coverage.
+- `test/launch-agent.test.js`: Compatibility coverage for moving legacy service logs into the standard macOS Logs directory.
 - `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.
-- `examples/google-docs-sync.example.json`: Inert example workspace pairing
+- `examples/google-docs-sync.example.json`: Inert example sync-location pairing
   file; its name intentionally does not match the live manifest scanner.

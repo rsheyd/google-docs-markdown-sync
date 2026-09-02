@@ -38,21 +38,23 @@ reinstalled from the new location.
 
 ## Choose sync locations
 
-GDMS searches `~/dev` for sync-location manifests by default. This suits local repositories and Codex projects without making them GDMS-specific. Create the directory if it does not already exist:
+GDMS begins with no assumed sync location on a fresh installation. Add each project tree or document archive explicitly:
 
 ```sh
-mkdir -p "$HOME/dev"
+gdms location add --path "$HOME/dev"
+gdms location add --path "/path/to/gdrive/Roman"
 ```
 
-To use a different project discovery root, set `GOOGLE_DOCS_SYNC_ROOT` before running GDMS commands. Continue the installation in the same shell so the later `gdms install-service` command retains it:
+Adding a location scans only that selected tree for existing portable manifests and records them in the machine-local manifest index. List or rescan the configured locations at any time:
 
 ```sh
-export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
+gdms location list
+gdms location scan
 ```
 
-The discovery root is only a convenience for finding project sync locations. Pairing into any other directory registers that sync location directly in the machine-local index, with the same synchronization capabilities as a discovered project. This allows `~/dev` to remain the project discovery root while a large archive such as `~/gdrive/Roman` is also used without recursively scanning the archive every five seconds.
+Routine synchronization loads the manifest index directly and does not recursively scan configured locations. Use `gdms location scan --path PATH` after copying an existing paired repository into a location or when deliberately rebuilding discovery for one tree.
 
-Raycast presents one unified list of sync locations, initially containing `~/dev`. Add project folders and document archives from the command's action menu; every location browses one directory at a time, so you can choose a nested destination without recursively enumerating a large archive. The existing CLI option remains named `--workspace` for compatibility; it selects the sync location that owns the manifest, and a folder chosen beneath it becomes part of the pairing's relative path.
+An existing installation migrates its former `workspaces.json` index and `GOOGLE_DOCS_SYNC_ROOT` setting automatically without deleting the old index. The `--sync-location` CLI option selects the location that owns the manifest; the former `--workspace` spelling remains accepted as a compatibility alias.
 
 ## Authorize Google
 
@@ -118,7 +120,7 @@ gdms create \
   --name "Example"
 ```
 
-The workspace defaults to the file's directory. If `--name` is omitted, the
+The sync location defaults to the file's directory. If `--name` is omitted, the
 title is derived from the filename with the current month appended.
 
 ### Start from a Google Doc
@@ -126,7 +128,7 @@ title is derived from the filename with the current month appended.
 ```sh
 gdms pair \
   --url "https://docs.google.com/document/d/DOCUMENT_ID/edit" \
-  --workspace "$HOME/dev/example-project" \
+  --sync-location "$HOME/dev/example-project" \
   --file "notes/example.md"
 ```
 
@@ -147,7 +149,7 @@ gdms create-sheet \
 ```sh
 gdms pair-sheet \
   --url "https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit" \
-  --workspace "$HOME/dev/example-project" \
+  --sync-location "$HOME/dev/example-project" \
   --directory "data/budget"
 ```
 
@@ -165,7 +167,7 @@ gdms configure-deletion \
 Add `--from "Google Docs Sync <sync@your-verified-domain>"` if Resend requires
 a verified sender. The non-secret global policy is stored in
 `~/Library/Application Support/google-docs-markdown-sync/settings.json`, not in
-individual workspace manifests.
+individual sync-location manifests.
 
 Store a Resend API token in macOS Keychain. Keeping `-w` last prompts securely
 instead of putting the token in shell history or process arguments:
@@ -233,7 +235,7 @@ again so you can confirm that the actions remain enabled.
 
 ## Raycast setup
 
-The Raycast command reads the active Google Doc or Sheet from the frontmost Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It shows the saved sync locations, supports adding or removing any number of them, browses each location lazily, and registers the chosen local file or directory.
+The Raycast command reads the active Google Doc or Sheet from the frontmost Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It reads the same sync-location registry as the CLI and daemon, supports adding or non-destructively removing locations, can explicitly find existing portable manifests, browses each location lazily, and registers the chosen local file or directory. On first use after upgrading, it imports its former Raycast-only location list into the shared registry and removes that duplicate setting only after migration succeeds.
 
 ```sh
 cd raycast-extension

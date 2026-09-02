@@ -38,7 +38,7 @@ test("sends an idempotent deletion email with recovery context", async () => {
   assert.match(body.text, /Google Drive trash/);
   assert.match(body.text, /\/workspace\/note.md/);
   assert.match(body.text, /gdms recover --document-id doc-1/);
-  assert.match(body.text, /--workspace "\/workspace" --file "note.md"/);
+  assert.match(body.text, /--sync-location "\/workspace" --file "note.md"/);
   assert.deepEqual(result, { id: "email-delete" });
 });
 

@@ -351,7 +351,7 @@ test("repairs formatting on an unchanged Markdown pairing and records the new re
   const pairing = {
     documentId: "document",
     documentUrl: "https://docs.google.com/document/d/document/edit",
-    workspace: directory,
+    syncLocation: directory,
     markdownPath: "paired.md",
     absolutePath: filePath,
     name: "Paired",
@@ -483,7 +483,7 @@ test("polls only Drive for an unchanged Google Doc with a lightweight baseline",
   const pairing = {
     documentId: "document",
     documentUrl: "https://docs.google.com/document/d/document/edit",
-    workspace: directory,
+    syncLocation: directory,
     markdownPath: "paired.md",
     absolutePath: filePath,
     name: "Paired",
@@ -531,7 +531,7 @@ test("refreshes status after an explicit unchanged Google Doc check", async () =
   const pairing = {
     documentId: "document",
     documentUrl: "https://docs.google.com/document/d/document/edit",
-    workspace: directory,
+    syncLocation: directory,
     markdownPath: "paired.md",
     absolutePath: filePath,
     name: "Paired",
@@ -602,7 +602,7 @@ test("fetches Google Docs details when the lightweight Drive version changes", a
   const pairing = {
     documentId: "document",
     documentUrl: "https://docs.google.com/document/d/document/edit",
-    workspace: directory,
+    syncLocation: directory,
     markdownPath: "paired.md",
     absolutePath: filePath,
     name: "Paired",
@@ -644,7 +644,7 @@ test("fetches Google Docs details when local Markdown changes", async () => {
   const pairing = {
     documentId: "document",
     documentUrl: "https://docs.google.com/document/d/document/edit",
-    workspace: directory,
+    syncLocation: directory,
     markdownPath: "paired.md",
     absolutePath: filePath,
     name: "Paired",

@@ -10,6 +10,11 @@ import {
   HEARTBEAT_LOG_PATH,
   LAUNCH_AGENT_PATH,
   LOG_PATH,
+  LOG_DIR,
+  LEGACY_ERROR_LOG_PATH,
+  LEGACY_HEARTBEAT_ERROR_LOG_PATH,
+  LEGACY_HEARTBEAT_LOG_PATH,
+  LEGACY_LOG_PATH,
   RUNTIME_CONFIG_PATH,
 } from "./paths.js";
 import { ensureDirectory, writeJsonAtomic } from "./files.js";
@@ -24,6 +29,22 @@ function xmlEscape(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+export async function migrateLogFile(source, destination) {
+  try {
+    await fs.access(destination);
+    return false;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  try {
+    await fs.rename(source, destination);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 export async function installLaunchAgent({ onProgress } = {}) {
@@ -56,6 +77,7 @@ export async function installLaunchAgent({ onProgress } = {}) {
   ).join("\n");
   await ensureDirectory(path.dirname(LAUNCH_AGENT_PATH));
   await ensureDirectory(APP_SUPPORT_DIR);
+  await ensureDirectory(LOG_DIR);
   await writeJsonAtomic(RUNTIME_CONFIG_PATH, {
     version: 1,
     cliPath: path.join(projectRoot, "src", "cli.js"),
@@ -109,6 +131,8 @@ ${optionalEnvironment}
   } catch {
     // It is normal for a first installation not to have an existing service.
   }
+  await migrateLogFile(LEGACY_LOG_PATH, LOG_PATH);
+  await migrateLogFile(LEGACY_ERROR_LOG_PATH, ERROR_LOG_PATH);
   onProgress?.("Starting GDMS…");
   execFileSync("/bin/launchctl", [
     "bootstrap",
@@ -142,6 +166,7 @@ export async function installHeartbeatLaunchAgent({
   );
   await ensureDirectory(path.dirname(HEARTBEAT_LAUNCH_AGENT_PATH));
   await ensureDirectory(APP_SUPPORT_DIR);
+  await ensureDirectory(LOG_DIR);
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -193,6 +218,8 @@ export async function installHeartbeatLaunchAgent({
   } catch {
     // It is normal for a first installation not to have an existing service.
   }
+  await migrateLogFile(LEGACY_HEARTBEAT_LOG_PATH, HEARTBEAT_LOG_PATH);
+  await migrateLogFile(LEGACY_HEARTBEAT_ERROR_LOG_PATH, HEARTBEAT_ERROR_LOG_PATH);
   execFileSync("/bin/launchctl", [
     "bootstrap",
     domain,

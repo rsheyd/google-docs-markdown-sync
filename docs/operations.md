@@ -10,14 +10,18 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | Command | Required arguments | Writes | Purpose |
 | --- | --- | --- | --- |
 | `gdms auth` | — | Keychain | Authorize Google Drive, Docs, and Sheets access. |
-| `gdms create` | `--file FILE` | Local + Google | Create and pair a Google Doc from Markdown; optionally pass `--workspace`, `--name`, and `--open`. |
-| `gdms pair` | `--url URL --workspace PATH --file FILE` | Local + Google | Pair an existing Google Doc and create its Markdown representation; optionally pass `--name`. |
+| `gdms create` | `--file FILE` | Local + Google | Create and pair a Google Doc from Markdown; optionally pass `--sync-location`, `--name`, and `--open`. |
+| `gdms pair` | `--url URL --sync-location PATH --file FILE` | Local + Google | Pair an existing Google Doc and create its Markdown representation; optionally pass `--name`. |
 | `gdms create-sheet` | One or more `--file FILE.csv` | Local + Google | Group CSV files, create a Google Sheet, and pair its tabs; optionally pass `--name` and `--open`. |
-| `gdms pair-sheet` | `--url URL --workspace PATH --directory DIR` | Local + Google | Pair an existing Google Sheet with a CSV directory. |
+| `gdms pair-sheet` | `--url URL --sync-location PATH --directory DIR` | Local + Google | Pair an existing Google Sheet with a CSV directory. |
 | `gdms plan` | `--document-id ID` | None | Preview the incremental Google Docs update plan. |
 | `gdms push` | `--document-id ID` or `--spreadsheet-id ID` | Local + Google | Push one local pairing immediately and refresh managed status. |
 | `gdms delete` | `--file FILE` or `--document-id ID`, plus `--yes` | Local + Google | Move a paired Doc to Drive trash, delete local Markdown/assets, unpair, and email. Docs only. |
-| `gdms recover` | `--document-id ID --workspace PATH --file FILE` | Local + Google | Restore the same Doc from trash, preserve local content, re-pair, and verify. Docs only. |
+| `gdms recover` | `--document-id ID --sync-location PATH --file FILE` | Local + Google | Restore the same Doc from trash, preserve local content, re-pair, and verify. Docs only. |
+| `gdms location list` | — | None | List configured sync locations and their indexed manifest counts. |
+| `gdms location add` | `--path PATH` | Local registry | Add one sync location and scan it once for portable pairing manifests. |
+| `gdms location remove` | `--path PATH` | Local registry | Stop monitoring one location without deleting local or Google content. |
+| `gdms location scan` | Optional `--path PATH` | Local registry | Rebuild manifest discovery for one or all configured sync locations. |
 | `gdms cleanup-spacing` | `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from one Doc. |
 | `gdms migrate` | `--all` or `--document-id ID` | Local state + Google | Apply pending formatting migrations; add `--dry-run` for no writes. |
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
@@ -144,7 +148,7 @@ Google Doc to Drive trash and remove its pairing:
 ```sh
 gdms recover \
   --document-id DOCUMENT_ID \
-  --workspace "/absolute/path/to/workspace" \
+  --sync-location "/absolute/path/to/sync-location" \
   --file "new/folder/note.md"
 ```
 
@@ -200,9 +204,11 @@ mistake the formatting migration for a collaborator edit.
 Service output and errors are stored in:
 
 ```text
-~/Library/Application Support/google-docs-markdown-sync/service.log
-~/Library/Application Support/google-docs-markdown-sync/service-error.log
+~/Library/Logs/google-docs-markdown-sync/service.log
+~/Library/Logs/google-docs-markdown-sync/service-error.log
 ```
+
+Reinstalling the service moves legacy log files from Application Support when the corresponding new log file does not already exist. Configuration, runtime state, and registries remain under Application Support.
 
 Every daemon output and error entry begins with an ISO 8601 timestamp using
 the Mac's current UTC offset, for example
@@ -245,8 +251,8 @@ with `GOOGLE_DOCS_SYNC_ERROR_TO`, `GOOGLE_DOCS_SYNC_ERROR_FROM`, and
 Inspect recent entries with:
 
 ```sh
-tail -n 50 "$HOME/Library/Application Support/google-docs-markdown-sync/service.log"
-tail -n 50 "$HOME/Library/Application Support/google-docs-markdown-sync/service-error.log"
+tail -n 50 "$HOME/Library/Logs/google-docs-markdown-sync/service.log"
+tail -n 50 "$HOME/Library/Logs/google-docs-markdown-sync/service-error.log"
 ```
 
 Machine-specific runtime state is stored in the same application-support
@@ -312,8 +318,8 @@ Google API or OAuth request from blocking the queue indefinitely.
   the configured grace period, then moves the paired Doc to Drive trash,
   removes the pairing, and sends one idempotent email. A failed email remains
   queued for retry. This applies only to Markdown/Google Docs pairings.
-- Moving a paired Markdown file within its workspace updates the manifest.
-  Moves that copy and delete the file, cross filesystems, leave the workspace,
+- Moving a paired Markdown file within its sync location updates the manifest.
+  Moves that copy and delete the file, cross filesystems, leave the sync location,
   or collide with an existing destination are not adopted automatically.
 - Renaming a paired Google Doc renames its Markdown file in the same directory
   using lowercase kebab case, unless the destination already exists.
@@ -390,7 +396,7 @@ GDMS automatically uses its Google Docs API fallback when Drive reports
 `exportSizeLimitExceeded`. Pairing and later pulls should continue without
 splitting the document. The fallback covers GDMS's supported Markdown subset;
 Docs-only layout and effects remain outside the round trip. If the initial
-import fails for another reason, GDMS restores the workspace manifest instead
+import fails for another reason, GDMS restores the sync-location manifest instead
 of leaving a new pairing entry without its Markdown file. The Raycast command
 shows the CLI's specific error output when further action is required.
 
@@ -446,11 +452,15 @@ gdms install-finder-action
 
 Sync-location manifests use relative paths and remain portable. Runtime state and Keychain credentials remain under the current macOS user account.
 
-The default project discovery root is `~/dev`. To replace that discovery root, export `GOOGLE_DOCS_SYNC_ROOT` and reinstall the service so launchd receives it:
+Fresh installations have no assumed sync locations. Configure each desired tree explicitly:
 
 ```sh
-export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
-gdms install-service
+gdms location add --path "$HOME/dev"
+gdms location add --path "/path/to/document/archive"
 ```
 
-Pairing a file under another sync location registers its manifest in the machine-local index. On startup the daemon discovers manifests beneath the project discovery root; during routine five-second polling it reads only indexed manifests, and it repeats project discovery once per day. Registered locations outside the discovery root have the same synchronization behavior and are loaded directly rather than searched recursively.
+GDMS stores authoritative machine-local location choices in `sync-locations.json` and the rebuildable manifest cache in `manifest-index.json` under Application Support. Routine five-second polling reads the index directly and never recursively scans configured locations. Adding a location scans it once; `gdms location scan [--path PATH]` performs later explicit discovery, and a missing or invalid manifest index is reconstructed from the intact location registry.
+
+Removing a location stops monitoring its indexed pairings but does not delete Markdown, CSV, manifests, Google Docs, Google Sheets, or synchronization state. Adding and scanning the location again restores discovery from its portable manifests.
+
+Existing installations migrate the legacy `workspaces.json` index and `GOOGLE_DOCS_SYNC_ROOT` setting idempotently. The legacy file remains untouched for rollback during the compatibility window.

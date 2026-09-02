@@ -1,12 +1,14 @@
 import {
   Action,
   ActionPanel,
+  Alert,
   Form,
   Icon,
   List,
   LocalStorage,
   Toast,
   getFrontmostApplication,
+  confirmAlert,
   popToRoot,
   showToast,
   useNavigation,
@@ -20,7 +22,6 @@ import { useEffect, useMemo, useState } from "react";
 
 const executeFile = promisify(execFile);
 const SYNC_LOCATIONS_KEY = "sync-locations";
-const DEFAULT_SYNC_LOCATION = path.join(os.homedir(), "dev");
 const RUNTIME_CONFIG_PATH = path.join(
   os.homedir(),
   "Library",
@@ -49,6 +50,14 @@ type RuntimeConfig = {
   cliPath: string;
   nodePath: string;
   oauthClientPath: string;
+};
+
+type SyncLocation = {
+  id: string;
+  path: string;
+  manifestCount: number;
+  pairingCount: number;
+  unreadableManifests: number;
 };
 
 const CHROMIUM_BROWSERS = new Map([
@@ -100,24 +109,41 @@ async function activeBrowserResource(): Promise<ActiveResource> {
   return { type, url, title };
 }
 
-async function loadSyncLocations(): Promise<string[]> {
+async function runGdms(runtime: RuntimeConfig, argumentsList: string[]) {
+  return executeFile(runtime.nodePath, [runtime.cliPath, ...argumentsList], {
+    env: {
+      ...process.env,
+      GOOGLE_DOCS_SYNC_OAUTH_CLIENT: runtime.oauthClientPath,
+    },
+  });
+}
+
+async function runGdmsJson<T>(runtime: RuntimeConfig, argumentsList: string[]): Promise<T> {
+  const { stdout } = await runGdms(runtime, [...argumentsList, "--json"]);
+  return JSON.parse(stdout) as T;
+}
+
+async function loadSyncLocations(runtime: RuntimeConfig): Promise<SyncLocation[]> {
   const stored = await LocalStorage.getItem<string>(SYNC_LOCATIONS_KEY);
   if (stored !== undefined) {
     try {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed)) {
-        return parsed.filter((value): value is string => typeof value === "string");
+        for (const location of parsed.filter((value): value is string => typeof value === "string")) {
+          try {
+            await runGdmsJson(runtime, ["location", "add", "--path", path.resolve(location)]);
+          } catch (error) {
+            if (!commandErrorMessage(error).includes("overlaps registered location")) throw error;
+          }
+        }
       }
     } catch {
-      // Replace malformed local state with the default below.
+      throw new Error("Could not migrate Raycast's saved sync locations. The original settings were preserved.");
     }
+    await LocalStorage.removeItem(SYNC_LOCATIONS_KEY);
   }
-  await LocalStorage.setItem(SYNC_LOCATIONS_KEY, JSON.stringify([DEFAULT_SYNC_LOCATION]));
-  return [DEFAULT_SYNC_LOCATION];
-}
-
-async function saveSyncLocations(locations: string[]) {
-  await LocalStorage.setItem(SYNC_LOCATIONS_KEY, JSON.stringify(locations));
+  const result = await runGdmsJson<{ version: 1; locations: SyncLocation[] }>(runtime, ["location", "list"]);
+  return result.locations;
 }
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
@@ -162,11 +188,11 @@ function commandErrorMessage(error: unknown) {
 
 function PairForm({
   resource,
-  workspace,
+  syncLocation,
   directory = "",
 }: {
   resource: ActiveResource;
-  workspace: string;
+  syncLocation: string;
   directory?: string;
 }) {
   const [localPathError, setLocalPathError] = useState<string>();
@@ -189,30 +215,23 @@ function PairForm({
     });
     try {
       const runtime = await loadRuntimeConfig();
-      await executeFile(
-        runtime.nodePath,
+      await runGdms(
+        runtime,
         [
-          runtime.cliPath,
           isSheet ? "pair-sheet" : "pair",
           "--url",
           resource.url,
-          "--workspace",
-          workspace,
+          "--sync-location",
+          syncLocation,
           isSheet ? "--directory" : "--file",
           localPath,
           "--name",
           resource.title,
         ],
-        {
-          env: {
-            ...process.env,
-            GOOGLE_DOCS_SYNC_OAUTH_CLIENT: runtime.oauthClientPath,
-          },
-        },
       );
       toast.style = Toast.Style.Success;
       toast.title = `Google ${isSheet ? "Sheet" : "Doc"} paired`;
-      toast.message = path.join(workspace, localPath);
+      toast.message = path.join(syncLocation, localPath);
       popToRoot();
     } catch (error) {
       toast.style = Toast.Style.Failure;
@@ -234,7 +253,7 @@ function PairForm({
         title={resource.type === "spreadsheet" ? "Google Sheet" : "Google Doc"}
         text={resource.url}
       />
-      <Form.Description title="Sync Location" text={workspace} />
+      <Form.Description title="Sync Location" text={syncLocation} />
       <Form.TextField
         id="localPath"
         title={resource.type === "spreadsheet" ? "CSV Directory" : "Markdown File"}
@@ -255,17 +274,17 @@ function PairForm({
 
 function BrowseSyncLocation({
   resource,
-  workspace,
+  syncLocation,
   directory = "",
 }: {
   resource: ActiveResource;
-  workspace: string;
+  syncLocation: string;
   directory?: string;
 }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const absoluteDirectory = path.join(workspace, directory);
+  const absoluteDirectory = path.join(syncLocation, directory);
 
   useEffect(() => {
     setLoading(true);
@@ -292,7 +311,7 @@ function BrowseSyncLocation({
   return (
     <List
       isLoading={loading}
-      navigationTitle={directory || path.basename(workspace)}
+      navigationTitle={directory || path.basename(syncLocation)}
       searchBarPlaceholder="Browse folders…"
     >
       {error ? (
@@ -305,7 +324,7 @@ function BrowseSyncLocation({
         <>
           <List.Item
             icon={Icon.CheckCircle}
-            title={directory ? `Use ${path.basename(directory)}` : `Use ${path.basename(workspace)}`}
+            title={directory ? `Use ${path.basename(directory)}` : `Use ${path.basename(syncLocation)}`}
             subtitle={absoluteDirectory}
             actions={
               <ActionPanel>
@@ -315,7 +334,7 @@ function BrowseSyncLocation({
                   target={
                     <PairForm
                       resource={resource}
-                      workspace={workspace}
+                      syncLocation={syncLocation}
                       directory={directory}
                     />
                   }
@@ -338,7 +357,7 @@ function BrowseSyncLocation({
                       target={
                         <BrowseSyncLocation
                           resource={resource}
-                          workspace={workspace}
+                          syncLocation={syncLocation}
                           directory={childDirectory}
                         />
                       }
@@ -367,8 +386,12 @@ function AddSyncLocations({
       setError("Choose at least one folder.");
       return;
     }
-    await onAdd(values.locations);
-    pop();
+    try {
+      await onAdd(values.locations);
+      pop();
+    } catch (reason) {
+      setError(commandErrorMessage(reason));
+    }
   }
 
   return (
@@ -396,13 +419,16 @@ function AddSyncLocations({
 
 export default function PairGoogleDoc() {
   const [resource, setResource] = useState<ActiveResource>();
-  const [locations, setLocations] = useState<string[]>([]);
+  const [locations, setLocations] = useState<SyncLocation[]>([]);
+  const [runtime, setRuntime] = useState<RuntimeConfig>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([activeBrowserResource(), loadSyncLocations()])
-      .then(([activeResource, savedLocations]) => {
+    loadRuntimeConfig()
+      .then(async (loadedRuntime) => {
+        const [activeResource, savedLocations] = await Promise.all([activeBrowserResource(), loadSyncLocations(loadedRuntime)]);
+        setRuntime(loadedRuntime);
         setResource(activeResource);
         setLocations(savedLocations);
       })
@@ -414,22 +440,52 @@ export default function PairGoogleDoc() {
 
   const items = useMemo(
     () =>
-      locations.map((location) => ({ location, title: path.basename(location) })),
+      locations.map((location) => ({ location, title: path.basename(location.path) })),
     [locations],
   );
 
   async function addLocations(nextLocations: string[]) {
-    const merged = [
-      ...new Set([...locations, ...nextLocations.map((location) => path.resolve(location))]),
-    ];
-    setLocations(merged);
-    await saveSyncLocations(merged);
+    if (!runtime) return;
+    for (const location of nextLocations) await runGdmsJson(runtime, ["location", "add", "--path", path.resolve(location)]);
+    setLocations(await loadSyncLocations(runtime));
   }
 
-  async function removeLocation(location: string) {
-    const next = locations.filter((candidate) => candidate !== location);
-    setLocations(next);
-    await saveSyncLocations(next);
+  async function removeLocation(location: SyncLocation) {
+    if (!runtime) return;
+    const confirmed = await confirmAlert({
+      title: `Stop syncing ${path.basename(location.path)}?`,
+      message: `${location.pairingCount} pairing(s) across ${location.manifestCount} manifest(s) will stop syncing. No local files or Google content will be deleted.`,
+      primaryAction: { title: "Remove Sync Location", style: Alert.ActionStyle.Destructive },
+    });
+    if (!confirmed) return;
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Removing sync location…" });
+    try {
+      await runGdmsJson(runtime, ["location", "remove", "--path", location.path]);
+      setLocations(await loadSyncLocations(runtime));
+      toast.style = Toast.Style.Success;
+      toast.title = "Sync location removed";
+      toast.message = "No local or Google content was deleted.";
+    } catch (reason) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Could not remove sync location";
+      toast.message = commandErrorMessage(reason);
+    }
+  }
+
+  async function scanLocations(location?: SyncLocation) {
+    if (!runtime) return;
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Finding existing pairings…" });
+    try {
+      const result = await runGdmsJson<{ manifests: unknown[]; staleCount: number }>(runtime, ["location", "scan", ...(location ? ["--path", location.path] : [])]);
+      setLocations(await loadSyncLocations(runtime));
+      toast.style = Toast.Style.Success;
+      toast.title = `Found ${result.manifests.length} manifest(s)`;
+      toast.message = result.staleCount ? `Removed ${result.staleCount} stale index entries.` : undefined;
+    } catch (reason) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Scan failed";
+      toast.message = commandErrorMessage(reason);
+    }
   }
 
   if (error) {
@@ -450,21 +506,27 @@ export default function PairGoogleDoc() {
         <List.Section title="Sync Locations">
           {items.map(({ location, title }) => (
             <List.Item
-              key={location}
+              key={location.id}
               icon={Icon.Folder}
               title={title}
-              subtitle={location}
+              subtitle={location.path}
+              accessories={[{ text: `${location.pairingCount} pairing${location.pairingCount === 1 ? "" : "s"}` }]}
               actions={
                 <ActionPanel>
                   <Action.Push
                     title="Browse Sync Location"
                     icon={Icon.ArrowRight}
-                    target={<BrowseSyncLocation resource={resource} workspace={location} />}
+                    target={<BrowseSyncLocation resource={resource} syncLocation={location.path} />}
                   />
                   <Action.Push
                     title="Add Sync Locations"
                     icon={Icon.Plus}
                     target={<AddSyncLocations onAdd={addLocations} />}
+                  />
+                  <Action
+                    title="Find Existing Pairings"
+                    icon={Icon.MagnifyingGlass}
+                    onAction={() => scanLocations(location)}
                   />
                   <Action
                     title="Remove Sync Location"
@@ -485,6 +547,11 @@ export default function PairGoogleDoc() {
                   title="Add Sync Locations"
                   icon={Icon.Plus}
                   target={<AddSyncLocations onAdd={addLocations} />}
+                />
+                <Action
+                  title="Find Existing Pairings in All Locations"
+                  icon={Icon.MagnifyingGlass}
+                  onAction={() => scanLocations()}
                 />
               </ActionPanel>
             }

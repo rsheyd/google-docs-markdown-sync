@@ -1,13 +1,10 @@
 import os from "node:os";
 import path from "node:path";
 
-export const DEFAULT_WORKSPACE_ROOT = path.join(
+export const LEGACY_DEFAULT_DISCOVERY_ROOT = path.join(
   os.homedir(),
   "dev",
 );
-export function workspaceRoot(env = process.env) {
-  return env.GOOGLE_DOCS_SYNC_ROOT?.trim() || DEFAULT_WORKSPACE_ROOT;
-}
 export const MANIFEST_NAME = "google-docs-sync.json";
 export const APP_SUPPORT_DIR = path.join(
   os.homedir(),
@@ -23,14 +20,21 @@ export const NOTIFICATION_STATE_PATH = path.join(
 export const R2_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "r2.json");
 export const SETTINGS_PATH = path.join(APP_SUPPORT_DIR, "settings.json");
 export const RUNTIME_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "runtime.json");
-export const INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");
-export const LOG_PATH = path.join(APP_SUPPORT_DIR, "service.log");
-export const ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "service-error.log");
-export const HEARTBEAT_LOG_PATH = path.join(APP_SUPPORT_DIR, "heartbeat.log");
+export const SYNC_LOCATIONS_PATH = path.join(APP_SUPPORT_DIR, "sync-locations.json");
+export const MANIFEST_INDEX_PATH = path.join(APP_SUPPORT_DIR, "manifest-index.json");
+export const LEGACY_INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");
+export const LOG_DIR = path.join(os.homedir(), "Library", "Logs", "google-docs-markdown-sync");
+export const LOG_PATH = path.join(LOG_DIR, "service.log");
+export const ERROR_LOG_PATH = path.join(LOG_DIR, "service-error.log");
+export const HEARTBEAT_LOG_PATH = path.join(LOG_DIR, "heartbeat.log");
 export const HEARTBEAT_ERROR_LOG_PATH = path.join(
-  APP_SUPPORT_DIR,
+  LOG_DIR,
   "heartbeat-error.log",
 );
+export const LEGACY_LOG_PATH = path.join(APP_SUPPORT_DIR, "service.log");
+export const LEGACY_ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "service-error.log");
+export const LEGACY_HEARTBEAT_LOG_PATH = path.join(APP_SUPPORT_DIR, "heartbeat.log");
+export const LEGACY_HEARTBEAT_ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "heartbeat-error.log");
 export const LAUNCH_AGENT_PATH = path.join(
   os.homedir(),
   "Library",

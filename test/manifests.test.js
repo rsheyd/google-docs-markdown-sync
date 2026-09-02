@@ -7,59 +7,12 @@ import {
   defaultDocumentTitle,
   applyLocalMove,
   applyRemoteTitle,
-  discoverManifestPaths,
   documentIdFromUrl,
-  indexedManifestPaths,
-  loadPairings,
   spreadsheetIdFromUrl,
   markdownFilenameFromTitle,
   pairingLocalPath,
   validateManifest,
 } from "../src/manifests.js";
-
-test("loads indexed sync locations without recursively discovering the root", async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdocs-sync-index-"));
-  const root = path.join(directory, "discovery-root");
-  const archive = path.join(directory, "Roman");
-  const indexPath = path.join(directory, "workspaces.json");
-  const rootManifest = path.join(root, "project", "google-docs-sync.json");
-  const archiveManifest = path.join(archive, "google-docs-sync.json");
-  await fs.mkdir(path.dirname(rootManifest), { recursive: true });
-  await fs.mkdir(archive, { recursive: true });
-  await fs.writeFile(rootManifest, `${JSON.stringify({
-    version: 1,
-    pairings: [{ documentId: "dev-doc", markdownPath: "dev.md" }],
-  })}\n`);
-  await fs.writeFile(archiveManifest, `${JSON.stringify({
-    version: 1,
-    pairings: [{ documentId: "health-doc", markdownPath: "my health/back.md" }],
-  })}\n`);
-  await fs.writeFile(indexPath, `${JSON.stringify({
-    version: 1,
-    manifests: [archiveManifest],
-  })}\n`);
-
-  try {
-    const indexed = await loadPairings(root, { discover: false, indexPath });
-    assert.deepEqual(indexed.map((pairing) => pairing.documentId), ["health-doc"]);
-
-    const discovered = await loadPairings(root, { discover: true, indexPath });
-    assert.deepEqual(
-      discovered.map((pairing) => pairing.documentId).sort(),
-      ["dev-doc", "health-doc"],
-    );
-    assert.deepEqual(await indexedManifestPaths({ indexPath }), [
-      rootManifest,
-      archiveManifest,
-    ].sort());
-    assert.deepEqual(await discoverManifestPaths(root, { indexPath }), [
-      rootManifest,
-      archiveManifest,
-    ].sort());
-  } finally {
-    await fs.rm(directory, { recursive: true, force: true });
-  }
-});
 
 test("extracts document IDs from standard and account-routed URLs", () => {
   assert.equal(
@@ -122,7 +75,7 @@ test("reads local paths from mixed document and spreadsheet pairings", () => {
   );
 });
 
-test("resolves portable manifest paths inside the workspace", () => {
+test("resolves portable manifest paths inside the sync location", () => {
   const manifestPath = "/Users/example/dev/example/google-docs-sync.json";
   const [pairing] = validateManifest(
     {
@@ -143,7 +96,7 @@ test("resolves portable manifest paths inside the workspace", () => {
   );
 });
 
-test("rejects paths that escape a workspace", () => {
+test("rejects paths that escape a sync location", () => {
   assert.throws(() =>
     validateManifest(
       {

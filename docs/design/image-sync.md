@@ -89,7 +89,7 @@ silently replacing the image with alt text.
 For each local Markdown image node:
 
 1. Resolve the path relative to the Markdown file and reject paths outside the
-   workspace.
+   sync location.
 2. Read and validate the image, then calculate its content hash.
 3. Preserve the existing Google inline object when its baseline and content
    hash show that the image is unchanged.
@@ -238,7 +238,7 @@ Image synchronization will be considered operationally hardened when:
   converges on the other side;
 - an unchanged image is neither re-downloaded nor recreated during unrelated
   text edits;
-- Markdown and its asset directory remain portable within the workspace;
+- Markdown and its asset directory remain portable within the sync location;
 - interrupted R2 staging leaves no permanent public object and stale private
   objects expire automatically;
 - credentials and signed URLs never enter tracked files or normal logs;

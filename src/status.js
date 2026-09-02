@@ -1,6 +1,3 @@
-import path from "node:path";
-import { workspaceRoot } from "./paths.js";
-
 export const MARKDOWN_STATUS_START = "<!-- google-docs-sync:status:start -->";
 export const MARKDOWN_STATUS_END = "<!-- google-docs-sync:status:end -->";
 export const DOC_STATUS_TITLE = "↔ Markdown sync status";
@@ -24,11 +21,6 @@ function directionLabel(writer, spreadsheet = false) {
 }
 
 function documentLocalPath(pairing) {
-  if (!pairing.absolutePath) return pairing.markdownPath;
-  const relative = path.relative(workspaceRoot(), pairing.absolutePath);
-  if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`)) {
-    return relative;
-  }
   return pairing.markdownPath;
 }
 

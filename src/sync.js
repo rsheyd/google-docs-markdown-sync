@@ -26,7 +26,6 @@ import {
   applyRemoteTitle,
   loadPairings,
 } from "./manifests.js";
-import { workspaceRoot } from "./paths.js";
 import { loadSettings } from "./config.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import {
@@ -543,7 +542,6 @@ export async function commitSyncPass({
 }
 
 export async function runSyncPass({
-  root = workspaceRoot(),
   interactiveAuth = false,
   logger = console,
   errorReporter,
@@ -557,7 +555,7 @@ export async function runSyncPass({
 } = {}) {
   const auth = await getAuthClient({ interactive: interactiveAuth });
   const services = createGoogleServices(auth);
-  const discoveredPairings = suppliedPairings ?? (await loadPairings(root));
+  const discoveredPairings = suppliedPairings ?? (await loadPairings({ logger }));
   const settings = await loadSettings();
   const configuredPairings = discoveredPairings.map((pairing) => ({
     ...pairing,
@@ -822,7 +820,6 @@ export async function runDaemon({
   reconciliationIntervalMs = Number(
     process.env.GOOGLE_DOCS_SYNC_RECONCILIATION_INTERVAL_MS ?? 86_400_000,
   ),
-  manifestDiscoveryIntervalMs = 86_400_000,
 } = {}) {
   logger = createTimestampLogger(logger);
   const settings = await loadSettings();
@@ -859,7 +856,6 @@ export async function runDaemon({
   const pendingMoves = new Map();
   const deferredMissingPaths = new Map();
   const enqueue = createSingleFlight();
-  const root = workspaceRoot();
   const networkGate = createNetworkGate({
     isAvailable: networkAvailable,
     logger,
@@ -921,7 +917,6 @@ export async function runDaemon({
       state,
       assertCurrent: () => assertCurrentSyncPass(isCurrent),
       syncPairings: (targets) => runSyncPass({
-        root,
         pairings: targets.filter(
           (pairing) => !pendingMoves.has(pairing.absolutePath),
         ),
@@ -979,7 +974,6 @@ export async function runDaemon({
               }
             }
             return runWakeSafeSync({
-              root,
               targetPaths,
               deferMissingLocal,
               missingLocalWaitMs: intervalMs * 2,
@@ -1018,7 +1012,6 @@ export async function runDaemon({
 
   let consecutiveFailures = 0;
   let remoteDiscoveryFailed = false;
-  let lastManifestDiscoveryAt = 0;
   try {
     while (!stopping) {
       const onDiskVersion = await getVersion();
@@ -1028,14 +1021,7 @@ export async function runDaemon({
         );
         break;
       }
-      const now = Date.now();
-      const discoverManifests =
-        !lastManifestDiscoveryAt ||
-        now - lastManifestDiscoveryAt >= manifestDiscoveryIntervalMs;
-      const pairings = await loadPairings(root, {
-        discover: discoverManifests,
-      });
-      if (discoverManifests) lastManifestDiscoveryAt = now;
+      const pairings = await loadPairings({ logger });
       await watcherManager.refresh(pairings);
       let outcome;
       try {

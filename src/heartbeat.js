@@ -141,10 +141,10 @@ export async function sendDeletionEmail({
     "You can recover the same document from Google Drive trash. The GDMS pairing has been removed.",
   ];
   if (deletion.manifestPath && deletion.absolutePath) {
-    const workspace = path.dirname(deletion.manifestPath);
+    const syncLocation = path.dirname(deletion.manifestPath);
     recoveryLines.push(
       "Preserve any local-only content, then restore and re-pair it with:",
-      `gdms recover --document-id ${deletion.documentId} --workspace ${JSON.stringify(workspace)} --file ${JSON.stringify(path.relative(workspace, deletion.absolutePath))}`,
+      `gdms recover --document-id ${deletion.documentId} --sync-location ${JSON.stringify(syncLocation)} --file ${JSON.stringify(path.relative(syncLocation, deletion.absolutePath))}`,
     );
   } else {
     recoveryLines.push("Use `gdms recover --help` for the safe restoration workflow.");

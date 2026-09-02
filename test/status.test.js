@@ -1,7 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import path from "node:path";
-import { DEFAULT_WORKSPACE_ROOT } from "../src/paths.js";
 import {
   DOC_STATUS_TITLE,
   documentStatusMarkdown,
@@ -50,22 +48,19 @@ test("strips the visible Google Docs status section from native Markdown export"
   assert.match(remoteDocumentStatusMarkdown(documentPairing, state), /Local file/);
 });
 
-test("shows document paths relative to the configured workspace root", () => {
+test("shows portable document paths relative to their sync location", () => {
   const pairing = {
     ...documentPairing,
-    absolutePath: path.join(DEFAULT_WORKSPACE_ROOT, "example", "credentials/comms.md"),
+    absolutePath: "/Users/example/dev/project/notes/example.md",
   };
   assert.match(
     remoteDocumentStatusMarkdown(pairing, state),
-    /Local file: `example\/credentials\/comms\.md`/,
+    /Local file: `notes\/example\.md`/,
   );
-  assert.doesNotMatch(
-    remoteDocumentStatusMarkdown(pairing, state),
-    new RegExp(DEFAULT_WORKSPACE_ROOT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
-  );
+  assert.doesNotMatch(remoteDocumentStatusMarkdown(pairing, state), /\/Users\/example/);
 });
 
-test("keeps the portable workspace path outside the configured workspace root", () => {
+test("keeps the portable sync-location path for archive documents", () => {
   const pairing = {
     ...documentPairing,
     absolutePath: "/private/tmp/example/notes/example.md",

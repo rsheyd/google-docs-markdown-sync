@@ -1,16 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readJson, writeJsonAtomic } from "./files.js";
+import { indexedManifestPaths, registerManifest } from "./locations.js";
 import { hasMarkdownStatus } from "./status.js";
 import {
   relocateAssetDirectory,
   rollbackAssetRelocation,
 } from "./images.js";
-import {
-  workspaceRoot,
-  INDEX_PATH,
-  MANIFEST_NAME,
-} from "./paths.js";
+import { MANIFEST_NAME } from "./paths.js";
 
 const SKIPPED_DIRECTORIES = new Set([
   ".git",
@@ -51,7 +48,7 @@ export function validateManifest(manifest, manifestPath) {
   if (manifest?.version !== 1 || !Array.isArray(manifest.pairings)) {
     throw new Error(`${manifestPath} must have version 1 and a pairings array.`);
   }
-  const workspace = path.dirname(manifestPath);
+  const syncLocation = path.dirname(manifestPath);
   return manifest.pairings.map((pairing) => {
     const type = pairing.type ?? "document";
     const remoteId = type === "spreadsheet" ? pairing.spreadsheetId : pairing.documentId;
@@ -67,14 +64,14 @@ export function validateManifest(manifest, manifestPath) {
     if (path.isAbsolute(relativeLocalPath)) {
       throw new Error(`${manifestPath} local paths must be relative.`);
     }
-    const absolutePath = path.resolve(workspace, relativeLocalPath);
+    const absolutePath = path.resolve(syncLocation, relativeLocalPath);
     if (
-      absolutePath !== workspace &&
-      !absolutePath.startsWith(`${workspace}${path.sep}`)
+      absolutePath !== syncLocation &&
+      !absolutePath.startsWith(`${syncLocation}${path.sep}`)
     ) {
-      throw new Error(`${relativeLocalPath} escapes its workspace.`);
+      throw new Error(`${relativeLocalPath} escapes its sync location.`);
     }
-    return { ...pairing, type, manifestPath, workspace, absolutePath };
+    return { ...pairing, type, manifestPath, syncLocation, absolutePath };
   });
 }
 
@@ -94,70 +91,8 @@ export async function removeDocumentPairing(pairing) {
   return true;
 }
 
-async function walkForManifests(directory, results) {
-  let entries;
-  try {
-    entries = await fs.readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error.code === "ENOENT" || error.code === "EACCES") return;
-    throw error;
-  }
-  for (const entry of entries) {
-    if (entry.name === MANIFEST_NAME && entry.isFile()) {
-      results.add(path.join(directory, entry.name));
-    } else if (
-      entry.isDirectory() &&
-      !entry.name.startsWith(".") &&
-      !SKIPPED_DIRECTORIES.has(entry.name)
-    ) {
-      await walkForManifests(path.join(directory, entry.name), results);
-    }
-  }
-}
-
-async function existingManifestPaths(manifestPaths) {
-  const existing = [];
-  for (const manifestPath of manifestPaths) {
-    try {
-      await fs.access(manifestPath);
-      existing.push(manifestPath);
-    } catch {
-      // Drop stale index entries.
-    }
-  }
-  existing.sort();
-  return existing;
-}
-
-export async function indexedManifestPaths({ indexPath = INDEX_PATH } = {}) {
-  const indexed = await readJson(indexPath, { version: 1, manifests: [] });
-  const existing = await existingManifestPaths(indexed.manifests ?? []);
-  if (JSON.stringify(existing) !== JSON.stringify(indexed.manifests ?? [])) {
-    await writeJsonAtomic(indexPath, { version: 1, manifests: existing });
-  }
-  return existing;
-}
-
-export async function discoverManifestPaths(
-  root = workspaceRoot(),
-  { indexPath = INDEX_PATH } = {},
-) {
-  const indexed = await readJson(indexPath, { version: 1, manifests: [] });
-  const results = new Set(indexed.manifests ?? []);
-  await walkForManifests(root, results);
-
-  const existing = await existingManifestPaths(results);
-  await writeJsonAtomic(indexPath, { version: 1, manifests: existing });
-  return existing;
-}
-
-export async function loadPairings(
-  root = workspaceRoot(),
-  { discover = true, indexPath = INDEX_PATH } = {},
-) {
-  const manifestPaths = discover
-    ? await discoverManifestPaths(root, { indexPath })
-    : await indexedManifestPaths({ indexPath });
+export async function loadPairings(options = {}) {
+  const manifestPaths = await indexedManifestPaths(options);
   const pairings = [];
   for (const manifestPath of manifestPaths) {
     const manifest = await readJson(manifestPath);
@@ -262,11 +197,11 @@ export async function applyLocalMove(pairing, identity) {
     });
   if (sourceExists) return pairing;
 
-  const matches = await findPathsByIdentity(pairing.workspace, identity);
+  const matches = await findPathsByIdentity(pairing.syncLocation, identity);
   if (matches.length !== 1) return pairing;
 
   const nextAbsolutePath = matches[0];
-  const nextRelativePath = path.relative(pairing.workspace, nextAbsolutePath);
+  const nextRelativePath = path.relative(pairing.syncLocation, nextAbsolutePath);
   if (
     !nextRelativePath ||
     path.isAbsolute(nextRelativePath) ||
@@ -332,7 +267,7 @@ export async function applyRemoteTitle(pairing, remoteTitle) {
         markdownFilenameFromTitle(title),
       )
     : pairing.markdownPath;
-  const nextAbsolutePath = path.resolve(pairing.workspace, nextRelativePath);
+  const nextAbsolutePath = path.resolve(pairing.syncLocation, nextRelativePath);
   const pathChanged = nextAbsolutePath !== pairing.absolutePath;
   const manifest = await readJson(pairing.manifestPath);
   const index = manifest.pairings.findIndex(
@@ -409,17 +344,17 @@ export async function applyRemoteTitle(pairing, remoteTitle) {
 }
 
 export async function registerPairing({
-  workspace,
+  syncLocation,
   documentUrl,
   markdownPath,
   name,
 }) {
-  const resolvedWorkspace = path.resolve(workspace);
-  const manifestPath = path.join(resolvedWorkspace, MANIFEST_NAME);
+  const resolvedSyncLocation = path.resolve(syncLocation);
+  const manifestPath = path.join(resolvedSyncLocation, MANIFEST_NAME);
   const documentId = documentIdFromUrl(documentUrl);
   const relativePath = path.normalize(markdownPath);
   if (path.isAbsolute(relativePath) || relativePath.startsWith("..")) {
-    throw new Error("Markdown filename must stay inside the selected workspace.");
+    throw new Error("Markdown filename must stay inside the selected sync location.");
   }
 
   const manifest = await readJson(manifestPath, { version: 1, pairings: [] });
@@ -437,25 +372,22 @@ export async function registerPairing({
   manifest.pairings.push(pairing);
   manifest.pairings.sort(comparePairingLocalPaths);
   await writeJsonAtomic(manifestPath, manifest);
-
-  const index = await readJson(INDEX_PATH, { version: 1, manifests: [] });
-  index.manifests = [...new Set([...(index.manifests ?? []), manifestPath])].sort();
-  await writeJsonAtomic(INDEX_PATH, index);
+  await registerManifest(resolvedSyncLocation, manifestPath);
   return validateManifest({ version: 1, pairings: [pairing] }, manifestPath)[0];
 }
 
 export async function registerSpreadsheetPairing({
-  workspace,
+  syncLocation,
   spreadsheetUrl,
   directoryPath,
   name,
 }) {
-  const resolvedWorkspace = path.resolve(workspace);
-  const manifestPath = path.join(resolvedWorkspace, MANIFEST_NAME);
+  const resolvedSyncLocation = path.resolve(syncLocation);
+  const manifestPath = path.join(resolvedSyncLocation, MANIFEST_NAME);
   const spreadsheetId = spreadsheetIdFromUrl(spreadsheetUrl);
   const relativePath = path.normalize(directoryPath);
   if (path.isAbsolute(relativePath) || relativePath.startsWith("..")) {
-    throw new Error("Spreadsheet directory must stay inside the selected workspace.");
+    throw new Error("Spreadsheet directory must stay inside the selected sync location.");
   }
   const manifest = await readJson(manifestPath, { version: 1, pairings: [] });
   validateManifest(manifest, manifestPath);
@@ -473,8 +405,6 @@ export async function registerSpreadsheetPairing({
   manifest.pairings.push(pairing);
   manifest.pairings.sort(comparePairingLocalPaths);
   await writeJsonAtomic(manifestPath, manifest);
-  const index = await readJson(INDEX_PATH, { version: 1, manifests: [] });
-  index.manifests = [...new Set([...(index.manifests ?? []), manifestPath])].sort();
-  await writeJsonAtomic(INDEX_PATH, index);
+  await registerManifest(resolvedSyncLocation, manifestPath);
   return validateManifest({ version: 1, pairings: [pairing] }, manifestPath)[0];
 }

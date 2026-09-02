@@ -40,7 +40,7 @@ Managed folders fit GDMS if enrollment stays explicit, scope stays bounded,
 and destructive changes remain conservative and recoverable. The design
 continues these existing principles:
 
-- Portable, inspectable workspace metadata identifies the local and remote
+- Portable, inspectable sync-location metadata identifies the local and remote
   objects under management.
 - Stable Google IDs are authoritative; filenames and titles are not identities.
 - Runtime hashes, revisions, filesystem identities, timestamps, operation
@@ -79,7 +79,7 @@ to be included. No general user-authored include/exclude language is currently
 proposed. GDMS must nevertheless ignore its own operational artifacts and
 files that cannot safely represent user content, including:
 
-- the workspace manifest and managed status files;
+- the sync-location manifest and managed status files;
 - spreadsheet tab-map metadata;
 - Markdown image asset directories;
 - hidden operating-system files such as `.DS_Store`;
@@ -329,7 +329,7 @@ remote write, daemon restart recovery, rename and move identity, copy-delete
 moves, nested folder moves, duplicate titles, case-only renames, quota errors,
 concurrent local and remote changes, deletion cancellation, CSV recovery, and
 strict scope containment. Live validation should begin with disposable Drive
-folders and accounts before any existing workspace is enrolled.
+folders and accounts before any existing sync location is enrolled.
 
 ## Open decisions
 

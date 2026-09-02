@@ -54,9 +54,9 @@ export async function organizeCsvFiles(files, name) {
     const stat = await fs.stat(file);
     if (!stat.isFile()) throw new Error(`Not a file: ${file}`);
   }
-  const workspace = path.dirname(absoluteFiles[0]);
+  const syncLocation = path.dirname(absoluteFiles[0]);
   const fallbackName = path.basename(absoluteFiles[0], path.extname(absoluteFiles[0]));
-  const directory = await availableDirectory(workspace, name || fallbackName);
+  const directory = await availableDirectory(syncLocation, name || fallbackName);
   await fs.mkdir(directory);
   const moved = [];
   try {
@@ -70,7 +70,7 @@ export async function organizeCsvFiles(files, name) {
     await fs.rmdir(directory);
     throw error;
   }
-  return { workspace, directory, files: moved.map((move) => move.destination) };
+  return { syncLocation, directory, files: moved.map((move) => move.destination) };
 }
 
 export function initialSheetTitle(filename) {

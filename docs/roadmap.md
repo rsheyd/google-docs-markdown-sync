@@ -33,6 +33,15 @@ results, and remaining work are documented in the [image synchronization design]
 
 The completed lifecycle, change-discovery, and reconciliation work is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md). Its [future reconciliation scaling trigger](design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) records when and how to add cooperative batching and measured concurrency without prematurely complicating the current state coordinator.
 
+## Completed: unified sync-location registry
+
+- Replace the privileged discovery root and separate Raycast location storage with one GDMS-owned registry of explicitly selected sync locations.
+- Keep configured locations authoritative, treat the manifest index as rebuildable derived state, and scan only when adding a location, explicitly finding existing pairings, or recovering a missing index.
+- Preserve `workspaces.json` rollback compatibility and the deprecated `--workspace` CLI alias during migration.
+- Give project trees and document archives the same CLI, Raycast, daemon, browsing, and recovery capabilities without recursive routine polling.
+
+The justification, storage model, migration requirements, implementation phases, risks, and acceptance criteria are documented in the [unified sync-location registry design](design/unified-sync-location-registry.md).
+
 ## Next: safer conflicts and pairing controls
 
 - Add explicit unpairing and a command that lists every registered pairing.
@@ -59,7 +68,7 @@ documented in the [namespace migration plan](design/namespace-migration.md).
 ## Later: packaged app and guided onboarding
 
 - Package GDMS as a signed and notarized macOS app that does not require Node.js, a source checkout, or manual background-service installation.
-- Add guided Google authorization, workspace selection, and first-document pairing.
+- Add guided Google authorization, sync-location selection, and first-document pairing.
 - Provide a simple interface for viewing pairings, sync health, conflicts, and recovery actions.
 - Reduce or eliminate the infrastructure users must configure for image synchronization.
 - Evaluate an optional managed service for shared infrastructure while keeping Markdown files local and making the privacy, security, and operating-cost tradeoffs explicit.
@@ -100,5 +109,4 @@ delivery, and unresolved decisions are documented in the
 - General-purpose Google Drive mirroring.
 - Permanent public hosting of document images.
 - Pixel-perfect round-tripping of every Google Docs visual object.
-- Synchronizing unpaired documents or arbitrary workspace files outside an
-  explicitly configured folder auto-sync scope.
+- Synchronizing unpaired documents or arbitrary files outside a registered sync location or explicitly configured folder auto-sync scope.

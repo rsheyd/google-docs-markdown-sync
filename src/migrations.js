@@ -7,7 +7,6 @@ import {
   planParagraphSpacingUpdate,
 } from "./google.js";
 import { loadPairings } from "./manifests.js";
-import { workspaceRoot } from "./paths.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import { stripDocumentStatus } from "./status.js";
 
@@ -37,7 +36,6 @@ export function planPendingMigrations(document, markdown, applied = {}) {
 export async function runDocumentMigrations({
   dryRun = false,
   documentId,
-  root = workspaceRoot(),
   logger = console,
   pairings: suppliedPairings,
   services: suppliedServices,
@@ -45,7 +43,7 @@ export async function runDocumentMigrations({
   readFile = fs.readFile,
   persistState = saveState,
 } = {}) {
-  const discovered = suppliedPairings ?? (await loadPairings(root));
+  const discovered = suppliedPairings ?? (await loadPairings());
   const documents = discovered.filter(
     (pairing) =>
       pairing.type !== "spreadsheet" &&

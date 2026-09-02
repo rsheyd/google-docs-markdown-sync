@@ -6,9 +6,12 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Load registered sync-location manifests directly during routine daemon polling instead of recursively searching the project discovery root every five seconds; retain discovery at startup and once per day.
+- Load registered sync-location manifests directly during routine daemon polling instead of recursively searching configured folders every five seconds.
 - Describe manifest-owning folders as sync locations in user-facing documentation and Raycast, and replace separate project/archive preferences with one persistent, addable list whose locations all use the same lazy folder browser.
 - Record the installed CLI, Node, and OAuth paths during service installation so Raycast can use them without exposing runtime plumbing as preferences.
+- Use sync-location and discovery-root terminology throughout current code and documentation, prefer `--sync-location` in the CLI, and retain `--workspace` as a compatibility alias.
+- Complete Phase 1 of the [unified sync-location registry design](docs/design/unified-sync-location-registry.md): add shared versioned location and manifest registries, migrate legacy discovery state without deleting it, add location-management CLI commands, reconstruct missing indexes from configured locations, and remove recursive discovery from daemon polling.
+- Complete Phase 2 of the [unified sync-location registry design](docs/design/unified-sync-location-registry.md): make Raycast use the same registry with one-time migration, removal previews, and explicit pairing scans, and move service logs to the standard macOS Logs directory with compatibility migration.
 
 ## [0.8.7] - 2026-09-01
 

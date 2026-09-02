@@ -48,6 +48,12 @@ import { registerSpreadsheetPairing } from "./manifests.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import { runDaemon, runSyncPass } from "./sync.js";
 import {
+  addSyncLocation,
+  removeSyncLocation,
+  scanSyncLocations,
+  summarizeSyncLocations,
+} from "./locations.js";
+import {
   createTimestampLogger,
   formatSyncProgress,
   syncSummary,
@@ -84,9 +90,13 @@ import {
 function parseArguments(values) {
   const [command, ...rest] = values;
   const options = {};
+  const positionals = [];
   for (let index = 0; index < rest.length; index += 1) {
     const value = rest[index];
-    if (!value.startsWith("--")) continue;
+    if (!value.startsWith("--")) {
+      positionals.push(value);
+      continue;
+    }
     const key = value.slice(2);
     if ([
       "all",
@@ -98,6 +108,7 @@ function parseArguments(values) {
       "enable-error-email",
       "disable-desktop-notifications",
       "enable-desktop-notifications",
+      "json",
     ].includes(key)) {
       options[key] = true;
       continue;
@@ -107,11 +118,20 @@ function parseArguments(values) {
     else options[key] = Array.isArray(options[key]) ? [...options[key], next] : [options[key], next];
     index += 1;
   }
-  return { command, options };
+  return { command, options, positionals };
 }
 
 function optionValues(value) {
   return value === undefined ? [] : Array.isArray(value) ? value : [value];
+}
+
+function syncLocationOption(options) {
+  const preferred = options["sync-location"];
+  const legacy = options.workspace;
+  if (preferred && legacy && preferred !== legacy) {
+    throw new Error("Use either --sync-location or --workspace, not both.");
+  }
+  return preferred ?? legacy;
 }
 
 function helpText() {
@@ -121,15 +141,19 @@ Usage: gdms COMMAND [OPTIONS]
 
 Commands:
   auth
-  create --file RELATIVE.md [--workspace PATH] [--name NAME] [--open]
+  create --file RELATIVE.md [--sync-location PATH] [--name NAME] [--open]
   create-sheet --file FILE.csv [--file TAB.csv ...] [--name NAME] [--open]
-  pair --url URL --workspace PATH --file RELATIVE.md [--name NAME]
-  pair-sheet --url URL --workspace PATH --directory RELATIVE_DIRECTORY [--name NAME]
+  pair --url URL --sync-location PATH --file RELATIVE.md [--name NAME]
+  pair-sheet --url URL --sync-location PATH --directory RELATIVE_DIRECTORY [--name NAME]
   plan --document-id ID
   push (--document-id ID | --spreadsheet-id ID)
   cleanup-spacing --document-id ID
   delete (--file MARKDOWN.md | --document-id ID) --yes
-  recover --document-id ID --workspace PATH --file RELATIVE.md
+  recover --document-id ID --sync-location PATH --file RELATIVE.md
+  location list
+  location add --path PATH
+  location remove --path PATH
+  location scan [--path PATH]
   migrate (--all | --document-id ID) [--dry-run]
   configure-r2 --account-id ID --bucket NAME --gateway-url URL
   configure-deletion --grace-period-minutes MINUTES --to EMAIL [--from SENDER]
@@ -154,18 +178,20 @@ See OPERATIONS.md for the complete command reference and write-scope details.`;
 }
 
 async function pair(options) {
-  for (const required of ["url", "workspace", "file"]) {
+  for (const required of ["url", "file"]) {
     if (!options[required]) throw new Error(`pair requires --${required}.`);
   }
-  const workspace = path.resolve(options.workspace);
-  const manifestPath = path.join(workspace, MANIFEST_NAME);
+  const locationOption = syncLocationOption(options);
+  if (!locationOption) throw new Error("pair requires --sync-location.");
+  const syncLocation = path.resolve(locationOption);
+  const manifestPath = path.join(syncLocation, MANIFEST_NAME);
   const previousManifest = await fs.readFile(manifestPath, "utf8").catch((error) => {
     if (error.code === "ENOENT") return undefined;
     throw error;
   });
   try {
     const pairing = await registerPairing({
-      workspace,
+      syncLocation,
       documentUrl: options.url,
       markdownPath: options.file,
       name: options.name,
@@ -225,17 +251,18 @@ async function pair(options) {
 
 async function create(options) {
   if (!options.file || Array.isArray(options.file)) throw new Error("create requires exactly one --file.");
-  const absolutePath = options.workspace
-    ? path.resolve(options.workspace, options.file)
+  const locationOption = syncLocationOption(options);
+  const absolutePath = locationOption
+    ? path.resolve(locationOption, options.file)
     : path.resolve(options.file);
-  const workspace = options.workspace
-    ? path.resolve(options.workspace)
+  const syncLocation = locationOption
+    ? path.resolve(locationOption)
     : path.dirname(absolutePath);
   if (
-    absolutePath !== workspace &&
-    !absolutePath.startsWith(`${workspace}${path.sep}`)
+    absolutePath !== syncLocation &&
+    !absolutePath.startsWith(`${syncLocation}${path.sep}`)
   ) {
-    throw new Error("Markdown filename must stay inside the selected workspace.");
+    throw new Error("Markdown filename must stay inside the selected sync location.");
   }
   console.log("Reading Markdown…");
   const [markdown, stat, auth] = await Promise.all([
@@ -263,9 +290,9 @@ async function create(options) {
   );
   console.log("Registering pairing…");
   const pairing = await registerPairing({
-    workspace,
+    syncLocation,
     documentUrl: created.documentUrl,
-    markdownPath: path.relative(workspace, absolutePath),
+    markdownPath: path.relative(syncLocation, absolutePath),
     name: title,
   });
   const status = {
@@ -292,7 +319,7 @@ async function create(options) {
   await saveState(state);
   console.log(`Created ${created.documentUrl}`);
   console.log(`Paired ${absolutePath}`);
-  console.log(`Updated ${path.join(workspace, "google-docs-sync.json")}`);
+  console.log(`Updated ${path.join(syncLocation, "google-docs-sync.json")}`);
   if (options.open && !await openUrl(created.documentUrl)) {
     console.error("Created the Google Doc, but could not open it in the browser.");
   }
@@ -327,9 +354,9 @@ async function createSheet(options) {
   console.log("Creating Google Sheet…");
   const created = await createSpreadsheet(services, String(title).trim(), local.sheets);
   const pairing = await registerSpreadsheetPairing({
-    workspace: organized.workspace,
+    syncLocation: organized.syncLocation,
     spreadsheetUrl: created.spreadsheetUrl,
-    directoryPath: path.relative(organized.workspace, organized.directory),
+    directoryPath: path.relative(organized.syncLocation, organized.directory),
     name: String(title).trim(),
   });
   const before = await getSpreadsheetInfo(services, pairing.spreadsheetId);
@@ -358,18 +385,20 @@ async function createSheet(options) {
   await saveState(state);
   console.log(`Created ${created.spreadsheetUrl}`);
   console.log(`Paired ${organized.directory}`);
-  console.log(`Updated ${path.join(organized.workspace, "google-docs-sync.json")}`);
+  console.log(`Updated ${path.join(organized.syncLocation, "google-docs-sync.json")}`);
   if (options.open && !await openUrl(created.spreadsheetUrl)) {
     console.error("Created the Google Sheet, but could not open it in the browser.");
   }
 }
 
 async function pairSheet(options) {
-  for (const required of ["url", "workspace", "directory"]) {
+  for (const required of ["url", "directory"]) {
     if (!options[required]) throw new Error(`pair-sheet requires --${required}.`);
   }
+  const syncLocation = syncLocationOption(options);
+  if (!syncLocation) throw new Error("pair-sheet requires --sync-location.");
   const pairing = await registerSpreadsheetPairing({
-    workspace: options.workspace,
+    syncLocation,
     spreadsheetUrl: options.url,
     directoryPath: options.directory,
     name: options.name,
@@ -394,7 +423,7 @@ async function pairSheet(options) {
   await saveState(state);
   console.log(`Paired ${pairing.spreadsheetUrl}`);
   console.log(`Created ${pairing.absolutePath}`);
-  console.log(`Updated ${path.join(pairing.workspace, "google-docs-sync.json")}`);
+  console.log(`Updated ${path.join(pairing.syncLocation, "google-docs-sync.json")}`);
 }
 
 async function plan(options) {
@@ -742,14 +771,16 @@ async function deleteDocument(options) {
 }
 
 async function recoverDocument(options) {
-  for (const required of ["document-id", "workspace", "file"]) {
+  for (const required of ["document-id", "file"]) {
     if (!options[required]) throw new Error(`recover requires --${required}.`);
   }
+  const locationOption = syncLocationOption(options);
+  if (!locationOption) throw new Error("recover requires --sync-location.");
   const documentId = options["document-id"];
-  const workspace = path.resolve(options.workspace);
-  const absolutePath = path.resolve(workspace, options.file);
-  if (absolutePath !== workspace && !absolutePath.startsWith(`${workspace}${path.sep}`)) {
-    throw new Error("Recovery Markdown filename must stay inside the selected workspace.");
+  const syncLocation = path.resolve(locationOption);
+  const absolutePath = path.resolve(syncLocation, options.file);
+  if (absolutePath !== syncLocation && !absolutePath.startsWith(`${syncLocation}${path.sep}`)) {
+    throw new Error("Recovery Markdown filename must stay inside the selected sync location.");
   }
   const pairings = await loadPairings();
   assertRecoveryTargetAvailable(pairings, documentId, absolutePath);
@@ -761,8 +792,8 @@ async function recoverDocument(options) {
   try {
     await pair({
       url: documentUrl,
-      workspace,
-      file: path.relative(workspace, absolutePath),
+      "sync-location": syncLocation,
+      file: path.relative(syncLocation, absolutePath),
       name: restored.name,
     });
   } catch (error) {
@@ -793,8 +824,57 @@ async function recoverDocument(options) {
   }
 }
 
+async function manageLocations(action, options) {
+  if (action === "list") {
+    const locations = await summarizeSyncLocations();
+    if (options.json) {
+      console.log(JSON.stringify({ version: 1, locations }));
+      return;
+    }
+    if (!locations.length) {
+      console.log("No sync locations configured.");
+      return;
+    }
+    for (const location of locations) {
+      console.log(`${location.path} (${location.manifestCount} manifest(s), ${location.pairingCount} pairing(s))`);
+    }
+  } else if (action === "add") {
+    if (!options.path || Array.isArray(options.path)) throw new Error("location add requires one --path.");
+    const result = await addSyncLocation(options.path);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+    console.log(`${result.added ? "Added" : "Already registered"}: ${result.location.path}`);
+    console.log(`Found ${result.manifests.length} manifest(s).`);
+    if (result.inaccessible.length) console.log(`Skipped ${result.inaccessible.length} inaccessible director${result.inaccessible.length === 1 ? "y" : "ies"}.`);
+  } else if (action === "remove") {
+    if (!options.path || Array.isArray(options.path)) throw new Error("location remove requires one --path.");
+    const result = await removeSyncLocation(options.path);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+    console.log(`Removed ${result.location.path} from GDMS.`);
+    console.log(`Stopped monitoring ${result.pairingCount} pairing(s); no local or Google content was deleted.`);
+    if (result.unreadableManifests) console.log(`${result.unreadableManifests} manifest(s) could not be read while calculating that count.`);
+  } else if (action === "scan") {
+    if (Array.isArray(options.path)) throw new Error("location scan accepts at most one --path.");
+    const result = await scanSyncLocations(options.path);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+    console.log(`Scanned ${result.locations.length} sync location(s) in ${result.elapsedMs}ms; found ${result.manifests.length} manifest(s) and removed ${result.staleCount} stale index entr${result.staleCount === 1 ? "y" : "ies"}.`);
+    if (result.inaccessible.length) console.log(`Skipped ${result.inaccessible.length} inaccessible director${result.inaccessible.length === 1 ? "y" : "ies"}.`);
+  } else {
+    throw new Error("location requires list, add, remove, or scan.");
+  }
+}
+
 async function main() {
-  const { command, options } = parseArguments(process.argv.slice(2));
+  const { command, options, positionals } = parseArguments(process.argv.slice(2));
+  const locationAction = command === "location" ? positionals[0] : undefined;
   if (command === "--version" || command === "version") {
     const [version, state] = await Promise.all([readPackageVersion(), loadState()]);
     console.log(formatVersionReport(version, state.daemon));
@@ -841,6 +921,8 @@ async function main() {
     await deleteDocument(options);
   } else if (command === "recover") {
     await recoverDocument(options);
+  } else if (command === "location") {
+    await manageLocations(locationAction, options);
   } else if (command === "sync-once") {
     const requestedPaths = new Set(
       optionValues(options.file).map((file) => path.resolve(file)),
