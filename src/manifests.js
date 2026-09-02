@@ -115,13 +115,9 @@ async function walkForManifests(directory, results) {
   }
 }
 
-export async function discoverManifestPaths(root = workspaceRoot()) {
-  const indexed = await readJson(INDEX_PATH, { version: 1, manifests: [] });
-  const results = new Set(indexed.manifests ?? []);
-  await walkForManifests(root, results);
-
+async function existingManifestPaths(manifestPaths) {
   const existing = [];
-  for (const manifestPath of results) {
+  for (const manifestPath of manifestPaths) {
     try {
       await fs.access(manifestPath);
       existing.push(manifestPath);
@@ -130,12 +126,38 @@ export async function discoverManifestPaths(root = workspaceRoot()) {
     }
   }
   existing.sort();
-  await writeJsonAtomic(INDEX_PATH, { version: 1, manifests: existing });
   return existing;
 }
 
-export async function loadPairings(root = workspaceRoot()) {
-  const manifestPaths = await discoverManifestPaths(root);
+export async function indexedManifestPaths({ indexPath = INDEX_PATH } = {}) {
+  const indexed = await readJson(indexPath, { version: 1, manifests: [] });
+  const existing = await existingManifestPaths(indexed.manifests ?? []);
+  if (JSON.stringify(existing) !== JSON.stringify(indexed.manifests ?? [])) {
+    await writeJsonAtomic(indexPath, { version: 1, manifests: existing });
+  }
+  return existing;
+}
+
+export async function discoverManifestPaths(
+  root = workspaceRoot(),
+  { indexPath = INDEX_PATH } = {},
+) {
+  const indexed = await readJson(indexPath, { version: 1, manifests: [] });
+  const results = new Set(indexed.manifests ?? []);
+  await walkForManifests(root, results);
+
+  const existing = await existingManifestPaths(results);
+  await writeJsonAtomic(indexPath, { version: 1, manifests: existing });
+  return existing;
+}
+
+export async function loadPairings(
+  root = workspaceRoot(),
+  { discover = true, indexPath = INDEX_PATH } = {},
+) {
+  const manifestPaths = discover
+    ? await discoverManifestPaths(root, { indexPath })
+    : await indexedManifestPaths({ indexPath });
   const pairings = [];
   for (const manifestPath of manifestPaths) {
     const manifest = await readJson(manifestPath);

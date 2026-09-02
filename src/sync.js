@@ -822,6 +822,7 @@ export async function runDaemon({
   reconciliationIntervalMs = Number(
     process.env.GOOGLE_DOCS_SYNC_RECONCILIATION_INTERVAL_MS ?? 86_400_000,
   ),
+  manifestDiscoveryIntervalMs = 86_400_000,
 } = {}) {
   logger = createTimestampLogger(logger);
   const settings = await loadSettings();
@@ -1017,6 +1018,7 @@ export async function runDaemon({
 
   let consecutiveFailures = 0;
   let remoteDiscoveryFailed = false;
+  let lastManifestDiscoveryAt = 0;
   try {
     while (!stopping) {
       const onDiskVersion = await getVersion();
@@ -1026,7 +1028,14 @@ export async function runDaemon({
         );
         break;
       }
-      const pairings = await loadPairings(root);
+      const now = Date.now();
+      const discoverManifests =
+        !lastManifestDiscoveryAt ||
+        now - lastManifestDiscoveryAt >= manifestDiscoveryIntervalMs;
+      const pairings = await loadPairings(root, {
+        discover: discoverManifests,
+      });
+      if (discoverManifests) lastManifestDiscoveryAt = now;
       await watcherManager.refresh(pairings);
       let outcome;
       try {

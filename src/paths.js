@@ -22,6 +22,7 @@ export const NOTIFICATION_STATE_PATH = path.join(
 );
 export const R2_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "r2.json");
 export const SETTINGS_PATH = path.join(APP_SUPPORT_DIR, "settings.json");
+export const RUNTIME_CONFIG_PATH = path.join(APP_SUPPORT_DIR, "runtime.json");
 export const INDEX_PATH = path.join(APP_SUPPORT_DIR, "workspaces.json");
 export const LOG_PATH = path.join(APP_SUPPORT_DIR, "service.log");
 export const ERROR_LOG_PATH = path.join(APP_SUPPORT_DIR, "service-error.log");

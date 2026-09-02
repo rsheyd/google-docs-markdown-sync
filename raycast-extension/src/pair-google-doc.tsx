@@ -4,19 +4,30 @@ import {
   Form,
   Icon,
   List,
+  LocalStorage,
   Toast,
   getFrontmostApplication,
-  getPreferenceValues,
   popToRoot,
   showToast,
+  useNavigation,
 } from "@raycast/api";
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { useEffect, useMemo, useState } from "react";
 
 const executeFile = promisify(execFile);
+const SYNC_LOCATIONS_KEY = "sync-locations";
+const DEFAULT_SYNC_LOCATION = path.join(os.homedir(), "dev");
+const RUNTIME_CONFIG_PATH = path.join(
+  os.homedir(),
+  "Library",
+  "Application Support",
+  "google-docs-markdown-sync",
+  "runtime.json",
+);
 const SKIPPED = new Set([
   ".git",
   ".cache",
@@ -27,17 +38,17 @@ const SKIPPED = new Set([
   "vendor",
 ]);
 
-type Preferences = {
-  workspaceRoot: string;
-  serviceRoot: string;
-  oauthClientPath: string;
-  nodePath?: string;
-};
-
 type ActiveResource = {
   type: "document" | "spreadsheet";
   url: string;
   title: string;
+};
+
+type RuntimeConfig = {
+  version: 1;
+  cliPath: string;
+  nodePath: string;
+  oauthClientPath: string;
 };
 
 const CHROMIUM_BROWSERS = new Map([
@@ -89,27 +100,41 @@ async function activeBrowserResource(): Promise<ActiveResource> {
   return { type, url, title };
 }
 
-async function collectFolders(root: string): Promise<string[]> {
-  const folders: string[] = [];
-  async function visit(directory: string, depth: number) {
-    if (depth > 5) return;
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (
-        !entry.isDirectory() ||
-        entry.name.startsWith(".") ||
-        SKIPPED.has(entry.name)
-      ) {
-        continue;
+async function loadSyncLocations(): Promise<string[]> {
+  const stored = await LocalStorage.getItem<string>(SYNC_LOCATIONS_KEY);
+  if (stored !== undefined) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((value): value is string => typeof value === "string");
       }
-      const child = path.join(directory, entry.name);
-      folders.push(child);
-      await visit(child, depth + 1);
+    } catch {
+      // Replace malformed local state with the default below.
     }
   }
-  folders.push(root);
-  await visit(root, 0);
-  return folders;
+  await LocalStorage.setItem(SYNC_LOCATIONS_KEY, JSON.stringify([DEFAULT_SYNC_LOCATION]));
+  return [DEFAULT_SYNC_LOCATION];
+}
+
+async function saveSyncLocations(locations: string[]) {
+  await LocalStorage.setItem(SYNC_LOCATIONS_KEY, JSON.stringify(locations));
+}
+
+async function loadRuntimeConfig(): Promise<RuntimeConfig> {
+  try {
+    const config = JSON.parse(await fs.readFile(RUNTIME_CONFIG_PATH, "utf8"));
+    if (
+      config?.version === 1 &&
+      typeof config.cliPath === "string" &&
+      typeof config.nodePath === "string" &&
+      typeof config.oauthClientPath === "string"
+    ) {
+      return config;
+    }
+  } catch {
+    // Report one actionable setup error below.
+  }
+  throw new Error("GDMS setup is incomplete. Run `gdms install-service`, then try again.");
 }
 
 function suggestedFilename(title: string) {
@@ -138,11 +163,12 @@ function commandErrorMessage(error: unknown) {
 function PairForm({
   resource,
   workspace,
+  directory = "",
 }: {
   resource: ActiveResource;
   workspace: string;
+  directory?: string;
 }) {
-  const preferences = getPreferenceValues<Preferences>();
   const [localPathError, setLocalPathError] = useState<string>();
 
   async function submit(values: { localPath: string }) {
@@ -152,7 +178,7 @@ function PairForm({
       setLocalPathError(
         resource.type === "document"
           ? "Use a relative filename ending in .md"
-          : "Use a relative directory inside the workspace",
+          : "Use a relative directory inside the sync location",
       );
       return;
     }
@@ -162,10 +188,11 @@ function PairForm({
       title: `Pairing Google ${isSheet ? "Sheet" : "Doc"}…`,
     });
     try {
+      const runtime = await loadRuntimeConfig();
       await executeFile(
-        preferences.nodePath?.trim() || process.execPath,
+        runtime.nodePath,
         [
-          path.join(preferences.serviceRoot, "src", "cli.js"),
+          runtime.cliPath,
           isSheet ? "pair-sheet" : "pair",
           "--url",
           resource.url,
@@ -179,7 +206,7 @@ function PairForm({
         {
           env: {
             ...process.env,
-            GOOGLE_DOCS_SYNC_OAUTH_CLIENT: preferences.oauthClientPath,
+            GOOGLE_DOCS_SYNC_OAUTH_CLIENT: runtime.oauthClientPath,
           },
         },
       );
@@ -207,14 +234,17 @@ function PairForm({
         title={resource.type === "spreadsheet" ? "Google Sheet" : "Google Doc"}
         text={resource.url}
       />
-      <Form.Description title="Workspace" text={workspace} />
+      <Form.Description title="Sync Location" text={workspace} />
       <Form.TextField
         id="localPath"
         title={resource.type === "spreadsheet" ? "CSV Directory" : "Markdown File"}
         defaultValue={
-          resource.type === "spreadsheet"
-            ? suggestedDirectory(resource.title)
-            : suggestedFilename(resource.title)
+          path.join(
+            directory,
+            resource.type === "spreadsheet"
+              ? suggestedDirectory(resource.title)
+              : suggestedFilename(resource.title),
+          )
         }
         error={localPathError}
         onChange={() => setLocalPathError(undefined)}
@@ -223,39 +253,184 @@ function PairForm({
   );
 }
 
-export default function PairGoogleDoc() {
-  const preferences = getPreferenceValues<Preferences>();
-  const [resource, setResource] = useState<ActiveResource>();
+function BrowseSyncLocation({
+  resource,
+  workspace,
+  directory = "",
+}: {
+  resource: ActiveResource;
+  workspace: string;
+  directory?: string;
+}) {
   const [folders, setFolders] = useState<string[]>([]);
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const absoluteDirectory = path.join(workspace, directory);
+
+  useEffect(() => {
+    setLoading(true);
+    fs.readdir(absoluteDirectory, { withFileTypes: true })
+      .then((entries) =>
+        setFolders(
+          entries
+            .filter(
+              (entry) =>
+                entry.isDirectory() &&
+                !entry.name.startsWith(".") &&
+                !SKIPPED.has(entry.name),
+            )
+            .map((entry) => entry.name)
+            .sort((a, b) => a.localeCompare(b)),
+        ),
+      )
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : String(reason)),
+      )
+      .finally(() => setLoading(false));
+  }, [absoluteDirectory]);
+
+  return (
+    <List
+      isLoading={loading}
+      navigationTitle={directory || path.basename(workspace)}
+      searchBarPlaceholder="Browse folders…"
+    >
+      {error ? (
+        <List.EmptyView
+          icon={Icon.ExclamationMark}
+          title="Could not read this folder"
+          description={error}
+        />
+      ) : (
+        <>
+          <List.Item
+            icon={Icon.CheckCircle}
+            title={directory ? `Use ${path.basename(directory)}` : `Use ${path.basename(workspace)}`}
+            subtitle={absoluteDirectory}
+            actions={
+              <ActionPanel>
+                <Action.Push
+                  title="Choose This Folder"
+                  icon={Icon.CheckCircle}
+                  target={
+                    <PairForm
+                      resource={resource}
+                      workspace={workspace}
+                      directory={directory}
+                    />
+                  }
+                />
+              </ActionPanel>
+            }
+          />
+          {folders.map((folder) => {
+            const childDirectory = path.join(directory, folder);
+            return (
+              <List.Item
+                key={folder}
+                icon={Icon.Folder}
+                title={folder}
+                actions={
+                  <ActionPanel>
+                    <Action.Push
+                      title="Open Folder"
+                      icon={Icon.ArrowRight}
+                      target={
+                        <BrowseSyncLocation
+                          resource={resource}
+                          workspace={workspace}
+                          directory={childDirectory}
+                        />
+                      }
+                    />
+                  </ActionPanel>
+                }
+              />
+            );
+          })}
+        </>
+      )}
+    </List>
+  );
+}
+
+function AddSyncLocations({
+  onAdd,
+}: {
+  onAdd: (locations: string[]) => Promise<void>;
+}) {
+  const { pop } = useNavigation();
+  const [error, setError] = useState<string>();
+
+  async function submit(values: { locations: string[] }) {
+    if (!values.locations.length) {
+      setError("Choose at least one folder.");
+      return;
+    }
+    await onAdd(values.locations);
+    pop();
+  }
+
+  return (
+    <Form
+      navigationTitle="Add Sync Locations"
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm title="Add Sync Locations" onSubmit={submit} />
+        </ActionPanel>
+      }
+    >
+      <Form.FilePicker
+        id="locations"
+        title="Sync Locations"
+        allowMultipleSelection
+        canChooseDirectories
+        canChooseFiles={false}
+        error={error}
+        onChange={() => setError(undefined)}
+      />
+      <Form.Description text="Choose project folders, document archives, or both. Every location supports the same lazy folder browsing and synchronization behavior." />
+    </Form>
+  );
+}
+
+export default function PairGoogleDoc() {
+  const [resource, setResource] = useState<ActiveResource>();
+  const [locations, setLocations] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      activeBrowserResource(),
-      collectFolders(preferences.workspaceRoot),
-    ])
-      .then(([activeResource, discoveredFolders]) => {
+    Promise.all([activeBrowserResource(), loadSyncLocations()])
+      .then(([activeResource, savedLocations]) => {
         setResource(activeResource);
-        setFolders(discoveredFolders);
+        setLocations(savedLocations);
       })
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : String(reason)),
       )
       .finally(() => setLoading(false));
-  }, [preferences.workspaceRoot]);
+  }, []);
 
   const items = useMemo(
     () =>
-      folders.map((folder) => ({
-        folder,
-        title:
-          folder === preferences.workspaceRoot
-            ? path.basename(folder)
-            : path.relative(preferences.workspaceRoot, folder),
-      })),
-    [folders, preferences.workspaceRoot],
+      locations.map((location) => ({ location, title: path.basename(location) })),
+    [locations],
   );
+
+  async function addLocations(nextLocations: string[]) {
+    const merged = [
+      ...new Set([...locations, ...nextLocations.map((location) => path.resolve(location))]),
+    ];
+    setLocations(merged);
+    await saveSyncLocations(merged);
+  }
+
+  async function removeLocation(location: string) {
+    const next = locations.filter((candidate) => candidate !== location);
+    setLocations(next);
+    await saveSyncLocations(next);
+  }
 
   if (error) {
     return (
@@ -270,25 +445,68 @@ export default function PairGoogleDoc() {
   }
 
   return (
-    <List isLoading={loading} searchBarPlaceholder="Search workspace folders…">
-      {resource &&
-        items.map(({ folder, title }) => (
+    <List isLoading={loading} searchBarPlaceholder="Search sync locations…">
+      {resource && items.length > 0 && (
+        <List.Section title="Sync Locations">
+          {items.map(({ location, title }) => (
+            <List.Item
+              key={location}
+              icon={Icon.Folder}
+              title={title}
+              subtitle={location}
+              actions={
+                <ActionPanel>
+                  <Action.Push
+                    title="Browse Sync Location"
+                    icon={Icon.ArrowRight}
+                    target={<BrowseSyncLocation resource={resource} workspace={location} />}
+                  />
+                  <Action.Push
+                    title="Add Sync Locations"
+                    icon={Icon.Plus}
+                    target={<AddSyncLocations onAdd={addLocations} />}
+                  />
+                  <Action
+                    title="Remove Sync Location"
+                    icon={Icon.Trash}
+                    style={Action.Style.Destructive}
+                    onAction={() => removeLocation(location)}
+                  />
+                </ActionPanel>
+              }
+            />
+          ))}
           <List.Item
-            key={folder}
-            icon={Icon.Folder}
-            title={title}
-            subtitle={folder}
+            icon={Icon.Plus}
+            title="Add Sync Location…"
             actions={
               <ActionPanel>
                 <Action.Push
-                  title="Choose Workspace"
-                  icon={Icon.ArrowRight}
-                  target={<PairForm resource={resource} workspace={folder} />}
+                  title="Add Sync Locations"
+                  icon={Icon.Plus}
+                  target={<AddSyncLocations onAdd={addLocations} />}
                 />
               </ActionPanel>
             }
           />
-        ))}
+        </List.Section>
+      )}
+      {resource && items.length === 0 && (
+        <List.EmptyView
+          icon={Icon.Folder}
+          title="No Sync Locations"
+          description="Add a project folder or document archive."
+          actions={
+            <ActionPanel>
+              <Action.Push
+                title="Add Sync Locations"
+                icon={Icon.Plus}
+                target={<AddSyncLocations onAdd={addLocations} />}
+              />
+            </ActionPanel>
+          }
+        />
+      )}
     </List>
   );
 }

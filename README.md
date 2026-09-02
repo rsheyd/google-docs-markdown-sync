@@ -1,8 +1,6 @@
 # GDMS — Google Docs/Sheets ↔ Markdown/CSV Sync
 
-GDMS is a self-hosted macOS synchronization service that keeps selected Google
-Docs paired with Markdown files and selected Google Sheets paired with CSV
-directories in local workspaces.
+GDMS is a self-hosted macOS synchronization service that keeps selected Google Docs paired with Markdown files and selected Google Sheets paired with CSV directories in local sync locations, including project repositories and document archives.
 
 ```text
 meeting-notes.md  ↔  Google Doc
@@ -81,9 +79,7 @@ Then choose one starting point:
 - Pair or create a document directly with the commands in
   [installation guide](docs/installation.md#pair-your-first-document).
 
-Once paired, local changes are watched immediately and Google changes are
-polled automatically. Moving a paired Markdown file within its workspace or
-renaming its Google Doc updates the portable pairing metadata.
+Once paired, local changes are watched immediately and Google changes are polled automatically. Moving a paired Markdown file within its sync location or renaming its Google Doc updates the portable pairing metadata.
 
 ## How synchronization works
 
@@ -96,13 +92,13 @@ flowchart LR
     F["google-docs-sync.json"] --> B
 ```
 
-Each workspace tracks a visible `google-docs-sync.json` containing portable relative paths and Google document IDs. Machine-specific hashes, revisions, timestamps, and credentials remain outside Git under:
+Each sync location tracks a visible `google-docs-sync.json` containing portable relative paths and Google document IDs. A sync location can be a project directory or a broader document archive whose pairings live in nested folders. Machine-specific hashes, revisions, timestamps, and credentials remain outside Git under:
 
 ```text
 ~/Library/Application Support/google-docs-markdown-sync/
 ```
 
-OAuth and R2 credentials are stored in the macOS Keychain. The service watches Markdown, referenced image assets, and CSV directories locally; it polls the Google Drive changes feed every five seconds and synchronizes only changed pairings. Full Docs or Sheets content is fetched only after a remote or local change. Synchronization passes are single-flight, failed remote requests use bounded exponential backoff, and a sequential daily reconciliation checks for drift. Quiet polling remains constant-cost as the pairing count grows; if reconciliation eventually exceeds one minute or noticeably delays ordinary work, the [documented scaling path](docs/design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) adds cooperative batching before measured concurrency.
+OAuth and R2 credentials are stored in the macOS Keychain. The service loads registered sync locations directly, watches their paired Markdown files, referenced image assets, and CSV directories locally, and polls the Google Drive changes feed every five seconds. It searches the project discovery root only at startup and once per day, so a large separately registered document archive is not recursively traversed during routine polling. Full Docs or Sheets content is fetched only after a remote or local change. Synchronization passes are single-flight, failed remote requests use bounded exponential backoff, and a sequential daily reconciliation checks for drift. Quiet polling remains constant-cost as the pairing count grows; if reconciliation eventually exceeds one minute or noticeably delays ordinary work, the [documented scaling path](docs/design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) adds cooperative batching before measured concurrency.
 
 For the manifest format, see the [installation guide](docs/installation.md#pairing-manifest). For detailed synchronization semantics, service management, logs, heartbeat configuration, and troubleshooting, see the [operations guide](docs/operations.md).
 The consolidated [command reference](docs/operations.md#command-reference) lists

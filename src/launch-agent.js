@@ -10,8 +10,9 @@ import {
   HEARTBEAT_LOG_PATH,
   LAUNCH_AGENT_PATH,
   LOG_PATH,
+  RUNTIME_CONFIG_PATH,
 } from "./paths.js";
-import { ensureDirectory } from "./files.js";
+import { ensureDirectory, writeJsonAtomic } from "./files.js";
 import {
   migrateHeartbeatNotificationSettings,
   saveNotificationSettings,
@@ -55,6 +56,12 @@ export async function installLaunchAgent({ onProgress } = {}) {
   ).join("\n");
   await ensureDirectory(path.dirname(LAUNCH_AGENT_PATH));
   await ensureDirectory(APP_SUPPORT_DIR);
+  await writeJsonAtomic(RUNTIME_CONFIG_PATH, {
+    version: 1,
+    cliPath: path.join(projectRoot, "src", "cli.js"),
+    nodePath,
+    oauthClientPath: oauthClient,
+  });
 
   const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

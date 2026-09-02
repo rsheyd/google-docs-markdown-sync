@@ -444,13 +444,13 @@ gdms install-service
 gdms install-finder-action
 ```
 
-Workspace manifests use relative paths and remain portable. Runtime state and
-Keychain credentials remain under the current macOS user account.
+Sync-location manifests use relative paths and remain portable. Runtime state and Keychain credentials remain under the current macOS user account.
 
-The default workspace root is `~/dev`. To use another root, export
-`GOOGLE_DOCS_SYNC_ROOT` and reinstall the service so launchd receives it:
+The default project discovery root is `~/dev`. To replace that discovery root, export `GOOGLE_DOCS_SYNC_ROOT` and reinstall the service so launchd receives it:
 
 ```sh
 export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
 gdms install-service
 ```
+
+Pairing a file under another sync location registers its manifest in the machine-local index. On startup the daemon discovers manifests beneath the project discovery root; during routine five-second polling it reads only indexed manifests, and it repeats project discovery once per day. Registered locations outside the discovery root have the same synchronization behavior and are loaded directly rather than searched recursively.

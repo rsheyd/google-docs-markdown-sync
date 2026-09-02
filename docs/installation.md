@@ -36,25 +36,23 @@ directly from this checkout. Moving or deleting the checkout later
 will break the installed LaunchAgent and Finder Quick Actions until they are
 reinstalled from the new location.
 
-## Choose the workspace root
+## Choose sync locations
 
-GDMS searches `~/dev` for workspace manifests by default. This suits local
-repositories and Codex workspaces without making them GDMS-specific. Create
-the directory if it does not already exist:
+GDMS searches `~/dev` for sync-location manifests by default. This suits local repositories and Codex projects without making them GDMS-specific. Create the directory if it does not already exist:
 
 ```sh
 mkdir -p "$HOME/dev"
 ```
 
-To keep workspaces elsewhere, set `GOOGLE_DOCS_SYNC_ROOT` to their common
-parent before running GDMS commands. Continue the installation in the same
-shell so the later `gdms install-service` command retains the configured root:
+To use a different project discovery root, set `GOOGLE_DOCS_SYNC_ROOT` before running GDMS commands. Continue the installation in the same shell so the later `gdms install-service` command retains it:
 
 ```sh
 export GOOGLE_DOCS_SYNC_ROOT="$HOME/projects"
 ```
 
-The Raycast extension has a matching **Local Workspaces Root** preference.
+The discovery root is only a convenience for finding project sync locations. Pairing into any other directory registers that sync location directly in the machine-local index, with the same synchronization capabilities as a discovered project. This allows `~/dev` to remain the project discovery root while a large archive such as `~/gdrive/Roman` is also used without recursively scanning the archive every five seconds.
+
+Raycast presents one unified list of sync locations, initially containing `~/dev`. Add project folders and document archives from the command's action menu; every location browses one directory at a time, so you can choose a nested destination without recursively enumerating a large archive. The existing CLI option remains named `--workspace` for compatibility; it selects the sync location that owns the manifest, and a folder chosen beneath it becomes part of the pairing's relative path.
 
 ## Authorize Google
 
@@ -235,10 +233,7 @@ again so you can confirm that the actions remain enabled.
 
 ## Raycast setup
 
-The Raycast command reads the active Google Doc or Sheet from the frontmost
-Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It
-searches below the configured **Local Workspaces Root** and registers the chosen
-local file or directory.
+The Raycast command reads the active Google Doc or Sheet from the frontmost Safari, Chrome, Chrome Beta, Chromium, Brave, or Microsoft Edge window. It shows the saved sync locations, supports adding or removing any number of them, browses each location lazily, and registers the chosen local file or directory.
 
 ```sh
 cd raycast-extension
@@ -246,12 +241,7 @@ npm install
 npm run dev
 ```
 
-Keep the development command running while using the extension. `npm run
-build` compiles it but does not register it in Raycast.
-
-The optional **Node Executable Override** preference can point to another
-Node.js 22+ executable. When it is blank, the extension uses Raycast's Node
-runtime instead of assuming a Homebrew installation path.
+Keep the development command running while using the extension. `npm run build` compiles it but does not register it in Raycast. Run `gdms install-service` before using the Raycast command; installation records the CLI, Node, and OAuth file paths under Application Support so Raycast does not require separate technical preferences. Re-run the service installer after moving the repository, Node executable, or OAuth client file.
 
 Raycast extensions cannot provide a default global hotkey. In Raycast
 Settings, open **Extensions**, find **GDMS → Pair Google Doc or Sheet with
@@ -305,7 +295,7 @@ See the [image synchronization design](design/image-sync.md) for the transport d
 
 ## Pairing manifest
 
-Each participating workspace tracks `google-docs-sync.json`:
+Each participating sync location tracks `google-docs-sync.json`:
 
 ```json
 {

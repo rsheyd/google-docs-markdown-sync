@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.8] - 2026-09-02
+
+### Changed
+
+- Load registered sync-location manifests directly during routine daemon polling instead of recursively searching the project discovery root every five seconds; retain discovery at startup and once per day.
+- Describe manifest-owning folders as sync locations in user-facing documentation and Raycast, and replace separate project/archive preferences with one persistent, addable list whose locations all use the same lazy folder browser.
+- Record the installed CLI, Node, and OAuth paths during service installation so Raycast can use them without exposing runtime plumbing as preferences.
+
 ## [0.8.7] - 2026-09-01
 
 ### Fixed
