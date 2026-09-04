@@ -160,6 +160,7 @@ potential future feature, not current behavior.
 - [Formatting](docs/formatting.md): Markdown-to-Google-Docs formatting behavior.
 - [FAQ](docs/faq.md): common questions about sharing and synchronization.
 - [CONTRIBUTING.md](CONTRIBUTING.md): development and validation workflow.
+- [Security PR review](docs/security-pr-review.md): triage and validation process for vulnerability and automated dependency changes.
 - [CHANGELOG.md](CHANGELOG.md): release history.
 - [Roadmap](docs/roadmap.md): product and engineering direction.
 

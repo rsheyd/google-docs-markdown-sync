@@ -2,6 +2,7 @@
 
 - [Contributing](#contributing)
   - [Before making a change](#before-making-a-change)
+  - [Review security pull requests](#review-security-pull-requests)
   - [Bump the version](#bump-the-version)
   - [Validate the change](#validate-the-change)
   - [Make the change affect future syncing](#make-the-change-affect-future-syncing)
@@ -27,6 +28,12 @@ ranges are not represented in CSV.
 
 Add or update tests for behavior changes. The synchronization planner can be
 tested without writing to a live Google Doc.
+
+## Review security pull requests
+
+Treat scanner and bot findings as signals to investigate rather than instructions to merge a proposed dependency change. Confirm the authoritative advisory, installed dependency path, vulnerable-code reachability, version compatibility, and focused regression coverage. Prefer compatible direct-dependency updates over transitive overrides, and use overrides only as narrow, temporary remediations with a documented removal condition.
+
+Follow the complete [security pull-request review process](docs/security-pr-review.md) before accepting automated dependency or vulnerability fixes.
 
 ## Bump the version
 
