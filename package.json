@@ -1,6 +1,6 @@
 {
   "name": "google-docs-markdown-sync",
-  "version": "0.8.8",
+  "version": "0.8.9",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -20,8 +20,10 @@
     "heartbeat": "node src/cli.js heartbeat",
     "install-heartbeat": "node src/cli.js install-heartbeat",
     "build:raycast": "npm --prefix raycast-extension run build",
-    "test": "node --test",
-    "check": "node --check src/cli.js && node --test && npm --prefix raycast-extension run typecheck"
+    "test": "node --test test/*.test.js test/**/*.test.js",
+    "test:google": "node --test test/google/*.test.js",
+    "test:sync": "node --test test/sync/*.test.js",
+    "check": "node --check src/cli.js && npm test && npm --prefix raycast-extension run typecheck"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1107.0",

@@ -64,6 +64,7 @@ import { installFinderQuickAction } from "./finder-quick-action.js";
 import { openUrl } from "./macos.js";
 import {
   createSpreadsheet,
+  getSpreadsheetDetails,
   getSpreadsheetInfo,
   initialSheetTitle,
   organizeCsvFiles,
@@ -405,7 +406,7 @@ async function pairSheet(options) {
   });
   const auth = await getAuthClient();
   const services = createGoogleServices(auth);
-  const remote = await getSpreadsheetInfo(services, pairing.spreadsheetId);
+  const remote = await getSpreadsheetDetails(services, pairing.spreadsheetId);
   const local = await pullSpreadsheet(services, pairing, remote);
   const status = {
     localHash: local.hash,

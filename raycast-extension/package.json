@@ -1,7 +1,7 @@
 {
   "name": "google-docs-markdown-sync-raycast",
   "title": "GDMS",
-  "version": "0.8.8",
+  "version": "0.8.9",
   "private": true,
   "description": "Pair the active Google Doc or Sheet with a local sync location",
   "author": "GDMS Contributors",

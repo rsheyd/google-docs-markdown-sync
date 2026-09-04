@@ -71,6 +71,8 @@
   fetch gateway backed by the private R2 staging bucket.
 - `test/`: Node unit tests for portable manifests, Markdown conversion,
   synchronization, and heartbeat checks.
+- `test/google/`: Focused Google Docs adapter tests and shared document fixtures.
+- `test/sync/`: Focused synchronization decision, polling, daemon, and watcher tests.
 - `test/network.test.js`: Offline pause/resume and post-sleep network-settling coverage.
 - `test/locations.test.js`: Sync-location migration, scanning, index reconstruction, overlap, concurrency, and non-destructive removal coverage.
 - `test/launch-agent.test.js`: Compatibility coverage for moving legacy service logs into the standard macOS Logs directory.

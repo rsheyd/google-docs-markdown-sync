@@ -112,10 +112,7 @@ For common questions about sharing and synchronization, see the
 
 Google Docs' native Markdown export normally defines the supported Docs → Markdown subset. When Drive's export-size limit rejects a large document, GDMS falls back to serializing that subset through the Google Docs API. Headings, paragraphs, ordered and unordered lists, links, bold, italics, simple tables, blank-line spacing, heading links, and standalone images round-trip. Fixed Google Docs table-column widths round-trip through invisible, API-native point-width metadata immediately before each applicable Markdown table, and explicit within-cell breaks use inline `<br>` elements. Incremental pushes preserve unchanged document ranges and native tables of contents where the APIs allow it. Native Docs tables of contents appear locally as marked Markdown TOCs generated from headings; ordinary unmarked Markdown TOCs remain synchronized content. See the [formatting guide](docs/formatting.md#tables) and its [table-of-contents notes](docs/formatting.md#tables-of-contents).
 
-Google Sheets pairings use one local directory per spreadsheet and one CSV per
-tab. Raw values and formulas round-trip. Formatting, charts, comments, filters,
-notes, validation, and protected ranges remain in Sheets and are not
-represented locally.
+Google Sheets pairings use one local directory per spreadsheet, one CSV per tab, and one visible `GDMS.md` file for portable structure metadata and synchronization status. Raw values and formulas round-trip through typed, value-only updates. Formatting, native tables, charts, comments, filters, notes, validation, and protected ranges remain in Sheets; supported number formats, simple text emphasis, column semantics, and table definitions are recorded compactly in `GDMS.md`, and existing tables expand when CSV data grows beyond their bounds. Formatting-only remote changes do not rewrite unchanged CSV files. See the [formatting guide](docs/formatting.md#google-sheets-formatting).
 
 Important current limitations:
 

@@ -320,9 +320,7 @@ Each participating sync location tracks `google-docs-sync.json`:
 }
 ```
 
-Paths are relative to the manifest. Do not add tokens, hashes, revisions, or
-timestamps. Spreadsheet directories also contain a managed portable
-`.google-sheets-sync.json` tab map and a human-readable `SYNC-STATUS.md`.
+Paths are relative to the manifest. Do not add tokens, hashes, revisions, or timestamps. Spreadsheet directories also contain a managed, portable, visible `GDMS.md` file containing the tab map, supported Sheets formatting and table metadata, and human-readable synchronization status. Existing `.google-sheets-sync.json` and `SYNC-STATUS.md` sidecars migrate into that single file automatically.
 
 Global deletion behavior is deliberately absent from this portable manifest.
 Configure it once for the entire installation with

@@ -1,14 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sha256, writeJsonAtomic, writeTextAtomic } from "./files.js";
+import { sha256, writeTextAtomic } from "./files.js";
 import {
+  LEGACY_SHEET_STATUS_FILE,
   SHEET_STATUS_FILE,
   SHEET_STATUS_TITLE,
+  parseSpreadsheetMetadata,
   spreadsheetStatusMarkdown,
   spreadsheetStatusValues,
 } from "./status.js";
 
-export const SHEETS_METADATA = ".google-sheets-sync.json";
+export const LEGACY_SHEETS_METADATA = ".google-sheets-sync.json";
 
 async function googleOperation(operation, callback, now = Date.now) {
   const startedAt = now();
@@ -162,14 +164,25 @@ function trimRows(rows) {
   return result.map((row) => row.slice(0, width));
 }
 
-export async function readLocalSpreadsheet(directory) {
-  const metadataPath = path.join(directory, SHEETS_METADATA);
+async function readSpreadsheetMetadata(directory) {
+  const gdmsPath = path.join(directory, SHEET_STATUS_FILE);
+  const gdms = await fs.readFile(gdmsPath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  const current = parseSpreadsheetMetadata(gdms);
+  if (current) return current;
   let metadata = { version: 1, sheets: [] };
   try {
-    metadata = JSON.parse(await fs.readFile(metadataPath, "utf8"));
+    metadata = JSON.parse(await fs.readFile(path.join(directory, LEGACY_SHEETS_METADATA), "utf8"));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  return metadata;
+}
+
+export async function readLocalSpreadsheet(directory) {
+  const metadata = await readSpreadsheetMetadata(directory);
   const entries = await fs.readdir(directory, { withFileTypes: true }).catch((error) => {
     if (error.code === "ENOENT") return [];
     throw error;
@@ -193,6 +206,7 @@ export async function readLocalSpreadsheet(directory) {
   return {
     exists: entries.length > 0,
     sheets,
+    metadata,
     hash: sha256(serialized),
     modifiedTime: Math.max(0, ...sheets.map((sheet) => sheet.modifiedTime)),
   };
@@ -218,7 +232,8 @@ export async function getSpreadsheetDetails(services, spreadsheetId, driveInfo) 
     "sheets.spreadsheets.get",
     () => services.sheets.spreadsheets.get({
       spreadsheetId,
-      fields: "spreadsheetId,properties.title,sheets.properties",
+      includeGridData: true,
+      fields: "spreadsheetId,properties.title,sheets(properties,tables,data(startRow,startColumn,rowData(values(userEnteredFormat(numberFormat,textFormat(bold,italic,underline,strikethrough))))))",
     }),
   );
   return {
@@ -234,7 +249,7 @@ export async function getSpreadsheetInfo(services, spreadsheetId) {
       "sheets.spreadsheets.get",
       () => services.sheets.spreadsheets.get({
         spreadsheetId,
-        fields: "spreadsheetId,properties.title,sheets.properties",
+        fields: "spreadsheetId,properties.title,sheets(properties,tables)",
       }),
     ),
   ]);
@@ -273,15 +288,149 @@ export async function writeSpreadsheetStatus(services, pairing, state, remote) {
     valueInputOption: "RAW",
     requestBody: { values: spreadsheetStatusValues(pairing, state) },
   }));
-  await writeTextAtomic(
-    path.join(pairing.absolutePath, SHEET_STATUS_FILE),
-    spreadsheetStatusMarkdown(pairing, state),
-  );
+  const local = await readLocalSpreadsheet(pairing.absolutePath);
+  const storedMetadata = local.metadata;
+  const metadata = spreadsheetMetadata(pairing, current, local.sheets, storedMetadata);
+  await writeTextAtomic(path.join(pairing.absolutePath, SHEET_STATUS_FILE), spreadsheetStatusMarkdown(
+    pairing,
+    state,
+    metadata,
+  ));
+  await Promise.all([
+    fs.rm(path.join(pairing.absolutePath, LEGACY_SHEETS_METADATA), { force: true }),
+    fs.rm(path.join(pairing.absolutePath, LEGACY_SHEET_STATUS_FILE), { force: true }),
+  ]);
   return getSpreadsheetInfo(services, pairing.spreadsheetId);
 }
 
 function quoteSheet(title) {
   return `'${String(title).replaceAll("'", "''")}'`;
+}
+
+function columnName(index) {
+  let value = index + 1;
+  let result = "";
+  while (value) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
+function gridRangeA1(range, properties) {
+  const startRow = (range.startRowIndex ?? 0) + 1;
+  const endRow = range.endRowIndex ?? properties.gridProperties?.rowCount ?? startRow;
+  const startColumn = columnName(range.startColumnIndex ?? 0);
+  const endColumn = columnName((range.endColumnIndex ?? properties.gridProperties?.columnCount ?? 1) - 1);
+  return `${startColumn}${startRow}:${endColumn}${endRow}`;
+}
+
+function meaningfulTextFormat(textFormat) {
+  if (!textFormat) return undefined;
+  const result = {};
+  for (const property of ["bold", "italic", "underline", "strikethrough"]) {
+    if (textFormat[property] === true) result[property] = true;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function sheetFormats(sheet) {
+  const cells = [];
+  for (const data of sheet.data ?? []) {
+    const startRow = data.startRow ?? 0;
+    const startColumn = data.startColumn ?? 0;
+    for (const [rowOffset, row] of (data.rowData ?? []).entries()) {
+      for (const [columnOffset, cell] of (row.values ?? []).entries()) {
+        const numberFormat = cell.userEnteredFormat?.numberFormat;
+        const textFormat = meaningfulTextFormat(cell.userEnteredFormat?.textFormat);
+        if (numberFormat || textFormat) cells.push({
+          rowIndex: startRow + rowOffset,
+          columnIndex: startColumn + columnOffset,
+          ...(numberFormat ? { numberFormat } : {}),
+          ...(textFormat ? { textFormat } : {}),
+        });
+      }
+    }
+  }
+  cells.sort((a, b) => a.rowIndex - b.rowIndex || a.columnIndex - b.columnIndex);
+  const rowRuns = [];
+  for (const cell of cells) {
+    const previous = rowRuns.at(-1);
+    const format = {
+      ...(cell.numberFormat ? { numberFormat: cell.numberFormat } : {}),
+      ...(cell.textFormat ? { textFormat: cell.textFormat } : {}),
+    };
+    const sameFormat = previous &&
+      previous.rowIndex === cell.rowIndex &&
+      previous.endColumnIndex === cell.columnIndex &&
+      JSON.stringify(previous.format) === JSON.stringify(format);
+    if (sameFormat) previous.endColumnIndex += 1;
+    else rowRuns.push({
+      rowIndex: cell.rowIndex,
+      startRowIndex: cell.rowIndex,
+      endRowIndex: cell.rowIndex + 1,
+      startColumnIndex: cell.columnIndex,
+      endColumnIndex: cell.columnIndex + 1,
+      format,
+    });
+  }
+  const rectangles = [];
+  for (const run of rowRuns) {
+    const previous = rectangles.findLast((candidate) =>
+      candidate.endRowIndex === run.startRowIndex &&
+      candidate.startColumnIndex === run.startColumnIndex &&
+      candidate.endColumnIndex === run.endColumnIndex &&
+      JSON.stringify(candidate.format) === JSON.stringify(run.format));
+    if (previous) previous.endRowIndex += 1;
+    else rectangles.push({ ...run });
+  }
+  return rectangles.map(({ startColumnIndex, endColumnIndex, startRowIndex, endRowIndex, format }) => ({
+    range: `${columnName(startColumnIndex)}${startRowIndex + 1}:${columnName(endColumnIndex - 1)}${endRowIndex}`,
+    ...format,
+  }));
+}
+
+function spreadsheetMetadata(pairing, remote, sheets, previous = {}) {
+  const previousById = new Map((previous.sheets ?? []).map((sheet) => [sheet.sheetId, sheet]));
+  const remoteById = new Map((remote.spreadsheet.sheets ?? []).map((sheet) => [sheet.properties?.sheetId, sheet]));
+  return {
+    version: 2,
+    spreadsheetId: pairing.spreadsheetId,
+    sheets: sheets.map((sheet) => {
+      const remoteSheet = remoteById.get(sheet.sheetId);
+      const properties = remoteSheet?.properties ?? {};
+      const old = previousById.get(sheet.sheetId);
+      return {
+        sheetId: sheet.sheetId,
+        title: sheet.title,
+        file: sheet.file,
+        formats: remoteSheet?.data ? sheetFormats(remoteSheet) : old?.formats ?? [],
+        tables: (remoteSheet?.tables ?? old?.tables ?? []).map((table) => table.range && typeof table.range !== "string" ? {
+          ...(table.tableId ? { tableId: table.tableId } : {}),
+          ...(table.name ? { name: table.name } : {}),
+          range: gridRangeA1(table.range, properties),
+          ...(table.rowsProperties ? { rowsProperties: table.rowsProperties } : {}),
+          ...(table.columnProperties ? { columnProperties: table.columnProperties } : {}),
+        } : table),
+      };
+    }),
+  };
+}
+
+async function writeSpreadsheetMetadata(pairing, metadata) {
+  const filePath = path.join(pairing.absolutePath, SHEET_STATUS_FILE);
+  const current = await fs.readFile(filePath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  const next = spreadsheetStatusMarkdown(pairing, {}, metadata);
+  if (current !== next) await writeTextAtomic(filePath, next);
+  parseSpreadsheetMetadata(await fs.readFile(filePath, "utf8"));
+  await Promise.all([
+    fs.rm(path.join(pairing.absolutePath, LEGACY_SHEETS_METADATA), { force: true }),
+    fs.rm(path.join(pairing.absolutePath, LEGACY_SHEET_STATUS_FILE), { force: true }),
+  ]);
 }
 
 export async function pullSpreadsheet(services, pairing, remote) {
@@ -308,16 +457,140 @@ export async function pullSpreadsheet(services, pairing, remote) {
   await fs.mkdir(pairing.absolutePath, { recursive: true });
   const managed = new Set(previous.sheets.map((sheet) => sheet.file));
   for (const sheet of sheets) {
-    await writeTextAtomic(path.join(pairing.absolutePath, sheet.file), stringifyCsv(sheet.values));
+    const filePath = path.join(pairing.absolutePath, sheet.file);
+    const nextText = stringifyCsv(sheet.values);
+    const currentText = await fs.readFile(filePath, "utf8").catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (currentText !== nextText) await writeTextAtomic(filePath, nextText);
     managed.delete(sheet.file);
   }
   for (const stale of managed) await fs.rm(path.join(pairing.absolutePath, stale), { force: true });
-  await writeJsonAtomic(path.join(pairing.absolutePath, SHEETS_METADATA), {
-    version: 1,
-    spreadsheetId: pairing.spreadsheetId,
-    sheets: sheets.map(({ sheetId, title, file }) => ({ sheetId, title, file })),
-  });
+  const metadata = spreadsheetMetadata(pairing, remote, sheets, previous.metadata);
+  await writeSpreadsheetMetadata(pairing, metadata);
   return readLocalSpreadsheet(pairing.absolutePath);
+}
+
+function typedCellValue(value) {
+  if (value == null || value === "") return {};
+  if (typeof value === "number") return { userEnteredValue: { numberValue: value } };
+  if (typeof value === "boolean") return { userEnteredValue: { boolValue: value } };
+  const text = String(value);
+  if (text.startsWith("=")) return { userEnteredValue: { formulaValue: text } };
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) {
+    return { userEnteredValue: { numberValue: Number(text) } };
+  }
+  if (/^(?:TRUE|FALSE)$/i.test(text)) {
+    return { userEnteredValue: { boolValue: text.toUpperCase() === "TRUE" } };
+  }
+  return { userEnteredValue: { stringValue: text } };
+}
+
+function comparableCellValue(value) {
+  const cell = typedCellValue(value).userEnteredValue;
+  if (!cell) return "empty:";
+  const [kind, contents] = Object.entries(cell)[0];
+  return `${kind}:${String(contents)}`;
+}
+
+function changedValueRequests(sheetId, localValues, remoteValues) {
+  const requests = [];
+  const rowCount = Math.max(localValues.length, remoteValues.length);
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const localRow = localValues[rowIndex] ?? [];
+    const remoteRow = remoteValues[rowIndex] ?? [];
+    const columnCount = Math.max(localRow.length, remoteRow.length);
+    let startColumnIndex;
+    let cells = [];
+    const flush = () => {
+      if (startColumnIndex == null) return;
+      requests.push({
+        updateCells: {
+          start: { sheetId, rowIndex, columnIndex: startColumnIndex },
+          rows: [{ values: cells }],
+          fields: "userEnteredValue",
+        },
+      });
+      startColumnIndex = undefined;
+      cells = [];
+    };
+    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+      const localValue = localRow[columnIndex] ?? "";
+      const remoteValue = remoteRow[columnIndex] ?? "";
+      if (comparableCellValue(localValue) === comparableCellValue(remoteValue)) {
+        flush();
+        continue;
+      }
+      startColumnIndex ??= columnIndex;
+      cells.push(typedCellValue(localValue));
+    }
+    flush();
+  }
+  return requests;
+}
+
+function expandedTableRequests(sheet, values) {
+  if (!sheet) return [];
+  const rowCount = values.length;
+  const columnCount = Math.max(0, ...values.map((row) => row.length));
+  return (sheet.tables ?? []).flatMap((table) => {
+    const range = table.range;
+    if (!range || range.sheetId !== sheet.properties.sheetId) return [];
+    const startRowIndex = range.startRowIndex ?? 0;
+    const startColumnIndex = range.startColumnIndex ?? 0;
+    const endRowIndex = Math.max(range.endRowIndex ?? startRowIndex, rowCount);
+    const endColumnIndex = Math.max(range.endColumnIndex ?? startColumnIndex, columnCount);
+    if (endRowIndex === range.endRowIndex && endColumnIndex === range.endColumnIndex) return [];
+    return [{
+      updateTable: {
+        table: {
+          tableId: table.tableId,
+          range: { ...range, endRowIndex, endColumnIndex },
+        },
+        fields: "range",
+      },
+    }];
+  });
+}
+
+function a1GridRange(range, sheetId) {
+  const match = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(String(range));
+  if (!match) return undefined;
+  const columnIndex = (name) => [...name].reduce(
+    (value, character) => value * 26 + character.charCodeAt(0) - 64,
+    0,
+  ) - 1;
+  return {
+    sheetId,
+    startRowIndex: Number(match[2]) - 1,
+    endRowIndex: Number(match[4]),
+    startColumnIndex: columnIndex(match[1]),
+    endColumnIndex: columnIndex(match[3]) + 1,
+  };
+}
+
+function restoredFormatRequests(sheetId, formats = []) {
+  return formats.flatMap((format) => {
+    const range = a1GridRange(format.range, sheetId);
+    const textFormat = meaningfulTextFormat(format.textFormat);
+    const userEnteredFormat = {
+      ...(format.numberFormat ? { numberFormat: format.numberFormat } : {}),
+      ...(textFormat ? { textFormat } : {}),
+    };
+    const fields = [
+      ...(format.numberFormat ? ["userEnteredFormat.numberFormat"] : []),
+      ...Object.keys(textFormat ?? {}).map((property) => `userEnteredFormat.textFormat.${property}`),
+    ];
+    if (!range || !fields.length) return [];
+    return [{
+      repeatCell: {
+        range,
+        cell: { userEnteredFormat },
+        fields: fields.join(","),
+      },
+    }];
+  });
 }
 
 export async function pushSpreadsheet(services, pairing, local, remote) {
@@ -331,16 +604,24 @@ export async function pushSpreadsheet(services, pairing, local, remote) {
   }
   const remoteSheets = contentSheetProperties(remote);
   const remoteById = new Map(remoteSheets.map((sheet) => [sheet.sheetId, sheet]));
-  const localIds = new Set(local.sheets.map((sheet) => sheet.sheetId).filter((id) => id != null));
+  const remoteByTitle = new Map(remoteSheets.map((sheet) => [sheet.title, sheet]));
+  const retainedRemoteIds = new Set();
   const requests = [];
+  const addedTitles = new Set();
   for (const sheet of local.sheets) {
-    if (sheet.sheetId == null) requests.push({ addSheet: { properties: { title: sheet.title } } });
-    else if (remoteById.get(sheet.sheetId)?.title !== sheet.title) {
-      requests.push({ updateSheetProperties: { properties: { sheetId: sheet.sheetId, title: sheet.title }, fields: "title" } });
+    const matched = remoteById.get(sheet.sheetId) ?? remoteByTitle.get(sheet.title);
+    if (!matched) {
+      requests.push({ addSheet: { properties: { title: sheet.title } } });
+      addedTitles.add(sheet.title);
+    } else {
+      retainedRemoteIds.add(matched.sheetId);
+      if (matched.title !== sheet.title) {
+        requests.push({ updateSheetProperties: { properties: { sheetId: matched.sheetId, title: sheet.title }, fields: "title" } });
+      }
     }
   }
   requests.push(...remoteSheets
-    .filter((sheet) => !localIds.has(sheet.sheetId))
+    .filter((sheet) => !retainedRemoteIds.has(sheet.sheetId))
     .map((sheet) => ({ deleteSheet: { sheetId: sheet.sheetId } })));
   if (requests.length) {
     await googleOperation(
@@ -353,26 +634,54 @@ export async function pushSpreadsheet(services, pairing, local, remote) {
   }
   const refreshed = await getSpreadsheetInfo(services, pairing.spreadsheetId);
   const byTitle = new Map((refreshed.spreadsheet.sheets ?? []).map((sheet) => [sheet.properties.title, sheet.properties]));
-  for (const sheet of local.sheets) {
-    await googleOperation("sheets.values.clear", () => services.sheets.spreadsheets.values.clear({
-      spreadsheetId: pairing.spreadsheetId,
-      range: quoteSheet(sheet.title),
-      requestBody: {},
-    }));
-    if (sheet.values.length) {
-      await googleOperation("sheets.values.update", () => services.sheets.spreadsheets.values.update({
+  const contentSheets = (refreshed.spreadsheet.sheets ?? [])
+    .filter((sheet) => sheet.properties?.title !== SHEET_STATUS_TITLE);
+  const valueResponse = contentSheets.length
+    ? await googleOperation("sheets.values.batchGet", () => services.sheets.spreadsheets.values.batchGet({
         spreadsheetId: pairing.spreadsheetId,
-        range: `${quoteSheet(sheet.title)}!A1`,
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: sheet.values },
-      }));
-    }
+        ranges: contentSheets.map((sheet) => quoteSheet(sheet.properties.title)),
+        valueRenderOption: "FORMULA",
+        dateTimeRenderOption: "SERIAL_NUMBER",
+      }))
+    : { data: { valueRanges: [] } };
+  const remoteValuesByTitle = new Map(contentSheets.map((sheet, index) => [
+    sheet.properties.title,
+    valueResponse.data.valueRanges?.[index]?.values ?? [],
+  ]));
+  const sheetByTitle = new Map(contentSheets.map((sheet) => [sheet.properties.title, sheet]));
+  const valueRequests = [];
+  for (const sheet of local.sheets) {
     sheet.sheetId = byTitle.get(sheet.title)?.sheetId;
+    const remoteSheet = sheetByTitle.get(sheet.title);
+    valueRequests.push(
+      ...expandedTableRequests(remoteSheet, sheet.values),
+      ...changedValueRequests(
+        sheet.sheetId,
+        sheet.values,
+        remoteValuesByTitle.get(sheet.title) ?? [],
+      ),
+      ...(addedTitles.has(sheet.title)
+        ? restoredFormatRequests(
+            sheet.sheetId,
+            local.metadata?.sheets?.find((stored) => stored.file === sheet.file)?.formats,
+          )
+        : []),
+    );
   }
-  await writeJsonAtomic(path.join(pairing.absolutePath, SHEETS_METADATA), {
-    version: 1,
-    spreadsheetId: pairing.spreadsheetId,
-    sheets: local.sheets.map(({ sheetId, title, file }) => ({ sheetId, title, file })),
-  });
-  return getSpreadsheetInfo(services, pairing.spreadsheetId);
+  if (valueRequests.length) {
+    await googleOperation("sheets.spreadsheets.batchUpdate", () => services.sheets.spreadsheets.batchUpdate({
+      spreadsheetId: pairing.spreadsheetId,
+      requestBody: { requests: valueRequests },
+    }));
+  }
+  const finalized = valueRequests.length
+    ? await getSpreadsheetDetails(services, pairing.spreadsheetId, refreshed)
+    : refreshed;
+  await writeSpreadsheetMetadata(pairing, spreadsheetMetadata(
+    pairing,
+    finalized,
+    local.sheets,
+    local.metadata,
+  ));
+  return finalized;
 }

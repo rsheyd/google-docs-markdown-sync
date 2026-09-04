@@ -50,7 +50,7 @@ npm --prefix raycast-extension pkg get version
 
 Review the resulting diff and include all four package and lock files in the
 version-bump commit. Do not change the numeric `version` fields in
-`google-docs-sync.json`, `.google-sheets-sync.json`, or their examples; those
+`google-docs-sync.json`, `GDMS.md`, or their examples; those
 are data-format schema versions, not application release versions.
 
 After the version bump and changelog entry are committed and pushed, create the GitHub release from the newest `CHANGELOG.md` section:
@@ -110,7 +110,7 @@ or Markdown files being synchronized. Local Markdown edits are picked up
 automatically by the running service.
 
 The managed Markdown footer, Google Doc footer, spreadsheet `↔ Sync Status`
-tab, and local `SYNC-STATUS.md` are synchronization UI, not user content. Keep
+tab, and local `GDMS.md` are synchronization UI and metadata, not CSV content. Keep
 them excluded from canonical content hashes and tab/CSV reconciliation, and
 preserve the self-repair behavior when changing synchronization code.
 

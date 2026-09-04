@@ -1,4 +1,20 @@
-# Markdown formatting in Google Docs
+# Formatting in Google Docs and Sheets
+
+## Google Sheets formatting
+
+CSV files represent cell values and formulas only. Google Sheets remains the source of truth for presentation and native spreadsheet structure, including number and date formats, fonts, colors, borders, conditional formatting, validation, notes, protected ranges, frozen rows and columns, filters, charts, and native tables.
+
+GDMS applies local CSV changes with typed, value-only cell updates. It does not ask Sheets to reinterpret every CSV field as newly entered text, so existing date, currency, percentage, duration, and other number formats remain attached to changed cells. Cells removed from a CSV have only their values cleared.
+
+Native Google Sheets tables remain native and keep their names, column types, validation, header and footer settings, colors, and banding. When a CSV adds rows or columns beyond an existing table boundary, GDMS expands that table to contain the new data. It does not automatically shrink a table when CSV content becomes smaller, avoiding the removal of intentional blank table rows or footer behavior.
+
+A formatting-only change in Google Sheets advances the synchronized remote revision without rewriting an unchanged CSV file. Because CSV has no formatting representation, local edits cannot create, delete, or restyle native Sheets features.
+
+Each paired spreadsheet directory contains one visible `GDMS.md` sidecar. Its readable section summarizes synchronization status and recorded structure; its marked JSON block stores the portable tab mapping, number formats, compact ranges for bold, italic, underline, and strikethrough text, column types, and native-table definitions. GDMS manages this file and excludes it from CSV content comparison. Existing hidden `.google-sheets-sync.json` and `SYNC-STATUS.md` files are combined into `GDMS.md` during synchronization.
+
+Normal CSV pushes never reapply the recorded text styles, so a newer formatting edit made directly in Sheets is not overwritten by stale metadata. GDMS uses the saved ranges when it creates a replacement tab from recorded CSV metadata. Other visual properties—including fonts, sizes, colors, borders, alignment, and conditional formatting—remain Sheets-only.
+
+## Google Docs formatting
 
 GDMS treats Markdown structure as the source of truth for supported Google Docs
 formatting. It uses native Google Docs paragraph styles and lists, plus targeted

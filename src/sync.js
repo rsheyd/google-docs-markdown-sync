@@ -442,7 +442,7 @@ export async function syncPairing(
       ? path.join(effectivePairing.absolutePath, SHEET_STATUS_FILE)
       : effectivePairing.absolutePath;
     const expectedLocalStatus = spreadsheet
-      ? spreadsheetStatusMarkdown(effectivePairing, previous)
+      ? spreadsheetStatusMarkdown(effectivePairing, previous, local.metadata)
       : documentStatusMarkdown(effectivePairing, { ...previous, content: local.content });
     const actualLocalStatus = spreadsheet
       ? await fs.readFile(localStatusPath, "utf8").catch((error) => {

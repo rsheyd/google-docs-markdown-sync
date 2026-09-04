@@ -2,7 +2,10 @@ export const MARKDOWN_STATUS_START = "<!-- google-docs-sync:status:start -->";
 export const MARKDOWN_STATUS_END = "<!-- google-docs-sync:status:end -->";
 export const DOC_STATUS_TITLE = "↔ Markdown sync status";
 export const SHEET_STATUS_TITLE = "↔ Sync Status";
-export const SHEET_STATUS_FILE = "SYNC-STATUS.md";
+export const SHEET_STATUS_FILE = "GDMS.md";
+export const LEGACY_SHEET_STATUS_FILE = "SYNC-STATUS.md";
+export const SHEET_METADATA_START = "<!-- gdms:data:start";
+export const SHEET_METADATA_END = "gdms:data:end -->";
 
 function displayTime(iso) {
   if (!iso) return "Not yet synchronized";
@@ -93,17 +96,63 @@ export function hasRemoteDocumentStatus(document) {
   );
 }
 
-export function spreadsheetStatusMarkdown(pairing, state) {
+export function parseSpreadsheetMetadata(markdown) {
+  if (!markdown) return undefined;
+  const start = markdown.indexOf(SHEET_METADATA_START);
+  if (start < 0) return undefined;
+  const jsonStart = start + SHEET_METADATA_START.length;
+  const end = markdown.indexOf(SHEET_METADATA_END, jsonStart);
+  if (end < 0) throw new Error(`${SHEET_STATUS_FILE} has an unterminated GDMS data block.`);
+  const metadata = JSON.parse(markdown.slice(jsonStart, end).trim());
+  if (metadata?.version !== 2 || !Array.isArray(metadata.sheets)) {
+    throw new Error(`${SHEET_STATUS_FILE} must contain version 2 spreadsheet metadata.`);
+  }
+  return metadata;
+}
+
+function spreadsheetStructureMarkdown(metadata) {
+  const lines = ["## Structure", ""];
+  if (!metadata?.sheets?.length) return [...lines, "No synchronized CSV tabs recorded.", ""];
+  for (const sheet of metadata.sheets) {
+    lines.push(`- \`${sheet.file}\` ↔ \`${sheet.title}\``);
+    for (const table of sheet.tables ?? []) {
+      lines.push(`  - Table \`${table.name ?? "unnamed"}\`: \`${table.range}\``);
+    }
+    for (const format of sheet.formats ?? []) {
+      const labels = [];
+      if (format.numberFormat) {
+        const pattern = format.numberFormat.pattern ? `, \`${format.numberFormat.pattern}\`` : "";
+        labels.push(`${String(format.numberFormat.type ?? "number").toLowerCase()}${pattern}`);
+      }
+      for (const property of ["bold", "italic", "underline", "strikethrough"]) {
+        if (format.textFormat?.[property]) labels.push(property);
+      }
+      lines.push(`  - \`${format.range}\`: ${labels.join(", ") || "format"}`);
+    }
+  }
+  return [...lines, ""];
+}
+
+export function spreadsheetStatusMarkdown(pairing, state, metadata = {
+  version: 2,
+  spreadsheetId: pairing.spreadsheetId,
+  sheets: [],
+}) {
   const url = pairing.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${pairing.spreadsheetId}/edit`;
   return [
-    "# ↔ Google Sheets sync status",
+    "# GDMS spreadsheet pairing",
     "",
     `- Spreadsheet: [${pairing.name ?? "Google Sheet"}](${url})`,
     `- Local directory: \`${pairing.directoryPath}\``,
     `- Last successful sync: ${displayTime(state.lastSuccessfulSync)}`,
     `- Direction: ${directionLabel(state.lastWriter, true)}`,
     "",
-    "This file is managed by google-docs-markdown-sync. Deleting it does not unpair the spreadsheet.",
+    ...spreadsheetStructureMarkdown(metadata),
+    SHEET_METADATA_START,
+    JSON.stringify(metadata, null, 2),
+    SHEET_METADATA_END,
+    "",
+    "This file is managed by GDMS. Its marked data block is the portable spreadsheet pairing metadata.",
     "",
   ].join("\n");
 }

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.9] - 2026-09-04
+
+### Changed
+
+- Apply CSV changes through typed, value-only Google Sheets updates so existing date, currency, percentage, duration, validation, conditional formatting, and other native cell properties remain intact.
+- Preserve native Google Sheets tables during CSV synchronization, expanding their ranges for added CSV rows or columns without automatically shrinking them.
+- Treat formatting-only Google Sheets revisions as metadata changes without rewriting unchanged local CSV files.
+- Consolidate the hidden spreadsheet tab map and local status page into one visible `GDMS.md` file, automatically migrating legacy sidecars and recording portable number formats, column types, and native-table structure.
+- Record compact Google Sheets bold, italic, underline, and strikethrough ranges in `GDMS.md`, and restore them when recreating a tab without overwriting live formatting during ordinary CSV pushes.
+
 ## [0.8.8] - 2026-09-02
 
 ### Changed

@@ -325,6 +325,8 @@ Google API or OAuth request from blocking the queue indefinitely.
   using lowercase kebab case, unless the destination already exists.
 - A local-only change updates the same Google document. A remote-only change
   updates the local representation.
+- Local CSV changes update only changed Google Sheets cell values. Existing cell formatting and native Sheets structure remain in Google Sheets; native tables expand when CSV data grows beyond their current bounds but do not shrink automatically.
+- A Google Sheets formatting-only revision advances the remote baseline without rewriting unchanged CSV files.
 - Simultaneous text-only changes use the later filesystem or Drive
   modification time. Image-bearing documents stop with a conflict when the
   local content, Google revision, and Drive modification time all changed from
@@ -369,8 +371,7 @@ format-only Docs API requests. This repairs style drift without replacing text.
 
 Google Docs show a small managed status section and Markdown files show an
 equivalent footer with a link back to the Doc. Sheets use a `↔ Sync Status` tab
-and local `SYNC-STATUS.md`. They show the last successful synchronization time
-and direction and are excluded from content comparison.
+and local `GDMS.md`. The local file combines human-readable status with a marked, machine-readable block containing the portable tab map, number formats, column semantics, and native-table structure. It is excluded from CSV content comparison. Legacy `.google-sheets-sync.json` and `SYNC-STATUS.md` files migrate atomically into `GDMS.md`.
 
 Deleting or editing a status artifact does not unpair the document. GDMS
 repairs it on a later pass unless the installation's opt-in deletion policy
