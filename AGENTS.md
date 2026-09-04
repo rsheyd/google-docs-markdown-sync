@@ -69,6 +69,7 @@
   synchronization, and heartbeat checks.
 - `test/network.test.js`: Offline pause/resume and post-sleep network-settling coverage.
 - `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
+- `test/dependencies.test.js`: Locked transitive-dependency security and compatibility invariants.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.
 - `examples/google-docs-sync.example.json`: Inert example workspace pairing
