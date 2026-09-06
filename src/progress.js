@@ -5,6 +5,7 @@ const ACTION_LABELS = {
   push: "pushed",
   style: "styled",
   "repair-status": "repaired status",
+  "remote-trash": "local content archived and pairing removed",
   trash: "Google Doc moved to Drive trash and pairing removed",
 };
 

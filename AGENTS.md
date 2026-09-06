@@ -63,6 +63,7 @@
   weekly Resend health heartbeat.
 - `src/formatting.js`: Shared Google Docs paragraph-formatting rules and measurements.
 - `src/locations.js`: Shared sync-location registry, rebuildable manifest index, legacy migration, bounded scans, and location lifecycle operations.
+- `src/deletions.js`: Local deletion propagation, confirmed remote-trash archiving, durable cleanup progress, and notification retries.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
@@ -77,6 +78,7 @@
 - `test/network.test.js`: Offline pause/resume and post-sleep network-settling coverage.
 - `test/locations.test.js`: Sync-location migration, scanning, index reconstruction, overlap, concurrency, and non-destructive removal coverage.
 - `test/launch-agent.test.js`: Compatibility coverage for moving legacy service logs into the standard macOS Logs directory.
+- `test/deletions.test.js`: Deletion propagation, remote-trash content preservation, interrupted cleanup, and notification retry coverage.
 - `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.

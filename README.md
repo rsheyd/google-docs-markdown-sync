@@ -137,6 +137,7 @@ Important current limitations:
   preserves local Markdown/assets, restores the same Drive ID, re-pairs it at
   the requested path, and verifies the result. See the
   [recovery runbook](docs/operations.md#recover-an-accidentally-trashed-pairing).
+- Trashing a paired Doc in Drive archives its local Markdown and assets under `.gdms-recovery/`, removes the pairing, and emails the recovery location. A 404 never triggers local cleanup. See [online deletion behavior](docs/operations.md#documents-trashed-in-google-drive).
 - Deletion propagation currently applies only to Markdown/Google Docs
   pairings. Missing CSV directories do not trash paired Google Sheets.
 

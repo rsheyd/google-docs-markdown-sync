@@ -29,6 +29,7 @@ import {
 import { loadSettings } from "./config.js";
 import { loadState, saveState, stateKey } from "./state.js";
 import {
+  archiveRemoteTrashedPairing,
   cancelMissingDeletion,
   deletionDue,
   recordMissingDeletion,
@@ -287,6 +288,7 @@ export async function syncPairing(
   let remote = spreadsheet
     ? await getSpreadsheetDriveInfo(services, pairing.spreadsheetId)
     : await getDocumentDriveInfo(services, pairing.documentId);
+  if (!spreadsheet && remote.trashed) return { action: "remote-trash", pairing, state: previous };
   const documentDetails = async () => {
     if (spreadsheet || remote.document) return remote;
     remote = await getDocumentDetails(
@@ -538,7 +540,12 @@ export async function commitSyncPass({
   assertCurrentSyncPass(isCurrent);
   await persistState(state);
   assertCurrentSyncPass(isCurrent);
-  await errorReporter?.reconcile(results);
+  await errorReporter?.reconcile(results.map((result) => {
+    const deletion = state.deletions?.[result.pairing.documentId];
+    return deletion?.origin === "remote" && ["unpaired", "notified"].includes(deletion.phase)
+      ? { ...result, action: "remote-trash" }
+      : result;
+  }));
 }
 
 export async function runSyncPass({
@@ -575,6 +582,15 @@ export async function runSyncPass({
     onProgress?.({ type: "start", current, total: pairings.length, pairing });
     const key = stateKey(pairing);
     try {
+      if (state.deletions?.[pairing.documentId]?.origin === "remote" &&
+          ["archiving", "archived", "unpaired"].includes(state.deletions[pairing.documentId].phase)) {
+        const deletion = await archiveRemoteTrashedPairing({ pairing, state, persistState: saveState });
+        const completed = { pairing, action: "remote-trash" };
+        results.push(completed);
+        onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+        logger.log(`remote-trash: pairing removed; local recovery: ${deletion.recoveryDirectory}`);
+        continue;
+      }
       if (
         pairing.type !== "spreadsheet" &&
         pairing.deletionPolicy?.mode === "trash-after-grace-period" &&
@@ -652,7 +668,12 @@ export async function runSyncPass({
         refreshStatus,
       });
       assertCurrentSyncPass(isCurrent);
-      state.documents[key] = result.state;
+      if (result.action === "remote-trash") {
+        const deletion = await archiveRemoteTrashedPairing({ pairing, state, persistState: saveState });
+        logger.log(`remote-trash: pairing removed; local recovery: ${deletion.recoveryDirectory}`);
+      } else {
+        state.documents[key] = result.state;
+      }
       const completed = {
         pairing: result.pairing,
         action: result.action,

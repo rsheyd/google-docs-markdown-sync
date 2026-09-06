@@ -140,6 +140,14 @@ sends the configured Resend notification. Omitting `--yes` performs no writes.
 This command and automatic deletion propagation currently apply only to
 Markdown/Google Docs pairings, not Sheets/CSV pairings.
 
+## Documents trashed in Google Drive
+
+When Google Drive explicitly reports a paired Doc as trashed, GDMS immediately moves its local Markdown and managed asset directory into a unique dated folder under `.gdms-recovery/` beside the original Markdown file, then removes the pairing. All local content is preserved, including unsynced edits. There is no grace period or automatic expiration of recovery folders, and GDMS does not sync their contents. The archived Markdown retains its old status footer as historical information; it is no longer actively paired.
+
+GDMS sends one configured deletion email with the recovery location and retries failed delivery. A deletion email recipient must be configured for cleanup to proceed. Interrupted cleanup resumes from its saved recovery location without overwriting an existing backup. A 404, lost access, or network failure never authorizes this cleanup: the local files and pairing remain intact and normal error reporting continues. A permanently deleted Doc that only returns 404 therefore still requires manual unpairing.
+
+Restoring a Doc in Drive does not automatically restore its pairing. Review the recovery folder for unsynced edits, then use `gdms recover` below to restore/re-pair the Google copy at the original path. Merge any needed archived edits into the newly paired Markdown afterward; the recovery command does not import the archived copy. This behavior applies to Docs/Markdown only, not Sheets/CSV.
+
 ## Recover an accidentally trashed pairing
 
 Use `recover` when a move, rename, or deletion caused GDMS to move the original
@@ -429,9 +437,7 @@ configuration from the [installation guide](installation.md#configure-image-stag
 
 ### A table edit is refused
 
-Changed table structure requires a full Docs body rebuild. GDMS refuses that
-rebuild when the document contains images. Make the table change in Google Docs
-or separate the image-bearing content before retrying.
+Changed table structure requires a full Docs body rebuild. GDMS can rebuild documents containing supported standalone image paragraphs when image staging is configured. Images mixed with text or embedded inside table cells remain unsupported; make those changes in Google Docs or separate the image-bearing content before retrying.
 
 ### Remove generated spacing paragraphs
 

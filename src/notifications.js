@@ -277,6 +277,7 @@ export function createSyncErrorReporter({
       if (!record) continue;
       active.delete(key);
       await persist();
+      if (result.action === "remote-trash") continue;
       logger.log(`recovered: ${result.pairing.absolutePath}`);
       if (record.emailSentAt && emailRecipient) {
         try {

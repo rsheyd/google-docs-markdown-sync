@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.10] - 2026-09-05
+
+### Changed
+
+- Archive local Markdown and assets in a dated `.gdms-recovery` folder and unpair when Google Drive confirms a Doc is trashed; preserve unsynced edits, resume interrupted cleanup, and email the recovery location. Missing/inaccessible Docs returning 404 remain non-destructive.
+
+### Fixed
+
+- Rebuild Google Docs containing supported standalone images when a structural table edit requires the full-body fallback, using staged image URLs and preserving the displayed size of unchanged images.
+
 ## [0.8.9] - 2026-09-04
 
 ### Changed

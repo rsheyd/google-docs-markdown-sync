@@ -159,15 +159,23 @@ export async function sendDeletionEmail({
     body: JSON.stringify({
       from: sender,
       to: [recipient],
-      subject: `GDMS moved “${deletion.name ?? "Google Doc"}” to trash`,
+      subject: deletion.origin === "remote"
+        ? `GDMS archived local copy of “${deletion.name ?? "Google Doc"}”`
+        : `GDMS moved “${deletion.name ?? "Google Doc"}” to trash`,
       text: [
-        "GDMS moved a paired Google Doc to Google Drive trash.",
+        deletion.origin === "remote"
+          ? "A paired Google Doc was trashed online. GDMS preserved its local Markdown and assets in a recovery folder and removed the pairing."
+          : "GDMS moved a paired Google Doc to Google Drive trash.",
         "",
         `Document: ${deletion.name ?? "Google Doc"}`,
         `Google Doc: ${deletion.documentUrl}`,
         `Local Markdown: ${deletion.absolutePath}`,
         `Deletion policy: ${deletion.policyDescription}`,
-        `Moved to trash: ${deletion.trashedAt}`,
+        `${deletion.origin === "remote" ? "Trash detected" : "Moved to trash"}: ${deletion.trashedAt}`,
+        ...(deletion.recoveryDirectory ? [
+          `Local recovery folder: ${deletion.recoveryDirectory}`,
+          "This folder includes any unsynced local edits and is retained until you remove it. Restoring the Google Doc does not automatically re-pair it. Review the archived content before recovering; gdms recover exports the Google copy, not these archived edits.",
+        ] : []),
         "",
         ...recoveryLines,
       ].join("\n"),

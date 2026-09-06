@@ -75,9 +75,10 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
 export async function getDocumentDriveInfo(services, documentId) {
   const fileResponse = await services.drive.files.get({
     fileId: documentId,
-    fields: "id,modifiedTime,name,version",
+    fields: "id,modifiedTime,name,version,trashed",
   });
   return {
+    trashed: fileResponse.data.trashed === true,
     modifiedTime: fileResponse.data.modifiedTime,
     name: fileResponse.data.name,
     driveRevisionId: String(
@@ -1718,8 +1719,23 @@ export async function updateDocumentFromMarkdown(
   const document = await currentDocument(services, documentId);
   const plan = planIncrementalUpdate(document, markdown, imageSync);
   if (plan.mode === "full-rebuild") {
+    const imageSizes = new Map();
+    for (const desiredBlock of plan.desired.filter(blockHasImages)) {
+      const desiredImage = desiredBlock.images[0];
+      const desiredHash = imageSync?.desiredImageHashes.get(desiredImage.url);
+      const matchingCurrentImage = plan.current
+        .flatMap((block) => block.images ?? [])
+        .find((image) =>
+          image.size &&
+          desiredHash !== undefined &&
+          imageSync?.currentImageHashes.get(image.objectId) === desiredHash,
+        );
+      if (matchingCurrentImage) imageSizes.set(desiredImage.url, matchingCurrentImage.size);
+    }
     return replaceDocumentFromMarkdown(services, documentId, markdown, {
       onProgress,
+      imageUris: imageSync?.imageUris,
+      imageSizes,
     });
   }
   if (plan.requests.length) {
@@ -1808,11 +1824,16 @@ export async function updateDocumentStatus(
   return getRemoteInfo(services, documentId);
 }
 
-async function appendTextBlocks(services, documentId, blocks) {
+async function appendTextBlocks(
+  services,
+  documentId,
+  blocks,
+  { imageUris, imageSizes } = {},
+) {
   if (!blocks.length) return;
   const document = await currentDocument(services, documentId);
   const startIndex = bodyEndIndex(document) - 1;
-  const requests = insertionRequests(startIndex, blocks);
+  const requests = insertionRequests(startIndex, blocks, { imageUris, imageSizes });
   await services.docs.documents.batchUpdate({
     documentId,
     requestBody: {
@@ -1914,13 +1935,18 @@ export async function replaceDocumentFromMarkdown(
   services,
   documentId,
   markdown,
-  { onProgress } = {},
+  { onProgress, imageUris, imageSizes } = {},
 ) {
   const blocks = parseMarkdown(markdown);
-  if (blocks.some(blockHasImages)) {
-    throw new Error(
-      "A full document rebuild containing inline images is not supported yet.",
-    );
+  const imageBlocks = blocks.filter(blockHasImages);
+  if (imageBlocks.some((block) => !standaloneImage(block))) {
+    throw new Error("Only standalone image paragraphs can be rebuilt.");
+  }
+  for (const block of imageBlocks) {
+    const source = block.images[0].url;
+    if (!imageUris?.has(source)) {
+      throw new Error(`No staged image URL is available for ${source}.`);
+    }
   }
   const tableCount = blocks.filter((block) => block.type === "table").length;
   let tableNumber = 0;
@@ -1957,7 +1983,12 @@ export async function replaceDocumentFromMarkdown(
           candidateIndex > index && candidate.type === "table",
       );
       const chunkEnd = end === -1 ? blocks.length : end;
-      await appendTextBlocks(services, documentId, blocks.slice(index, chunkEnd));
+      await appendTextBlocks(
+        services,
+        documentId,
+        blocks.slice(index, chunkEnd),
+        { imageUris, imageSizes },
+      );
       index = chunkEnd;
     }
   }

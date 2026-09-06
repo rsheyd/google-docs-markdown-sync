@@ -99,3 +99,20 @@ test("sends the success heartbeat to the configured recipient", async () => {
   assert.match(body.text, /Last complete reconciliation: not recorded/);
   assert.deepEqual(result, { id: "email-1" });
 });
+
+
+test("remote trash notification identifies preserved content without claiming GDMS trashed the Doc", async () => {
+  let body;
+  await sendDeletionEmail({
+    token: "test", recipient: "person@example.com",
+    deletion: { origin: "remote", documentId: "doc", name: "Note", recoveryDirectory: "/work/.gdms-recovery/date", trashedAt: "now" },
+    fetchImplementation: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ id: "sent" }) };
+    },
+  });
+  assert.match(body.subject, /archived local copy/);
+  assert.match(body.text, /Local recovery folder: \/work\/\.gdms-recovery\/date/);
+  assert.match(body.text, /unsynced local edits/);
+  assert.doesNotMatch(body.text, /GDMS moved a paired Google Doc/);
+});

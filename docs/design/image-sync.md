@@ -227,8 +227,8 @@ configured and validated.
   leaking signed URLs or secrets; keep transient desktop banners opt-in.
 - [ ] Test retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
 - [ ] Validate repeated use against live screenshot-heavy documents.
-- [ ] Add safe request planning for mixed text-and-image paragraphs and
-  image-bearing full rebuilds.
+- [x] Reinsert supported standalone image paragraphs safely during image-bearing full rebuilds, using staged URLs and retaining unchanged image dimensions.
+- [ ] Add safe request planning for mixed text-and-image paragraphs.
 
 ## Operational-hardening criteria
 

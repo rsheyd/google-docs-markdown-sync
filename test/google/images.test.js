@@ -268,7 +268,7 @@ test("refuses image changes mixed with paragraph text even when staged", () => {
   );
 });
 
-test("refuses a full rebuild containing inline images before remote writes", async () => {
+test("refuses a full rebuild containing unstaged inline images before remote writes", async () => {
   let writes = 0;
   const services = {
     docs: { documents: {
@@ -282,7 +282,56 @@ test("refuses a full rebuild containing inline images before remote writes", asy
       "document",
       "![Screenshot](project.assets/screenshot.png)",
     ),
-    /full document rebuild containing inline images is not supported/,
+    /No staged image URL is available/,
   );
   assert.equal(writes, 0);
+});
+
+test("rebuilds text around a staged standalone image", async () => {
+  const writes = [];
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [paragraph(1, "Old\n")] },
+  };
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async (request) => { writes.push(request); },
+    } },
+    drive: { files: { get: async () => ({ data: {
+      id: "document",
+      modifiedTime: "2026-09-04T12:00:00Z",
+      name: "Document",
+    } }) } },
+  };
+  const source = "project.assets/screenshot.png";
+  await replaceDocumentFromMarkdown(
+    services,
+    "document",
+    `Before\n\n![Screenshot](${source})\n\nAfter`,
+    {
+      imageUris: new Map([[source, "https://signed.example/screenshot"]]),
+      imageSizes: new Map([[source, {
+        width: { magnitude: 320, unit: "PT" },
+        height: { magnitude: 180, unit: "PT" },
+      }]]),
+    },
+  );
+
+  assert.deepEqual(writes[0].requestBody.requests, [
+    { deleteContentRange: { range: { startIndex: 1, endIndex: 4 } } },
+  ]);
+  const imageRequest = writes
+    .flatMap((write) => write.requestBody.requests)
+    .find((request) => request.insertInlineImage);
+  assert.deepEqual(imageRequest, {
+    insertInlineImage: {
+      location: { index: 4 },
+      uri: "https://signed.example/screenshot",
+      objectSize: {
+        width: { magnitude: 320, unit: "PT" },
+        height: { magnitude: 180, unit: "PT" },
+      },
+    },
+  });
 });

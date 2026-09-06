@@ -182,3 +182,17 @@ test("sends an idempotent recovery email for a previously emailed error", async 
   assert.match(body.text, /image conflict/);
   assert.deepEqual(result, { id: "email-recovery" });
 });
+
+
+test("remote trash clears the old incident without a misleading sync-recovered notification", async () => {
+  const store = incidentStore({ version: 1, incidents: {
+    "document:doc": { error: { message: "unavailable" }, firstSeenAt: "2026-09-01T00:00:00Z", emailSentAt: "2026-09-01T01:00:00Z" },
+  } });
+  const reporter = createSyncErrorReporter({
+    ...store, desktopNotificationsEnabled: true, emailRecipient: "person@example.com",
+    notify: () => assert.fail("unexpected notification"),
+    sendRecoveryEmail: () => assert.fail("unexpected recovery email"),
+  });
+  await reporter.reconcile([{ pairing: { documentId: "doc" }, action: "remote-trash" }]);
+  assert.deepEqual(store.read().incidents, {});
+});

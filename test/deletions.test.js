@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { cancelMissingDeletion, deletionDue, recordMissingDeletion, trashPairedDocument } from "../src/deletions.js";
+import { archiveRemoteTrashedPairing, retryDeletionNotifications, cancelMissingDeletion, deletionDue, recordMissingDeletion, trashPairedDocument } from "../src/deletions.js";
 
 function pairing(overrides = {}) {
   return {
@@ -103,4 +103,84 @@ test("refuses automatic trash without a notification recipient", async () => {
     if (originalHeartbeatTo === undefined) delete process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO;
     else process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO = originalHeartbeatTo;
   }
+});
+
+
+test("archives unsynced Markdown and assets, resumes after unpair failure, and retries one notification", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-remote-trash-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "note.md");
+  const assets = path.join(directory, "note.assets");
+  const manifestPath = path.join(directory, "google-docs-sync.json");
+  await fs.writeFile(file, "unsynced ![image](note.assets/image.png)");
+  await fs.mkdir(assets);
+  await fs.writeFile(path.join(assets, "image.png"), "image");
+  await fs.writeFile(manifestPath, JSON.stringify({ pairings: [{ documentId: "doc-1" }, { documentId: "other" }] }));
+  const current = pairing({ absolutePath: file, manifestPath });
+  let saved;
+  const persistState = async (state) => { saved = structuredClone(state); };
+  const state = { documents: { "doc-1": { localHash: "older" } } };
+  await assert.rejects(archiveRemoteTrashedPairing({
+    pairing: current, state, persistState,
+    removePairing: async () => { throw new Error("manifest busy"); },
+  }), /manifest busy/);
+  assert.equal(saved.deletions["doc-1"].phase, "archived");
+  const recovery = saved.deletions["doc-1"].recoveryDirectory;
+  assert.equal(await fs.readFile(path.join(recovery, "note.md"), "utf8"), "unsynced ![image](note.assets/image.png)");
+  assert.equal(await fs.readFile(path.join(recovery, "note.assets/image.png"), "utf8"), "image");
+  await assert.rejects(fs.access(file));
+  await assert.rejects(fs.access(assets));
+  const resumed = structuredClone(saved);
+  let attempts = 0;
+  const sendEmail = async () => {
+    if (++attempts === 1) throw new Error("email offline");
+    return { id: "sent" };
+  };
+  const options = { persistState, sendEmail, logger: { error() {} } };
+  await retryDeletionNotifications(resumed, options);
+  assert.equal(resumed.deletions["doc-1"].phase, "unpaired");
+  assert.equal(resumed.documents["doc-1"], undefined);
+  assert.deepEqual(JSON.parse(await fs.readFile(manifestPath, "utf8")).pairings, [{ documentId: "other" }]);
+  await retryDeletionNotifications(resumed, options);
+  await retryDeletionNotifications(resumed, options);
+  assert.equal(attempts, 2);
+  assert.equal(resumed.deletions["doc-1"].phase, "notified");
+  assert.equal(resumed.deletions["doc-1"].recoveryDirectory, recovery);
+});
+
+test("resumes a partially moved archive without overwriting a recreated local file", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-remote-resume-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "note.md");
+  const recoveryDirectory = path.join(directory, "recovery");
+  await fs.mkdir(recoveryDirectory);
+  await fs.writeFile(path.join(recoveryDirectory, "note.md"), "original");
+  await fs.mkdir(path.join(directory, "note.assets"));
+  await fs.writeFile(file, "recreated");
+  const current = pairing({ absolutePath: file });
+  const state = { documents: {}, deletions: { "doc-1": {
+    ...current, origin: "remote", phase: "archiving", recoveryDirectory,
+  } } };
+  let unpaired = false;
+  const options = { pairing: current, state, persistState: async () => {}, removePairing: async () => { unpaired = true; } };
+  await assert.rejects(archiveRemoteTrashedPairing(options), /preserving both copies/);
+  assert.equal(unpaired, false);
+  assert.equal(await fs.readFile(file, "utf8"), "recreated");
+  assert.equal(await fs.readFile(path.join(recoveryDirectory, "note.md"), "utf8"), "original");
+  await fs.unlink(file);
+  await archiveRemoteTrashedPairing(options);
+  assert.equal(unpaired, true);
+  assert.ok((await fs.stat(path.join(recoveryDirectory, "note.assets"))).isDirectory());
+});
+
+test("does not move files if the archive intent cannot be saved", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-remote-persist-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "note.md");
+  await fs.writeFile(file, "keep");
+  await assert.rejects(archiveRemoteTrashedPairing({
+    pairing: pairing({ absolutePath: file }), state: { documents: {} },
+    persistState: async () => { throw new Error("disk full"); },
+  }), /disk full/);
+  assert.equal(await fs.readFile(file, "utf8"), "keep");
 });

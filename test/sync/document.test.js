@@ -183,3 +183,37 @@ test("repairs formatting on an unchanged Markdown pairing and records the new re
   );
   await fs.rm(directory, { recursive: true, force: true });
 });
+
+
+test("confirmed Drive trash stops before Docs access or local rename; 404 preserves local content", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-trashed-doc-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const absolutePath = path.join(directory, "note.md");
+  await fs.writeFile(absolutePath, "unsynced local content");
+  const pairing = { documentId: "doc", absolutePath, name: "Old title" };
+  const services = { drive: { files: { get: async ({ fields }) => {
+    assert.match(fields, /trashed/);
+    return { data: { trashed: true, name: "New title" } };
+  } } } };
+  const result = await syncPairing(services, pairing, {});
+  assert.equal(result.action, "remote-trash");
+  assert.equal(result.pairing, pairing);
+  services.drive.files.get = async () => { throw Object.assign(new Error("File not found"), { code: 404 }); };
+  await assert.rejects(syncPairing(services, pairing, {}), { code: 404 });
+  assert.equal(await fs.readFile(absolutePath, "utf8"), "unsynced local content");
+});
+
+test("cleanup completed by the retry queue clears an earlier error as remote trash", async () => {
+  const pairing = { documentId: "doc" };
+  const state = { documents: {} };
+  let reconciled;
+  await commitSyncPass({
+    state, results: [{ pairing, action: "error", error: new Error("interrupted cleanup") }],
+    reportErrors: false, persistState: async () => {},
+    retryNotifications: async () => {
+      state.deletions = { doc: { origin: "remote", phase: "notified" } };
+    },
+    errorReporter: { reconcile: async (results) => { reconciled = results; } },
+  });
+  assert.equal(reconciled[0].action, "remote-trash");
+});

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import { assetDirectoryPath } from "./images.js";
 import { sendDeletionEmail } from "./heartbeat.js";
 import { removeDocumentPairing } from "./manifests.js";
@@ -131,12 +132,66 @@ export async function trashPairedDocument({
   return { deletion, email };
 }
 
+// Persist the unique destination before moving either file, so retries resume the same archive.
+export async function archiveRemoteTrashedPairing({
+  pairing, state, persistState, now = new Date(), removePairing = removeDocumentPairing,
+}) {
+  if (pairing.type === "spreadsheet") throw new Error("Remote trash cleanup supports Docs only.");
+  state.deletions ??= {};
+  let deletion = state.deletions[pairing.documentId];
+  if (deletion?.origin !== "remote" || deletion.phase === "notified") {
+    const recipient = deletionRecipient(pairing);
+    if (!recipient) throw new Error("Remote trash cleanup requires a deletion email recipient.");
+    const root = path.join(path.dirname(pairing.absolutePath), ".gdms-recovery");
+    await fs.mkdir(root, { recursive: true });
+    const recoveryDirectory = await fs.mkdtemp(path.join(root, `${now.toISOString().replace(/[:.]/g, "-")}-`));
+    deletion = {
+      origin: "remote", phase: "archiving", type: "document",
+      documentId: pairing.documentId, documentUrl: pairing.documentUrl,
+      absolutePath: pairing.absolutePath, manifestPath: pairing.manifestPath,
+      name: pairing.name, recipient, sender: deletionSender(pairing),
+      trashedAt: now.toISOString(), recoveryDirectory,
+      policyDescription: "confirmed Google Drive trash; local content archived",
+    };
+    state.deletions[pairing.documentId] = deletion;
+  }
+  await persistState(state);
+  if (deletion.phase === "archiving") {
+    for (const source of [deletion.absolutePath, assetDirectoryPath(deletion.absolutePath)]) {
+      const sourceExists = await fs.lstat(source).then(() => true, (error) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      if (!sourceExists) continue;
+      const destination = path.join(deletion.recoveryDirectory, path.basename(source));
+      const destinationExists = await fs.lstat(destination).then(() => true, (error) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      if (destinationExists) throw new Error(`Recovery destination already exists; preserving both copies: ${destination}`);
+      await fs.rename(source, destination);
+    }
+    deletion.phase = "archived";
+    await persistState(state);
+  }
+  if (deletion.phase === "archived") {
+    await removePairing(deletion);
+    delete state.documents[deletion.documentId];
+    deletion.phase = "unpaired";
+    await persistState(state);
+  }
+  return deletion;
+}
+
 export async function retryDeletionNotifications(
   state,
   { persistState, sendEmail = sendDeletionEmail, logger = console } = {},
 ) {
   for (const deletion of Object.values(state.deletions ?? {})) {
     try {
+      if (deletion.origin === "remote" && ["archiving", "archived"].includes(deletion.phase)) {
+        await archiveRemoteTrashedPairing({ pairing: deletion, state, persistState });
+      }
       if (deletion.phase === "trashed") {
         if (deletion.deleteLocal) {
           await fs.rm(deletion.absolutePath, { force: true });
