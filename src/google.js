@@ -6,8 +6,10 @@ import {
 } from "./formatting.js";
 import {
   addTableColumnWidths,
+  exportedListItems,
   INLINE_IMAGE_MARKER,
   parseMarkdown,
+  restoreTaskListMarkers,
   tableColumnWidthMarker,
 } from "./markdown.js";
 import { DOC_STATUS_TITLE, stripRemoteDocumentStatus } from "./status.js";
@@ -22,6 +24,50 @@ export function createGoogleServices(
     drive: google.drive({ version: "v3", auth, timeout }),
     sheets: google.sheets({ version: "v4", auth, timeout }),
   };
+}
+
+export function planNativeCheckboxConversion(document, nativeMarkdown = "") {
+  const requests = [];
+  const exported = exportedListItems(nativeMarkdown);
+  const blocks = blocksFromDocument(document);
+  for (const block of [...blocks].reverse()) {
+    if (block.type !== "listItem" || block.ordered) continue;
+    const matches = exported.filter((item) => item.text === block.text);
+    if (matches.length !== 1 || !matches[0].eligible ||
+      typeof matches[0].checked !== "boolean" ||
+      blocks.filter((item) => item.text === block.text).length !== 1) continue;
+    const level = document.lists?.[block.listId]?.listProperties?.nestingLevels?.[block.nestingLevel ?? 0];
+    // Require an explicit unspecified glyph; missing list metadata is not evidence.
+    if (level?.glyphType !== "GLYPH_TYPE_UNSPECIFIED" || level.glyphSymbol) continue;
+    const prefix = "\t".repeat(block.nestingLevel ?? 0) + (/^[ox]\] /.test(block.text) ? "" : `${matches[0].checked ? "x" : "o"}] `);
+    const range = { startIndex: block.startIndex, endIndex: block.endIndex };
+    requests.push({ deleteParagraphBullets: { range } });
+    if (prefix) requests.push({ insertText: { location: { index: block.startIndex }, text: prefix } });
+    requests.push({ createParagraphBullets: {
+      range: { ...range, endIndex: range.endIndex + prefix.length },
+      bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
+    } });
+  }
+  return requests;
+}
+
+export async function nativeCheckboxConversionRequests(services, documentId, document) {
+  let response;
+  try {
+    response = await services.drive.files.export(
+      { fileId: documentId, mimeType: "text/markdown" }, { responseType: "arraybuffer" },
+    );
+  } catch (error) {
+    if (exportSizeLimitExceeded(error)) return [];
+    throw error;
+  }
+  const requests = planNativeCheckboxConversion(document, Buffer.from(response.data).toString("utf8"));
+  if (!requests.length) return [];
+  const after = await currentDocument(services, documentId);
+  if (!document.revisionId || after.revisionId !== document.revisionId) {
+    throw new Error("Document changed during native checklist detection; retry sync.");
+  }
+  return requests;
 }
 
 function exportSizeLimitExceeded(error) {
@@ -52,16 +98,18 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
     const sourceBlocks = blocksFromDocument(source);
     if (
       sourceBlocks.some(hasBlockquoteIndent) ||
-      sourceBlocks.some(hasTableCellBreak)
+      sourceBlocks.some(hasTableCellBreak) ||
+      sourceBlocks.some((block) => block.type === "listItem" &&
+        /^[ox]\] /.test(block.text) && block.styles.some((style) => style.start < 3))
     ) {
       return stripRemoteDocumentStatus(markdownFromDocument(source));
     }
-    return stripRemoteDocumentStatus(addTableColumnWidths(
+    return stripRemoteDocumentStatus(restoreTaskListMarkers(addTableColumnWidths(
       Buffer.from(response.data).toString("utf8"),
       sourceBlocks
         .filter((block) => block.type === "table")
         .map((block) => block.columnWidths),
-    ));
+    )));
   } catch (error) {
     if (!exportSizeLimitExceeded(error)) throw error;
     const source = document ?? (await services.docs.documents.get({
@@ -284,6 +332,7 @@ function paragraphFromDocument(element, document, idToFragment = new Map()) {
       ] ?? {};
     const ordered =
       !level.glyphSymbol &&
+      level.glyphType !== "GLYPH_TYPE_UNSPECIFIED" &&
       (Boolean(
         level.glyphType && level.glyphType !== "GLYPH_TYPE_UNSPECIFIED",
       ) ||
@@ -529,15 +578,18 @@ export function markdownFromDocument(document) {
       continue;
     }
 
+    const task = block.type === "listItem" && block.text.match(/^([ox])\] /);
     const content = styledMarkdown(
-      block.text,
-      block.styles,
-      block.images,
+      task ? block.text.slice(3) : block.text,
+      task ? block.styles.filter((range) => range.end > 3).map((range) => ({
+        ...range, start: Math.max(0, range.start - 3), end: range.end - 3,
+      })) : block.styles,
+      task ? block.images?.map((image) => ({ ...image, offset: image.offset - 3 })) : block.images,
       imageReference,
     );
     if (block.type === "listItem") {
       const marker = block.ordered ? "1." : "-";
-      lines.push(`${"  ".repeat(block.nestingLevel ?? 0)}${marker} ${content}`);
+      lines.push(`${"  ".repeat(block.nestingLevel ?? 0)}${marker} ${task ? (task[1] === "x" ? "[x] " : "[ ] ") : ""}${content}`);
       previousList = block.listId;
       continue;
     }
@@ -555,7 +607,7 @@ export function markdownFromDocument(document) {
     previousList = undefined;
   }
   while (lines.at(-1) === "") lines.pop();
-  return `${lines.join("\n")}\n`;
+  return restoreTaskListMarkers(`${lines.join("\n")}\n`);
 }
 
 function comparableBlock(block, imageHashes = new Map()) {

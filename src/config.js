@@ -3,6 +3,13 @@ import fs from "node:fs/promises";
 import { HEARTBEAT_LAUNCH_AGENT_PATH, SETTINGS_PATH } from "./paths.js";
 
 const DEFAULT_GOOGLE_REQUEST_TIMEOUT_MS = 30_000;
+export const CHECKBOX_CONVERSION_WARNING = "Native checklist conversion replaces native controls with text markers using Google’s exported task state. Completed tasks may become open if the export omits completion. Ambiguous matches are skipped. Disabling conversion does not restore native checkboxes.";
+
+export async function saveCheckboxConversion(enabled) {
+  if (typeof enabled !== "boolean") throw new Error("Checkbox conversion must be true or false.");
+  const settings = await readJson(SETTINGS_PATH, { version: 1 });
+  await writeJsonAtomic(SETTINGS_PATH, { ...settings, autoConvertNativeCheckboxes: enabled });
+}
 export const DEFAULT_DELETION_POLICY = Object.freeze({ mode: "restore-local" });
 export const DEFAULT_NOTIFICATION_SETTINGS = Object.freeze({
   desktopNotificationsEnabled: false,
@@ -86,8 +93,12 @@ export async function loadSettings() {
   if (settings.version !== 1) {
     throw new Error(`${SETTINGS_PATH} must have version 1.`);
   }
+  if (settings.autoConvertNativeCheckboxes !== undefined && typeof settings.autoConvertNativeCheckboxes !== "boolean") {
+    throw new Error(`${SETTINGS_PATH} autoConvertNativeCheckboxes must be true or false.`);
+  }
   return {
     ...settings,
+    autoConvertNativeCheckboxes: settings.autoConvertNativeCheckboxes ?? false,
     deletionPolicy: validateDeletionPolicy(settings.deletionPolicy),
     notifications: validateNotificationSettings(settings.notifications),
   };

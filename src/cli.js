@@ -13,6 +13,8 @@ import { createR2Stager, loadR2Configuration } from "./r2.js";
 import { MANIFEST_NAME, R2_CONFIG_PATH, SETTINGS_PATH } from "./paths.js";
 import {
   loadSettings,
+  saveCheckboxConversion,
+  CHECKBOX_CONVERSION_WARNING,
   saveDeletionPolicy,
   saveNotificationSettings,
 } from "./config.js";
@@ -104,6 +106,7 @@ function parseArguments(values) {
       "dry-run",
       "yes",
       "disable",
+      "enable",
       "open",
       "disable-error-email",
       "enable-error-email",
@@ -159,6 +162,7 @@ Commands:
   configure-r2 --account-id ID --bucket NAME --gateway-url URL
   configure-deletion --grace-period-minutes MINUTES --to EMAIL [--from SENDER]
   configure-deletion --disable
+  configure-checkboxes --enable | --disable
   configure-notifications [--to EMAIL] [--from SENDER] [--error-email-delay-minutes MINUTES]
                           [--enable-error-email | --disable-error-email]
                           [--enable-desktop-notifications | --disable-desktop-notifications]
@@ -916,6 +920,13 @@ async function main() {
     await configureR2(options);
   } else if (command === "configure-deletion") {
     await configureDeletion(options);
+  } else if (command === "configure-checkboxes") {
+    if (Boolean(options.enable) === Boolean(options.disable)) {
+      throw new Error("configure-checkboxes requires exactly one of --enable or --disable.");
+    }
+    console.log(`Warning: ${CHECKBOX_CONVERSION_WARNING}`);
+    await saveCheckboxConversion(Boolean(options.enable));
+    console.log(`Native checklist auto-conversion ${options.enable ? "enabled" : "disabled"}.`);
   } else if (command === "configure-notifications") {
     await configureNotifications(options);
   } else if (command === "delete") {

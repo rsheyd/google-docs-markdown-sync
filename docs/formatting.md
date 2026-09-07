@@ -68,6 +68,23 @@ final item when another top-level block follows.
 
 ## Lists
 
+### Checklists
+
+GDMS uses text markers because Google's documented Docs API does not expose reliable native checkbox checked/unchecked state. This prevents reliable two-way mapping to Markdown task lists; see the [upstream API issue](https://github.com/googleapis/google-api-nodejs-client/issues/2870). The `o] ` / `x] ` convention stores completion in ordinary document text, so both sides can read and update it. It needs only one letter changed to toggle a task, avoids hard-to-type Unicode symbols, and works without an add-on or separate state store. The tradeoff is that the Docs markers are not clickable native checkboxes.
+
+Markdown task items `- [ ] Task` and `- [x] Task` sync to ordinary Google Docs bullets with the text `o] Task` and `x] Task`. Replace `o` with `x` in Docs to complete a task, or reverse it to reopen it. GDMS converts these lowercase prefixes back to Markdown task syntax on export. Prefixes are recognized only at the start of list items followed by a space; the same text in paragraphs or code blocks stays literal. These prefixes are reserved in list items. Nested tasks and formatting within task text are supported; the markers themselves are plain text, not clickable controls.
+
+Native Google Docs checklists are not converted by default. Enable conversion with `gdms configure-checkboxes --enable`; disable it with `gdms configure-checkboxes --disable`. GDMS requires task syntax (`[ ]` or `[x]`) in Google's raw Markdown export and a unique exact text match to an API list paragraph with explicit unspecified-glyph metadata and no glyph symbol. Glyph metadata alone never authorizes conversion. Ordinary exported bullets remain ordinary bullets, including Granola lists that share the unspecified glyph type.
+
+Conversion uses the exported task state: `[ ]` becomes `o] ` and `[x]` becomes `x] `. **Completed tasks may become open if Google's export omits completion.** Live detection has been verified for an unchecked checklist; preservation of native checked state through Google's export has not yet been verified. Existing text formatting, including strikethrough, is preserved but does not establish completion. Disabling conversion does not undo prior conversions.
+
+Duplicate text, unmatched items, multiline or multi-paragraph items, and items containing images are skipped. If native Markdown export exceeds Google's size limit, conversion is skipped rather than falling back to glyph guessing. Export errors otherwise fail the pass, and revision checks reject a document changed during detection or before the write. A read-only plan against the restored mixed-list document selected its six native tasks and excluded all 39 Granola bullets.
+
+Conversion runs during a sync pass when GDMS is pulling or the content is unchanged. A pending local push takes precedence, and conversion waits for a subsequent eligible pass. This setting applies globally to synced Docs; it does not affect Sheets.
+
+
+### Ordinary lists
+
 Consecutive ordered Markdown items become one native Google Docs numbered list,
 so their displayed markers continue as `1`, `2`, `3`, and so on. Unordered
 Markdown items become native Google Docs bullets. Nested items retain their

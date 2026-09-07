@@ -1,6 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { INLINE_IMAGE_MARKER, parseMarkdown } from "../src/markdown.js";
+import { INLINE_IMAGE_MARKER, parseMarkdown, restoreTaskListMarkers } from "../src/markdown.js";
+
+test("task lists retain state, nesting, and inline offsets in Docs text", () => {
+  const blocks = parseMarkdown("- [ ] **Open**\n  - [X] ![pic](https://example.com/a.png)\n- Ordinary");
+  assert.equal(blocks[0].text, "o] Open");
+  assert.deepEqual(blocks[0].styles, [{ start: 3, end: 7, style: { bold: true } }]);
+  assert.equal(blocks[1].text, `x] ${INLINE_IMAGE_MARKER}`);
+  assert.equal(blocks[1].images[0].offset, 3);
+  assert.equal(blocks[1].nestingLevel, 1);
+  assert.equal(blocks[2].text, "Ordinary");
+});
+
+test("restores task prefixes only in list text, preserving exported Markdown", () => {
+  const source = "- o] **Open**\n  - x\\] Done\n- Ordinary o] text\n\no] Paragraph\n\n```\n- x] Code\n```\n";
+  const expected = "- [ ] **Open**\n  - [x] Done\n- Ordinary o] text\n\no] Paragraph\n\n```\n- x] Code\n```\n";
+  assert.equal(restoreTaskListMarkers(source), expected);
+  assert.equal(restoreTaskListMarkers(expected), expected);
+});
 
 test("parses headings and inline formatting", () => {
   const blocks = parseMarkdown(

@@ -4,6 +4,22 @@ import remarkGfm from "remark-gfm";
 import { PARAGRAPH_SPACE_BELOW_PT } from "./formatting.js";
 
 const parser = unified().use(remarkParse).use(remarkGfm);
+
+export function exportedListItems(markdown) {
+  const items = [];
+  function visit(node) {
+    if (node.type === "listItem") {
+      const inline = listItemInline(node);
+      items.push({ text: inline.text, checked: node.checked,
+        eligible: node.children.filter((child) => child.type !== "list").length === 1 &&
+          node.children[0]?.type === "paragraph" && !inline.images?.length &&
+          !inline.text.includes("\n") });
+    }
+    for (const child of node.children ?? []) visit(child);
+  }
+  visit(parser.parse(markdown));
+  return items;
+}
 export const INLINE_IMAGE_MARKER = "\uFFFC";
 const GOOGLE_IMAGE_REFERENCE_PREFIX = "gdocs-image-reference:";
 const TABLE_COLUMN_WIDTHS_PATTERN =
@@ -175,7 +191,17 @@ function appendTextLines(blocks, inline, properties) {
 
 function appendList(blocks, list, nestingLevel = 0) {
   for (const item of list.children ?? []) {
-    appendTextLines(blocks, listItemInline(item), {
+    const inline = listItemInline(item);
+    if (typeof item.checked === "boolean") {
+      inline.text = `${item.checked ? "x" : "o"}] ${inline.text}`;
+      inline.styles = inline.styles.map((range) => ({
+        ...range, start: range.start + 3, end: range.end + 3,
+      }));
+      if (inline.images) inline.images = inline.images.map((image) => ({
+        ...image, offset: image.offset + 3,
+      }));
+    }
+    appendTextLines(blocks, inline, {
       type: "listItem",
       ordered: Boolean(list.ordered),
       nestingLevel,
@@ -184,6 +210,31 @@ function appendList(blocks, list, nestingLevel = 0) {
       if (child.type === "list") appendList(blocks, child, nestingLevel + 1);
     }
   }
+}
+
+// Patch only literal prefixes of list items, preserving the rest of Google's
+// Markdown export (including formatting, links, and image references).
+export function restoreTaskListMarkers(markdown) {
+  const patches = [];
+  function visit(node) {
+    if (node.type === "listItem" && node.checked == null) {
+      const paragraph = node.children?.[0];
+      const first = paragraph?.type === "paragraph" && paragraph.children?.[0];
+      if (first?.type === "text" && /^[ox]\] /.test(first.value)) {
+        const start = first.position.start.offset;
+        const match = markdown.slice(start).match(/^([ox])\\?\] /);
+        if (match) patches.push({ start, length: match[0].length,
+          text: match[1] === "x" ? "[x] " : "[ ] " });
+      }
+    }
+    for (const child of node.children ?? []) visit(child);
+  }
+  visit(parser.parse(markdown));
+  for (const patch of patches.sort((a, b) => b.start - a.start)) {
+    markdown = markdown.slice(0, patch.start) + patch.text +
+      markdown.slice(patch.start + patch.length);
+  }
+  return markdown;
 }
 
 function headingInline(node) {

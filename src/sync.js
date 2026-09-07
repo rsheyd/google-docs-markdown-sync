@@ -14,6 +14,7 @@ import { createR2Stager, loadR2Configuration } from "./r2.js";
 import {
   createGoogleServices,
   exportMarkdown,
+  nativeCheckboxConversionRequests,
   getDocumentDetails,
   getDocumentDriveInfo,
   getRemoteInfo,
@@ -282,7 +283,7 @@ export async function syncPairing(
   services,
   pairing,
   previous,
-  { deferMissingLocal, refreshStatus = false } = {},
+  { deferMissingLocal, refreshStatus = false, autoConvertNativeCheckboxes = false } = {},
 ) {
   const spreadsheet = pairing.type === "spreadsheet";
   let remote = spreadsheet
@@ -320,6 +321,7 @@ export async function syncPairing(
   }
   if (
     !spreadsheet &&
+    !autoConvertNativeCheckboxes &&
     !refreshStatus &&
     previous?.remoteDriveRevisionId &&
     local.exists &&
@@ -391,6 +393,17 @@ export async function syncPairing(
       "Image conflict: both Markdown/assets and Google Docs changed since " +
         "the last synchronized baseline. Resolve one side before syncing.",
     );
+  }
+  if (!spreadsheet && autoConvertNativeCheckboxes && ["pull", "none"].includes(action)) {
+    const requests = await nativeCheckboxConversionRequests(services, effectivePairing.documentId, remote.document);
+    if (requests.length) {
+      await services.docs.documents.batchUpdate({
+        documentId: effectivePairing.documentId,
+        requestBody: { requests, writeControl: { requiredRevisionId: remote.document.revisionId } },
+      });
+      remote = await getRemoteInfo(services, effectivePairing.documentId);
+      action = "pull";
+    }
   }
   if (action === "pull") {
     if (spreadsheet) await spreadsheetDetails();
@@ -666,6 +679,7 @@ export async function runSyncPass({
       const result = await syncPairing(services, pairing, state.documents[key], {
         deferMissingLocal,
         refreshStatus,
+        autoConvertNativeCheckboxes: settings.autoConvertNativeCheckboxes,
       });
       assertCurrentSyncPass(isCurrent);
       if (result.action === "remote-trash") {

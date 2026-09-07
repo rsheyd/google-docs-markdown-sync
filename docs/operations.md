@@ -25,6 +25,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms cleanup-spacing` | `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from one Doc. |
 | `gdms migrate` | `--all` or `--document-id ID` | Local state + Google | Apply pending formatting migrations; add `--dry-run` for no writes. |
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
+| `gdms configure-checkboxes` | `--enable` or `--disable` | Local settings | Toggle export-verified native checklist conversion globally, off by default. Prints a warning that completion depends on Google’s export; ambiguous matches are skipped. Read on each sync pass; use `gdms sync-once` to process existing documents immediately. See [task-list semantics](formatting.md#lists). |
 | `gdms configure-notifications` | Existing health-email recipient or `--to EMAIL` | Local settings + local system | Configure the shared email recipient, persistent-error delay, or error-email opt-out, then restart the sync service. |
 | `gdms configure-r2` | `--account-id ID --bucket NAME --gateway-url URL` | Local settings | Store non-secret R2 image-staging configuration. |
 | `gdms sync-once` | Optional repeatable `--file FILE` | Local + Google | Run one synchronization pass and exit, optionally limited to selected paired paths. |
@@ -183,6 +184,26 @@ the Drive file. A manual fallback is to disable deletion propagation, preserve
 the local Markdown/assets, restore the original Doc in Drive, run `gdms pair`
 at the desired path, compare and merge the backup, push, verify, and then
 re-enable the previous deletion policy.
+
+## Native checklist conversion
+
+Markdown task-list syncing works without enabling conversion. To additionally convert native Google Docs checklists into GDMS text markers, run:
+
+```sh
+gdms configure-checkboxes --enable
+```
+
+**Conversion may turn completed tasks into open ones.** Conversion uses the state in Google’s Markdown export, which has not yet been verified for completed native tasks. It requires a unique text match and skips ambiguous items; glyph metadata alone is insufficient. The command prints this warning. This global, machine-local setting is stored as `autoConvertNativeCheckboxes` in `~/Library/Application Support/google-docs-markdown-sync/settings.json`; it is off by default and does not belong in portable pairing manifests.
+
+The setting is read on each sync pass, so no service restart is required. Existing quiet documents may wait until reconciliation; run `gdms sync-once` to process all pairings immediately, or `gdms sync-once --file /absolute/path/to/paired.md` for one file. Conversion occurs when pulling or when content is unchanged; pending local pushes take precedence. Review the converted tasks and replace `o]` with `x]` for completed items.
+
+To stop future conversions:
+
+```sh
+gdms configure-checkboxes --disable
+```
+
+Disabling the setting does not undo prior conversions or disable ordinary Markdown task syncing. See [checklist behavior, detection limits, and rationale](formatting.md#checklists).
 
 ## Apply formatting migrations
 

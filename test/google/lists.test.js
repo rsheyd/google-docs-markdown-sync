@@ -10,6 +10,8 @@ import {
   planHeadingLinkUpdate,
   planInlineStyleUpdate,
   planIncrementalUpdate,
+  planNativeCheckboxConversion,
+  nativeCheckboxConversionRequests,
   planOrderedListNumberingUpdate,
   planParagraphSpacingUpdate,
   planSpacingCleanup,
@@ -20,6 +22,62 @@ import {
 } from "../../src/google.js";
 import { INLINE_IMAGE_MARKER } from "../../src/markdown.js";
 import { bulletParagraph, imageParagraph, paragraph } from "./fixtures.js";
+
+test("native conversion requires unambiguous exported tasks and preserves exported completion", async () => {
+  const document = { revisionId: "r1", lists: { bullets: { listProperties: {
+    nestingLevels: [{ glyphType: "GLYPH_TYPE_UNSPECIFIED" }],
+  } } }, body: { content: [bulletParagraph(1, "Done\n")] } };
+  assert.equal(planNativeCheckboxConversion(document, "- [x] Done\n")[1].insertText.text, "x] ");
+  for (const markdown of ["- Done\n", "- [ ] Different\n", "- [ ] Done\n- Done\n", "```\n- [ ] Done\n```", "- [ ] Done\n\n  More text\n"]) {
+    assert.deepEqual(planNativeCheckboxConversion(document, markdown), []);
+  }
+  const duplicate = structuredClone(document);
+  duplicate.body.content.push(bulletParagraph(6, "Done\n"));
+  assert.deepEqual(planNativeCheckboxConversion(duplicate, "- [ ] Done\n"), []);
+  const services = { drive: { files: { export: async () => ({ data: Buffer.from("- [x] Done\n") }) } },
+    docs: { documents: { get: async () => ({ data: { ...document, revisionId: "r2" } }) } } };
+  await assert.rejects(nativeCheckboxConversionRequests(services, "doc", document), /changed during/);
+  services.drive.files.export = async () => { throw { response: { data: { error: { message: "This file is too large to be exported." } } } }; };
+  assert.deepEqual(await nativeCheckboxConversionRequests(services, "doc", document), []);
+});
+
+test("native conversion requires explicit candidate metadata and preserves text", () => {
+  const document = { revisionId: "r1", lists: {
+    native: { listProperties: { nestingLevels: [{ glyphType: "GLYPH_TYPE_UNSPECIFIED", glyphFormat: "%0" }] } },
+    ordinary: { listProperties: { nestingLevels: [{ glyphType: "GLYPH_TYPE_UNSPECIFIED" }] } },
+  }, body: { content: [bulletParagraph(1, "Task\n", "native"), bulletParagraph(6, "Plain\n", "ordinary"), bulletParagraph(12, "Unknown\n")] } };
+  const requests = planNativeCheckboxConversion(document, "- [ ] Task\n- Plain\n- Unknown\n");
+  assert.equal(blocksFromDocument(document)[0].ordered, false);
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests[1], { insertText: { location: { index: 1 }, text: "o] " } });
+  assert.equal(requests[2].createParagraphBullets.bulletPreset, "BULLET_DISC_CIRCLE_SQUARE");
+  assert.deepEqual(planNativeCheckboxConversion({ body: document.body }), []);
+});
+
+test("exports whole-item formatting outside task markers", async () => {
+  const item = bulletParagraph(1, "x] Done\n");
+  item.paragraph.elements[0].textRun.textStyle = { bold: true };
+  const document = { body: { content: [item] } };
+  assert.equal(markdownFromDocument(document), "- [x] **Done**\n");
+  const services = { drive: { files: { export: async () => ({ data: Buffer.from("- **x] Done**\n") }) } } };
+  assert.equal(await exportMarkdown(services, "doc", { document }), "- [x] **Done**\n");
+});
+
+test("task markers round-trip through both exports without repeated text updates", async () => {
+  const document = { body: { content: [
+    bulletParagraph(1, "o] Open\n"), bulletParagraph(9, "x] Done\n"),
+  ] } };
+  const expected = "- [ ] Open\n- [x] Done\n";
+  assert.equal(markdownFromDocument(document), expected);
+  const services = { drive: { files: { export: async () => ({
+    data: Buffer.from("* o\\] Open\n* x\\] Done\n"),
+  }) } } };
+  assert.equal(await exportMarkdown(services, "doc", { document }), "* [ ] Open\n* [x] Done\n");
+  const plan = planIncrementalUpdate(document, expected);
+  assert.equal(plan.requests.some((r) => r.insertText || r.deleteContentRange), false);
+  const toggle = planIncrementalUpdate(document, "- [x] Open\n- [x] Done\n");
+  assert.ok(toggle.requests.some((r) => r.insertText?.text.includes("x] Open")));
+});
 
 test("distinguishes unordered Google Docs bullets from numbering", () => {
   const document = {

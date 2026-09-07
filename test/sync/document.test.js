@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { bulletParagraph } from "../google/fixtures.js";
 import { readLocalSpreadsheet } from "../../src/sheets.js";
 import { documentStatusMarkdown, spreadsheetStatusMarkdown } from "../../src/status.js";
 import {
@@ -21,6 +22,31 @@ import {
   shouldDeferMissingPath,
   syncPairing,
 } from "../../src/sync.js";
+
+test("native conversion is opt-in and a failed revision check leaves local content intact", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-task-convert-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const absolutePath = path.join(directory, "paired.md");
+  await fs.writeFile(absolutePath, "original\n");
+  const document = { revisionId: "r1", lists: {
+    bullets: { listProperties: { nestingLevels: [{ glyphType: "GLYPH_TYPE_UNSPECIFIED" }] } },
+  }, body: { content: [bulletParagraph(1, "Task\n")] } };
+  let captured;
+  const services = {
+    drive: { files: { get: async () => ({ data: { name: "Paired", modifiedTime: "2026-09-07T00:00:00Z" } }), export: async () => ({ data: Buffer.from("- [ ] Task\n") }) } },
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async (request) => { captured = request; throw new Error("revision rejected"); },
+    } },
+  };
+  const pairing = { documentId: "doc", name: "Paired", absolutePath, markdownPath: "paired.md", syncLocation: directory };
+  for (const enabled of [false, true]) {
+    await assert.rejects(syncPairing(services, pairing, undefined, { autoConvertNativeCheckboxes: enabled }), /revision rejected/);
+    assert.equal(captured.requestBody.requests.some((r) => r.insertText?.text === "o] "), enabled);
+    assert.equal(captured.requestBody.writeControl.requiredRevisionId, "r1");
+    assert.equal(await fs.readFile(absolutePath, "utf8"), "original\n");
+  }
+});
 
 
 test("compares image Markdown with the same asset-aware hash as local snapshots", async () => {
