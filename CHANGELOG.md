@@ -2,27 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.8.12] - 2026-09-07
-
-### Added
-
-- Rebuild changed Markdown tables containing at most one image per cell, reinserting each image at its text-relative position with Google Docs' default image size.
-
-### Fixed
-
-- Match native Google Docs table-of-contents entries to headings containing bold, italic, code, or escaped Markdown formatting.
-
 ## [0.8.11] - 2026-09-07
 
 ### Added
 
 - Sync Markdown task lists as ordinary Google Docs bullets prefixed with `o] ` or `x] `, preserving completion state in both directions.
 - Add `gdms configure-checkboxes --enable|--disable` for optional export-verified native checklist conversion, disabled by default. Warn that completed tasks may become open if Google’s export omits completion.
+- Rebuild changed Markdown tables containing at most one image per cell, reinserting each image at its text-relative position with Google Docs' default image size.
 
 ### Fixed
 
 - Require raw Google Markdown task syntax and unique paragraph text matches before native checkbox conversion; skip ambiguous matches and reject revision changes. A read-only live check selects six native tasks while excluding all 39 Granola bullets.
 - Recognize native checklist items that include a `%0` glyph format alongside `GLYPH_TYPE_UNSPECIFIED`, rather than treating them as numbered lists and skipping conversion. Verified conversion against a live synced document.
+- Match native Google Docs table-of-contents entries to headings containing bold, italic, code, or escaped Markdown formatting.
 
 ## [0.8.10] - 2026-09-05
 
