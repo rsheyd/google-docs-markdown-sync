@@ -121,7 +121,7 @@ The marker remains invisible in rendered Markdown. Editing its point values upda
 
 Tables whose columns use Google Docs' evenly distributed mode do not receive width metadata. To begin managing their widths from Markdown, add a valid fixed-width marker or resize the columns in Google Docs so the API reports fixed widths.
 
-Explicit breaks inside table cells use inline HTML `<br>` elements because a physical Markdown newline would end the table row. Consecutive breaks remain consecutive, so an empty paragraph between two populated cell paragraphs round-trips as `<br><br>`. Inline bold, italic, strikethrough, links, and images retain their positions across these breaks. Automatic visual wrapping is not stored as breaks; Google Docs recalculates it from the synchronized column width.
+Explicit breaks inside table cells use inline HTML `<br>` elements because a physical Markdown newline would end the table row. Consecutive breaks remain consecutive, so an empty paragraph between two populated cell paragraphs round-trips as `<br><br>`. Inline bold, italic, strikethrough, links, and images retain their positions across these breaks. A changed table may contain at most one image per cell; when GDMS rebuilds the table, it retains the image's text-relative position but lets Google Docs choose the new image size. Automatic visual wrapping is not stored as breaks; Google Docs recalculates it from the synchronized column width.
 
 ## Tables of contents
 

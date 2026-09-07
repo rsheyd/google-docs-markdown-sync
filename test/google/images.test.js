@@ -264,7 +264,7 @@ test("refuses image changes mixed with paragraph text even when staged", () => {
         imageUris: new Map([[source, "https://signed.example/new"]]),
       },
     ),
-    /Only standalone image paragraphs can be changed/,
+    /Only standalone image paragraphs and one image per table cell can be changed/,
   );
 });
 
@@ -334,4 +334,85 @@ test("rebuilds text around a staged standalone image", async () => {
       },
     },
   });
+});
+
+test("rebuilds a table cell containing one staged image at its text offset", async () => {
+  const writes = [];
+  let reads = 0;
+  const tableDocument = () => ({
+    revisionId: `revision-${reads}`,
+    body: { content: [{
+      startIndex: 1,
+      endIndex: 30,
+      table: {
+        columns: 2,
+        tableRows: [
+          { tableCells: [{ startIndex: 2, content: [] }, { startIndex: 8, content: [] }] },
+          { tableCells: [{ startIndex: 14, content: [] }, { startIndex: 20, content: [] }] },
+        ],
+      },
+    }] },
+  });
+  const services = {
+    docs: { documents: {
+      get: async () => {
+        reads += 1;
+        return { data: reads === 1
+          ? { revisionId: "revision-1", body: { content: [paragraph(1, "Old\n")] } }
+          : tableDocument() };
+      },
+      batchUpdate: async (request) => { writes.push(request); },
+    } },
+    drive: { files: { get: async () => ({ data: {
+      id: "document",
+      modifiedTime: "2026-09-07T12:00:00Z",
+      name: "Document",
+    } }) } },
+  };
+  const source = "project.assets/logo.png";
+
+  await replaceDocumentFromMarkdown(
+    services,
+    "document",
+    `| Rank | Team |\n| --- | --- |\n| 1 | ![logo](${source}) Winners |`,
+    { imageUris: new Map([[source, "https://signed.example/logo"]]) },
+  );
+
+  const imageRequest = writes
+    .flatMap((write) => write.requestBody.requests)
+    .find((request) => request.insertInlineImage);
+  assert.deepEqual(imageRequest, {
+    insertInlineImage: {
+      location: { index: 21 },
+      uri: "https://signed.example/logo",
+    },
+  });
+  assert.equal(
+    writes.flatMap((write) => write.requestBody.requests)
+      .some((request) => request.insertText?.text.includes(INLINE_IMAGE_MARKER)),
+    false,
+  );
+});
+
+test("refuses more than one image in a rebuilt table cell before writing", async () => {
+  let writes = 0;
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: { body: { content: [paragraph(1, "Old\n")] } } }),
+      batchUpdate: async () => { writes += 1; },
+    } },
+  };
+  await assert.rejects(
+    replaceDocumentFromMarkdown(
+      services,
+      "document",
+      "| Team |\n| --- |\n| ![](a.png) ![](b.png) |",
+      { imageUris: new Map([
+        ["a.png", "https://signed.example/a"],
+        ["b.png", "https://signed.example/b"],
+      ]) },
+    ),
+    /one image per table cell/,
+  );
+  assert.equal(writes, 0);
 });

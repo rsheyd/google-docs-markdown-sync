@@ -653,6 +653,24 @@ function blockHasImages(block) {
   return (block.images ?? []).length > 0;
 }
 
+function imagesInBlock(block) {
+  if (block.type === "table") {
+    return block.rows.flatMap((row) =>
+      row.flatMap((cell) => cell.images ?? []),
+    );
+  }
+  return block.images ?? [];
+}
+
+function supportedImageBlock(block) {
+  if (block.type === "table") {
+    return block.rows.every((row) =>
+      row.every((cell) => (cell.images ?? []).length <= 1),
+    );
+  }
+  return standaloneImage(block);
+}
+
 function standaloneImage(block) {
   return (
     block.type === "text" &&
@@ -682,14 +700,14 @@ function assertSupportedImageMutation(current, desired, hunks, imageUris) {
       ...current.slice(hunk.currentStart, hunk.currentEnd),
       ...desired.slice(hunk.desiredStart, hunk.desiredEnd),
     ]).filter(blockHasImages);
-    if (changedBlocks.some((block) => !standaloneImage(block))) {
+    if (changedBlocks.some((block) => !supportedImageBlock(block))) {
       throw new Error(
-        "Only standalone image paragraphs can be changed from Markdown. " +
-          "Mixed text-and-image paragraphs are not supported yet.",
+        "Only standalone image paragraphs and one image per table cell can " +
+          "be changed from Markdown.",
       );
     }
     for (const block of desired) {
-      for (const image of block.images ?? []) {
+      for (const image of imagesInBlock(block)) {
         if (!imageUris.has(image.url)) {
           throw new Error(`No staged image URL is available for ${image.url}.`);
         }
@@ -1900,7 +1918,7 @@ function lastTable(document) {
   return tables.at(-1);
 }
 
-async function appendTable(services, documentId, block) {
+async function appendTable(services, documentId, block, { imageUris } = {}) {
   if (!block.rows.length || !block.rows[0]?.length) return;
   const columns = Math.max(...block.rows.map((row) => row.length));
   await services.docs.documents.batchUpdate({
@@ -1926,7 +1944,8 @@ async function appendTable(services, documentId, block) {
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
       const cell = table.tableRows[rowIndex].tableCells[columnIndex];
-      const value = block.rows[rowIndex][columnIndex]?.text ?? "";
+      const value = (block.rows[rowIndex][columnIndex]?.text ?? "")
+        .replaceAll(INLINE_IMAGE_MARKER, "");
       if (value) {
         insertions.push({
           index: cell.startIndex + 1,
@@ -1950,6 +1969,33 @@ async function appendTable(services, documentId, block) {
 
   document = await currentDocument(services, documentId);
   table = lastTable(document)?.table;
+  const imageInsertions = [];
+  for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+      const sourceCell = block.rows[rowIndex][columnIndex];
+      const image = sourceCell?.images?.[0];
+      if (!image) continue;
+      const cell = table.tableRows[rowIndex].tableCells[columnIndex];
+      imageInsertions.push({
+        index: cell.startIndex + 1 + image.offset,
+        request: {
+          insertInlineImage: {
+            location: { index: cell.startIndex + 1 + image.offset },
+            uri: imageUris.get(image.url),
+          },
+        },
+      });
+    }
+  }
+  imageInsertions.sort((a, b) => b.index - a.index);
+  if (imageInsertions.length) {
+    await services.docs.documents.batchUpdate({
+      documentId,
+      requestBody: { requests: imageInsertions.map((item) => item.request) },
+    });
+    document = await currentDocument(services, documentId);
+    table = lastTable(document)?.table;
+  }
   const styleRequests = [];
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
@@ -1991,13 +2037,16 @@ export async function replaceDocumentFromMarkdown(
 ) {
   const blocks = parseMarkdown(markdown);
   const imageBlocks = blocks.filter(blockHasImages);
-  if (imageBlocks.some((block) => !standaloneImage(block))) {
-    throw new Error("Only standalone image paragraphs can be rebuilt.");
+  if (imageBlocks.some((block) => !supportedImageBlock(block))) {
+    throw new Error(
+      "Only standalone image paragraphs and one image per table cell can be rebuilt.",
+    );
   }
   for (const block of imageBlocks) {
-    const source = block.images[0].url;
-    if (!imageUris?.has(source)) {
-      throw new Error(`No staged image URL is available for ${source}.`);
+    for (const image of imagesInBlock(block)) {
+      if (!imageUris?.has(image.url)) {
+        throw new Error(`No staged image URL is available for ${image.url}.`);
+      }
     }
   }
   const tableCount = blocks.filter((block) => block.type === "table").length;
@@ -2027,7 +2076,7 @@ export async function replaceDocumentFromMarkdown(
         current: tableNumber,
         total: tableCount,
       });
-      await appendTable(services, documentId, block);
+      await appendTable(services, documentId, block, { imageUris });
       index += 1;
     } else {
       const end = blocks.findIndex(

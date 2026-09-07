@@ -458,7 +458,7 @@ configuration from the [installation guide](installation.md#configure-image-stag
 
 ### A table edit is refused
 
-Changed table structure requires a full Docs body rebuild. GDMS can rebuild documents containing supported standalone image paragraphs when image staging is configured. Images mixed with text or embedded inside table cells remain unsupported; make those changes in Google Docs or separate the image-bearing content before retrying.
+Changed table structure requires a full Docs body rebuild. With image staging configured, GDMS can rebuild documents containing supported standalone image paragraphs and at most one image per table cell. A rebuilt cell image retains its position relative to the cell text but uses Google Docs' default image size. Cells containing multiple images remain unsupported; simplify those cells before retrying.
 
 ### Remove generated spacing paragraphs
 

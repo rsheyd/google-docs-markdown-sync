@@ -70,6 +70,23 @@ test("matches native TOC labels when Google and Markdown fragment rules differ",
   assert.match(represented, /\*\*Table of Contents\*\*/);
 });
 
+test("matches native TOC labels to headings with inline formatting", () => {
+  const exported = [
+    "[2\\. August: Make the draft feel like an event](#august)",
+    "",
+    "[Other styled heading](#other)",
+    "",
+    "## **2\\. August: Make the draft feel like an event**",
+    "",
+    "## *Other* `styled` heading",
+    "",
+  ].join("\n");
+  const represented = representNativeTableOfContents(exported);
+  assert.match(represented, /gdms:generated-toc:start/);
+  assert.match(represented, /\[2\. August: Make the draft feel like an event\]/);
+  assert.match(represented, /\[Other styled heading\]/);
+});
+
 test("restores the remote native TOC only for the Google update view", () => {
   const local = `Intro\n\n${GENERATED_TOC_START}\n\n[New](#new)\n\n${GENERATED_TOC_END}\n\n## New\n`;
   const remote = "Old intro\n\n[Old](#old)\n\n## Old\n";

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.12] - 2026-09-07
+
+### Added
+
+- Rebuild changed Markdown tables containing at most one image per cell, reinserting each image at its text-relative position with Google Docs' default image size.
+
+### Fixed
+
+- Match native Google Docs table-of-contents entries to headings containing bold, italic, code, or escaped Markdown formatting.
+
 ## [0.8.11] - 2026-09-07
 
 ### Added

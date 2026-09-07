@@ -78,11 +78,11 @@ function exportedNativeTocRange(markdown) {
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
   const headings = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const match = lines[index].match(/^#{1,6}\s+(.+?)\s*$/);
-    if (!match) continue;
-    const explicit = match[1].match(/^(.*?)\s+\{#([^}]+)\}\s*$/);
-    const text = explicit ? explicit[1] : match[1];
-    headings.push({ text, index });
+    if (!/^#{1,6}\s+(.+?)\s*$/.test(lines[index])) continue;
+    const heading = parseMarkdown(lines[index]).find(
+      (block) => block.type === "text" && /^HEADING_[1-6]$/.test(block.paragraphStyle),
+    );
+    if (heading) headings.push({ text: heading.text, index });
   }
 
   const linkPattern = /^\s*\[(.+)\]\((#[^)]+)\)\s*$/;
@@ -93,7 +93,12 @@ function exportedNativeTocRange(markdown) {
     const links = [];
     while (end < lines.length) {
       const match = lines[end].match(linkPattern);
-      if (match) links.push({ label: match[1].replace(/\\([\[\]\\])/g, "$1"), index: end });
+      if (match) {
+        const label = parseMarkdown(match[1]).find(
+          (block) => block.type === "text" && block.paragraphStyle === "NORMAL_TEXT",
+        )?.text;
+        links.push({ label: label ?? match[1].replace(/\\([\[\]\\])/g, "$1"), index: end });
+      }
       else if (lines[end].trim() !== "") break;
       end += 1;
     }
