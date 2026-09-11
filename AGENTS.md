@@ -40,6 +40,7 @@
 - `docs/design/namespace-migration.md`: Compatibility and rollout plan for replacing the
   legacy application, launchd, and Keychain namespace.
 - `docs/design/scalable-wake-safe-sync.md`: Design and phased implementation plan for incremental remote polling, bounded concurrency, reconciliation, and sleep-safe sync lifecycle handling.
+- `docs/design/privacy-preserving-telemetry.md`: Opt-in telemetry product questions, privacy contract, payload schema, receiver requirements, and phased delivery plan.
 - `docs/design/unified-sync-location-registry.md`: Design and two-phase migration plan for one GDMS-owned sync-location registry shared by Raycast, the CLI, and the daemon.
 - `docs/design/hosted-drive-github-sync.md`: Exploratory offshoot design for hosted two-way synchronization between a bounded Google Drive tree and a GitHub repository folder.
 - `docs/design/hosted-drive-sidecar-sync.md`: Exploratory offshoot design for hosted two-way synchronization between Google-native documents and adjacent Markdown/CSV files within one bounded Drive tree.
@@ -52,11 +53,13 @@
   machine-local working files.
 - `local-only/openmagpie-gdms-setup.md`: Local runbook for using OpenMagpie to
   find and review public discussions where GDMS may be relevant.
+- `local-only/github-traffic-archive.md`: Local runbook for the private scheduled GitHub traffic archive, token renewal, and verification links.
 - `.gitignore`: Generated dependency/build output exclusions.
 - `LICENSE`: MIT license governing use and redistribution.
 - `package.json`: Node service package, scripts, and runtime dependencies.
 - `package-lock.json`: Locked Node service dependency graph.
 - `scripts/create-github-release.sh`: Create the newest changelog release on GitHub after previewing and committing it.
+- `scripts/update-homebrew-formula.sh`: Update and publish the GDMS formula in the personal Homebrew tap after a GitHub release is available.
 - `src/`: Synchronization service, Google API integration, pairing registry,
   Markdown, image, R2 staging, migrations, and CSV conversion, Docs and Sheets adapters,
   CLI, launch-at-login and Finder Quick Action installers, and independent

@@ -8,6 +8,10 @@ All notable changes to this project are documented in this file.
 
 - Resume interrupted Doc trash operations by reconciling the saved `trashing` phase with Google Drive before local cleanup, and keep the originally recorded Markdown and asset paths authoritative across manual retries.
 
+### Added
+
+- Add a Homebrew installation path through `rsheyd/tap/gdms`, including release-formula updates and documented upgrade handling for versioned Cellar paths.
+
 ## [0.8.10] - 2026-09-07
 
 ### Added

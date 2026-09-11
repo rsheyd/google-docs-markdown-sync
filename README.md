@@ -36,14 +36,11 @@ synchronized; repositories and unrelated files are never copied to Drive.
 
 ## Is it for me?
 
-GDMS is currently best suited to a technically comfortable macOS user who
-wants a small, self-hosted bridge between Google documents and local project
-files. It runs from a source checkout; it is not yet a packaged Mac app or npm
-CLI.
+GDMS is currently best suited to a technically comfortable macOS user who wants a small, self-hosted bridge between Google documents and local project files. It installs through Homebrew or runs from a source checkout; it is not yet a packaged Mac app.
 
 Before installing, expect to configure:
 
-- Node.js 22 or newer;
+- Node.js 22 or newer, installed automatically when using Homebrew;
 - a Google Cloud OAuth desktop client with Drive, Docs, and Sheets APIs;
 - Safari or a supported Chromium browser, plus Raycast, for the
   active-document shortcut workflow;
@@ -62,8 +59,7 @@ R2 configuration, and optional Finder and Raycast setup.
 After completing the Google authorization steps in the [installation guide](docs/installation.md):
 
 ```sh
-npm install
-npm link
+brew install rsheyd/tap/gdms
 gdms auth
 gdms install-service
 gdms install-finder-action

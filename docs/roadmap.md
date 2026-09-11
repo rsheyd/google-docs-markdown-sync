@@ -33,6 +33,16 @@ results, and remaining work are documented in the [image synchronization design]
 
 The completed lifecycle, change-discovery, and reconciliation work is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md). Its [future reconciliation scaling trigger](design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) records when and how to add cooperative batching and measured concurrency without prematurely complicating the current state coordinator.
 
+## Next: privacy-preserving usage telemetry
+
+- Begin with local-only daily aggregation and an exact `gdms telemetry preview`; do not submit data during the prototype phase.
+- Keep telemetry disabled by default, require explicit interactive consent, and never collect document content, identifiers, paths, account details, raw errors, or precise activity timestamps.
+- Use coarse configuration and activity fields to measure opted-in active installations, setup completion, feature adoption, versions, synchronization reliability, safety stops, and categorized failures.
+- Separate the telemetry receiver from synchronization and image staging, enforce strict schemas and short raw-record retention, and ensure receiver failure cannot affect GDMS behavior.
+- Ship network submission only with public schema and privacy documentation, complete enable/disable/reset/delete controls, focused security review, a version increase, and a matching changelog entry.
+
+The product questions, consent contract, proposed payload, prohibited data, receiver requirements, delivery phases, and acceptance criteria are documented in the [privacy-preserving telemetry design](design/privacy-preserving-telemetry.md).
+
 ## Completed: unified sync-location registry
 
 - Replaced the privileged discovery root and separate Raycast location storage with one GDMS-owned registry of explicitly selected sync locations.

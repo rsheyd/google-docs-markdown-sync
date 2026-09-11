@@ -1,8 +1,6 @@
 # Install and configure GDMS
 
-This guide installs GDMS from a source checkout, authorizes Google access, and
-creates the first pairing. GDMS currently targets macOS and requires Node.js 22
-or newer.
+This guide installs GDMS through Homebrew or from a source checkout, authorizes Google access, and creates the first pairing. GDMS currently targets macOS and requires Node.js 22 or newer. Homebrew installs and manages Node automatically.
 
 ## Prerequisites
 
@@ -20,9 +18,30 @@ Optional components depend on the workflow:
 - Cloudflare R2 for adding or replacing local images in Google Docs; and
 - Resend for the independent weekly health email.
 
-## Install dependencies
+## Install with Homebrew
 
-Clone or download the repository, enter its directory, and run:
+Homebrew is the recommended installation path:
+
+```sh
+brew install rsheyd/tap/gdms
+```
+
+Homebrew adds the GDMS tap, installs the current release and its Node dependency, and places `gdms` on the command path. Continue with [Choose sync locations](#choose-sync-locations).
+
+After a new GDMS release, upgrade it and refresh the absolute paths stored in the background service and Finder Quick Actions:
+
+```sh
+brew update
+brew upgrade gdms
+gdms install-service
+gdms install-finder-action
+```
+
+Existing configuration, OAuth tokens, pairing manifests, and synchronization state remain outside the Homebrew Cellar and are preserved across upgrades. If the shell still resolves an older `npm link` installation after installing with Homebrew, remove that npm link or put Homebrew earlier in `PATH`; compare `command -v gdms` with `brew --prefix gdms` to identify the active installation.
+
+## Install from a source checkout
+
+For development or unreleased changes, clone or download the repository, enter its directory, and run:
 
 ```sh
 npm install

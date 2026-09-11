@@ -14,7 +14,7 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-for command in awk gh git; do
+for command in awk brew curl gh git perl shasum; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
@@ -58,8 +58,9 @@ if ! git -C "$repository_root" diff --quiet ||
 fi
 
 if gh release view "$tag" --repo rsheyd/google-docs-markdown-sync >/dev/null 2>&1; then
-  echo "GitHub release $tag already exists." >&2
-  exit 1
+  echo "GitHub release $tag already exists; checking its Homebrew formula."
+  "$repository_root/scripts/update-homebrew-formula.sh" "$version"
+  exit 0
 fi
 
 target=$(git -C "$repository_root" rev-parse HEAD)
@@ -70,3 +71,4 @@ release_url=$(gh release create "$tag" \
   --notes-file "$notes_file")
 
 echo "Created GitHub release $tag: $release_url"
+"$repository_root/scripts/update-homebrew-formula.sh" "$version"
