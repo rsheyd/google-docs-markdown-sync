@@ -123,6 +123,7 @@ test("uses one blank line as Markdown syntax and preserves only extras", () => {
     blocks.map((block) => block.text),
     ["First", "", "Second"],
   );
+  assert.equal(blocks[0].paragraphSpaceBelow, undefined);
 });
 
 test("splits Markdown hard breaks into separate Google paragraph blocks", () => {

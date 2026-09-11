@@ -58,9 +58,7 @@ First line
 Second line
 ```
 
-One blank line is ordinary Markdown block separation and becomes the standard
-8-point gap. Additional blank lines are preserved as explicit empty paragraphs,
-so deliberately larger separations remain visible.
+One blank line is ordinary Markdown block separation and becomes the standard 8-point gap. Additional blank lines are preserved as explicit empty paragraphs, so deliberately larger separations remain visible without also receiving the standard gap. This avoids compounded spacing when Google Docs' **Paste from Markdown** creates an explicit empty paragraph.
 
 Blank lines inside a list do not currently create separate spacing between list
 items. GDMS keeps list internals compact and applies the block gap only after the

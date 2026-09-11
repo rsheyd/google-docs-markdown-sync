@@ -180,7 +180,7 @@ test("clears paragraph spacing on an explicit Markdown blank line", () => {
   );
   assert.deepEqual(
     requests.map((request) => request.updateParagraphStyle.range),
-    [blank, second].map((item) => ({
+    [first, blank, second].map((item) => ({
       startIndex: item.startIndex,
       endIndex: item.endIndex,
     })),

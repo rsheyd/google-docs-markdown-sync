@@ -2,11 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.8.11] - 2026-09-11
+## [0.8.11] - Unreleased
 
 ### Fixed
 
 - Resume interrupted Doc trash operations by reconciling the saved `trashing` phase with Google Drive before local cleanup, and keep the originally recorded Markdown and asset paths authoritative across manual retries.
+- Avoid adding the standard 8-point paragraph gap when an explicit empty Markdown paragraph already supplies the separation, preventing compounded whitespace after Google Docs' **Paste from Markdown** command.
 
 ### Added
 

@@ -370,11 +370,7 @@ one atomic Docs batch. Unchanged ranges and tables remain in place. A changed
 table structure falls back to a full body rebuild unless the document contains
 images, in which case GDMS refuses the unsafe rebuild.
 
-Ordinary Markdown paragraphs receive 8 pt of visual spacing in Google Docs
-without creating Markdown-visible blank paragraphs. Each additional
-consecutive blank line becomes an explicit empty Docs paragraph. Markdown hard
-breaks become adjacent paragraphs without the added spacing. Headings, lists,
-tables, and managed status content retain their native spacing.
+Ordinary Markdown paragraphs receive 8 pt of visual spacing in Google Docs without creating Markdown-visible blank paragraphs. Each additional consecutive blank line becomes an explicit empty Docs paragraph instead of combining that paragraph with the 8 pt gap. Markdown hard breaks become adjacent paragraphs without the added spacing. Headings, lists, tables, and managed status content retain their native spacing.
 
 Markdown fragment links become native Docs heading links. New headings require
 a second atomic batch after Google assigns their heading IDs. A native Google

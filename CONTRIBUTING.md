@@ -37,9 +37,7 @@ Follow the complete [security pull-request review process](docs/security-pr-revi
 
 ## Bump the version
 
-The synchronization service and Raycast extension currently share one semantic
-version. Choose the next patch, minor, or major version and update both packages
-without creating an automatic Git commit or tag:
+The synchronization service and Raycast extension currently share one semantic version. Before choosing the next patch, minor, or major version, compare the newest `CHANGELOG.md` heading with the GDMS GitHub Releases page. If that version is marked `Unreleased` and has not been published, add changes to its existing section rather than bumping again. Otherwise, update both packages without creating an automatic Git commit or tag:
 
 ```sh
 release_version=NEXT_VERSION
@@ -60,7 +58,7 @@ version-bump commit. Do not change the numeric `version` fields in
 `google-docs-sync.json`, `GDMS.md`, or their examples; those
 are data-format schema versions, not application release versions.
 
-After the version bump and changelog entry are committed and pushed, create the GitHub release from the newest `CHANGELOG.md` section:
+Keep the newest changelog heading in the form `## [VERSION] - Unreleased` during development. Immediately before publishing, replace `Unreleased` with the release date. After the version bump and changelog entry are committed and pushed, create the GitHub release from that newest `CHANGELOG.md` section:
 
 ```sh
 ./scripts/create-github-release.sh --dry-run

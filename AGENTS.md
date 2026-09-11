@@ -17,7 +17,7 @@
   `docs/installation.md`, and commands or service behavior to `docs/operations.md`; keep the
   README summary and links current when the broader product description changes.
 - Update this file map whenever durable project files are added or renamed.
-- Increase the version for a release containing user-visible changes and record those changes under that exact version in `CHANGELOG.md`; do not use an Unreleased section. Multiple changes developed for the same not-yet-released version should be consolidated under that version rather than triggering a new version for every change. Minor documentation, planning, template-copy, test-only, and internal-maintenance changes do not require a version bump unless they accompany a release.
+- Increase the version for a release containing user-visible changes and record those changes under that exact version in `CHANGELOG.md`; do not use a separate Unreleased section. Mark the newest version heading `Unreleased` until that version appears on the GDMS GitHub Releases page, then replace the marker with the publication date. Consolidate additional changes under the newest unreleased version rather than triggering a new version for every change. Minor documentation, planning, template-copy, test-only, and internal-maintenance changes do not require a version bump unless they accompany a release.
 
 ## File map
 

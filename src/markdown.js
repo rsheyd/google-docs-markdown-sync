@@ -292,18 +292,19 @@ export function parseMarkdown(markdown) {
       pendingTableColumnWidthsLine ??
       node.position?.start.line ??
       previousEndLine + 1;
+    const blankLines = previousEndLine
+      ? Math.max(0, startLine - previousEndLine - 2)
+      : 0;
     if (
       previousEndLine &&
       startLine > previousEndLine + 1 &&
+      blankLines === 0 &&
       previousBlockEnd > 0 &&
       ["text", "listItem"].includes(blocks[previousBlockEnd - 1]?.type)
     ) {
       blocks[previousBlockEnd - 1].paragraphSpaceBelow =
         PARAGRAPH_SPACE_BELOW_PT;
     }
-    const blankLines = previousEndLine
-      ? Math.max(0, startLine - previousEndLine - 2)
-      : 0;
     for (let index = 0; index < blankLines; index += 1) {
       blocks.push({
         type: "text",
