@@ -80,6 +80,14 @@ export async function trashPairedDocument({
       "Refusing to trash the Google Doc without a deletion email recipient; set GOOGLE_DOCS_SYNC_DELETE_TO.",
     );
   }
+  const deletionStarted = ["trashing", "trashed", "unpaired"].includes(deletion.phase);
+  const deletionPairing = deletionStarted
+    ? {
+        ...pairing,
+        absolutePath: deletion.absolutePath,
+        manifestPath: deletion.manifestPath,
+      }
+    : pairing;
   const file = await services.drive.files.get({
     fileId: pairing.documentId,
     fields: "id,name,trashed",
@@ -90,10 +98,10 @@ export async function trashPairedDocument({
     name: file.data.name ?? pairing.name,
     documentId: pairing.documentId,
     documentUrl: pairing.documentUrl,
-    absolutePath: pairing.absolutePath,
+    absolutePath: deletionPairing.absolutePath,
     recipient,
     sender,
-    manifestPath: pairing.manifestPath,
+    manifestPath: deletionPairing.manifestPath,
     type: "document",
     deleteLocal,
     policyDescription: policyDescription(pairing, explicit),
@@ -114,13 +122,13 @@ export async function trashPairedDocument({
   await persistState(state);
 
   if (deleteLocal) {
-    await fs.rm(pairing.absolutePath, { force: true });
-    await fs.rm(assetDirectoryPath(pairing.absolutePath), {
+    await fs.rm(deletionPairing.absolutePath, { force: true });
+    await fs.rm(assetDirectoryPath(deletionPairing.absolutePath), {
       recursive: true,
       force: true,
     });
   }
-  await removePairing(pairing);
+  await removePairing(deletionPairing);
   delete state.documents[stateKey(pairing)];
   deletion.phase = "unpaired";
   await persistState(state);
@@ -185,12 +193,28 @@ export async function archiveRemoteTrashedPairing({
 
 export async function retryDeletionNotifications(
   state,
-  { persistState, sendEmail = sendDeletionEmail, logger = console } = {},
+  { services, persistState, sendEmail = sendDeletionEmail, logger = console } = {},
 ) {
   for (const deletion of Object.values(state.deletions ?? {})) {
     try {
       if (deletion.origin === "remote" && ["archiving", "archived"].includes(deletion.phase)) {
         await archiveRemoteTrashedPairing({ pairing: deletion, state, persistState });
+      }
+      if (deletion.phase === "trashing") {
+        if (!services) throw new Error("Google Drive services are required to resume trashing.");
+        const file = await services.drive.files.get({
+          fileId: deletion.documentId,
+          fields: "id,name,trashed",
+        });
+        if (!file.data.trashed) {
+          await services.drive.files.update({
+            fileId: deletion.documentId,
+            requestBody: { trashed: true },
+            fields: "id,trashed",
+          });
+        }
+        deletion.phase = "trashed";
+        await persistState(state);
       }
       if (deletion.phase === "trashed") {
         if (deletion.deleteLocal) {

@@ -529,6 +529,7 @@ export function assertCurrentSyncPass(isCurrent = () => true) {
 export async function commitSyncPass({
   results,
   state,
+  services,
   logger = console,
   errorReporter,
   reportErrors = true,
@@ -547,6 +548,7 @@ export async function commitSyncPass({
   }
   assertCurrentSyncPass(isCurrent);
   await retryNotifications(state, {
+    services,
     persistState,
     logger,
   });
@@ -724,6 +726,7 @@ export async function runSyncPass({
   await commitSyncPass({
     results,
     state,
+    services,
     logger,
     errorReporter,
     reportErrors: !onProgress,

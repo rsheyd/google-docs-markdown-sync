@@ -135,11 +135,7 @@ gdms delete --file /absolute/path/to/note.md --yes
 gdms delete --document-id DOCUMENT_ID --yes
 ```
 
-GDMS first moves the Google Doc to recoverable Drive trash, then deletes the
-local Markdown file and its managed asset directory, removes the pairing, and
-sends the configured Resend notification. Omitting `--yes` performs no writes.
-This command and automatic deletion propagation currently apply only to
-Markdown/Google Docs pairings, not Sheets/CSV pairings.
+GDMS first moves the Google Doc to recoverable Drive trash, then deletes the local Markdown file and its managed asset directory, removes the pairing, and sends the configured Resend notification. Omitting `--yes` performs no writes. If the command is interrupted, GDMS resumes from its saved deletion phase and original local path. A retry verifies an in-progress trash operation with Drive before continuing, and repeated local deletions are harmless when part of the cleanup already completed. This command and automatic deletion propagation currently apply only to Markdown/Google Docs pairings, not Sheets/CSV pairings.
 
 ## Documents trashed in Google Drive
 

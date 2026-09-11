@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.11] - 2026-09-11
+
+### Fixed
+
+- Resume interrupted Doc trash operations by reconciling the saved `trashing` phase with Google Drive before local cleanup, and keep the originally recorded Markdown and asset paths authoritative across manual retries.
+
 ## [0.8.10] - 2026-09-07
 
 ### Added

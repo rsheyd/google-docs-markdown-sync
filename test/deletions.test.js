@@ -81,6 +81,59 @@ test("trashes the Doc before removing local data and sends one notification", as
   await fs.rm(directory, { recursive: true, force: true });
 });
 
+test("reconciles a persisted trashing phase before resuming partial local cleanup", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-trashing-resume-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const markdownPath = path.join(directory, "note.md");
+  const assetPath = path.join(directory, "note.assets");
+  const manifestPath = path.join(directory, "google-docs-sync.json");
+  await fs.mkdir(assetPath);
+  await fs.writeFile(path.join(assetPath, "image.png"), "image");
+  await fs.writeFile(manifestPath, JSON.stringify({ pairings: [{ documentId: "doc-1" }] }));
+  const events = [];
+  const state = { documents: { "doc-1": {} }, deletions: { "doc-1": {
+    ...pairing({ absolutePath: markdownPath, manifestPath }), phase: "trashing", deleteLocal: true,
+    recipient: "person@example.com", trashedAt: "2026-09-11T12:00:00.000Z",
+  } } };
+  await retryDeletionNotifications(state, {
+    services: { drive: { files: {
+      get: async () => ({ data: { id: "doc-1", trashed: true } }),
+      update: async () => events.push("unexpected trash update"),
+    } } },
+    persistState: async () => events.push(state.deletions["doc-1"].phase),
+    sendEmail: async () => ({ id: "email-1" }),
+  });
+  assert.deepEqual(events, ["trashed", "unpaired", "notified"]);
+  await assert.rejects(fs.access(assetPath));
+  assert.equal(state.documents["doc-1"], undefined);
+});
+
+test("manual retry keeps the deletion record's original local path", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-delete-path-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const originalPath = path.join(directory, "original.md");
+  const originalAssetPath = path.join(directory, "original.assets");
+  const currentPath = path.join(directory, "current.md");
+  await fs.mkdir(originalAssetPath);
+  await fs.writeFile(currentPath, "new pairing content");
+  const deletion = {
+    phase: "trashed", documentId: "doc-1", documentUrl: pairing().documentUrl,
+    absolutePath: originalPath, recipient: "person@example.com", deleteLocal: true,
+    trashedAt: "2026-09-11T12:00:00.000Z",
+  };
+  const state = { documents: { "doc-1": {} }, deletions: { "doc-1": deletion } };
+  let removedPath;
+  await trashPairedDocument({
+    services: { drive: { files: { get: async () => ({ data: { id: "doc-1", trashed: true } }) } } },
+    pairing: pairing({ absolutePath: currentPath }), state, deletion, explicit: true, deleteLocal: true,
+    persistState: async () => {}, removePairing: async (value) => { removedPath = value.absolutePath; },
+    sendEmail: async () => ({ id: "email-1" }),
+  });
+  assert.equal(removedPath, originalPath);
+  assert.equal(await fs.readFile(currentPath, "utf8"), "new pairing content");
+  await assert.rejects(fs.access(originalAssetPath));
+});
+
 test("refuses automatic trash without a notification recipient", async () => {
   const originalDeleteTo = process.env.GOOGLE_DOCS_SYNC_DELETE_TO;
   const originalHeartbeatTo = process.env.GOOGLE_DOCS_SYNC_HEARTBEAT_TO;
