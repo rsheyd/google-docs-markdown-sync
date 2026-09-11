@@ -56,11 +56,22 @@ R2 configuration, and optional Finder and Raycast setup.
 
 ## Quick start
 
-After completing the Google authorization steps in the [installation guide](docs/installation.md):
+Install GDMS:
 
 ```sh
 brew install rsheyd/tap/gdms
+```
+
+[Create and download a Google OAuth desktop client](docs/installation.md#authorize-google), place its JSON file at the documented location, and authorize GDMS:
+
+```sh
 gdms auth
+```
+
+Register the local tree in which paired files will live, then install the background service and optional Finder actions:
+
+```sh
+gdms location add --path "$HOME/dev"
 gdms install-service
 gdms install-finder-action
 ```
@@ -72,8 +83,7 @@ Then choose one starting point:
   Raycast.
 - Control-click local Markdown files in Finder and use **Sync MDs with New
   Google Docs (GDMS)**, use **Sync Paired File Now (GDMS)** for an existing pairing, or select CSV files and use **Combine & Sync CSVs with New Google Sheet (GDMS)**.
-- Pair or create a document directly with the commands in
-  [installation guide](docs/installation.md#pair-your-first-document).
+- Pair or create a document directly with the commands in the [installation guide](docs/installation.md#pair-your-first-document).
 
 Once paired, local changes are watched immediately and Google changes are polled automatically. Moving a paired Markdown file within its sync location or renaming its Google Doc updates the portable pairing metadata.
 

@@ -26,7 +26,7 @@ Homebrew is the recommended installation path:
 brew install rsheyd/tap/gdms
 ```
 
-Homebrew adds the GDMS tap, installs the current release and its Node dependency, and places `gdms` on the command path. Continue with [Choose sync locations](#choose-sync-locations).
+Homebrew adds the GDMS tap, installs the current release and its Node dependency, and places `gdms` on the command path. Continue with [Authorize Google](#authorize-google).
 
 After a new GDMS release, upgrade it and refresh the absolute paths stored in the background service and Finder Quick Actions:
 
@@ -55,6 +55,38 @@ directly from this checkout. Moving or deleting the checkout later
 will break the installed LaunchAgent and Finder Quick Actions until they are
 reinstalled from the new location.
 
+Continue with [Authorize Google](#authorize-google).
+
+## Authorize Google
+
+1. [Create or select a Google Cloud project](https://console.cloud.google.com/projectselector2/home/dashboard).
+2. Enable the [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com), [Google Docs API](https://console.cloud.google.com/apis/library/docs.googleapis.com), and [Google Sheets API](https://console.cloud.google.com/apis/library/sheets.googleapis.com) for that project.
+3. Configure the app in the [Google Auth Platform](https://console.cloud.google.com/auth/overview). For a personal external app, add the Google account that will use GDMS as a test user while configuring it, then move the app to an appropriate production publishing status before relying on unattended synchronization. Google's [audience documentation](https://support.google.com/cloud/answer/15549945) explains the Testing and In production behavior.
+4. Follow Google's [OAuth client instructions](https://developers.google.com/workspace/guides/create-credentials#desktop-app) to create a client whose application type is **Desktop app**, then download its JSON file.
+
+Move or copy the downloaded file outside the repository and rename it to the default GDMS path:
+
+```text
+~/Library/Application Support/google-docs-markdown-sync/oauth-client.json
+```
+
+Create the `google-docs-markdown-sync` directory if it does not exist. To keep the downloaded filename or use another location instead, set:
+
+```sh
+export GOOGLE_DOCS_SYNC_OAUTH_CLIENT="/absolute/path/to/client_secret.json"
+```
+
+Then authorize GDMS:
+
+```sh
+gdms auth
+```
+
+The service requests Drive access (including moving explicitly paired Docs to trash), Docs access for same-document updates, and Sheets access for same-spreadsheet updates. Refresh tokens are stored in the macOS Keychain. Google OAuth apps left in external **Testing** status issue refresh tokens that expire after seven days; an unattended synchronization service should use an appropriately configured production consent screen.
+
+Existing pre-Sheets installations must run `gdms auth` again to grant the
+Sheets scope.
+
 ## Choose sync locations
 
 GDMS begins with no assumed sync location on a fresh installation. Add each project tree or document archive explicitly:
@@ -74,38 +106,6 @@ gdms location scan
 Routine synchronization loads the manifest index directly and does not recursively scan configured locations. Use `gdms location scan --path PATH` after copying an existing paired repository into a location or when deliberately rebuilding discovery for one tree.
 
 An existing installation migrates its former `workspaces.json` index and `GOOGLE_DOCS_SYNC_ROOT` setting automatically without deleting the old index. The `--sync-location` CLI option selects the location that owns the manifest; the former `--workspace` spelling remains accepted as a compatibility alias.
-
-## Authorize Google
-
-Create an OAuth 2.0 Desktop application in Google Cloud with the Google Drive,
-Google Docs, and Google Sheets APIs enabled. Download its client JSON outside
-the repository to the default location:
-
-```text
-~/Library/Application Support/google-docs-markdown-sync/oauth-client.json
-```
-
-For another location, set:
-
-```sh
-export GOOGLE_DOCS_SYNC_OAUTH_CLIENT="/absolute/path/to/client_secret.json"
-```
-
-Then authorize GDMS:
-
-```sh
-gdms auth
-```
-
-The service requests Drive access (including moving explicitly paired Docs to
-trash), Docs access for same-document updates,
-and Sheets access for same-spreadsheet updates. Refresh tokens are stored in
-the macOS Keychain. Google OAuth apps left in external **Testing** status issue
-refresh tokens that expire after seven days; an unattended synchronization service
-should use an appropriately configured production consent screen.
-
-Existing pre-Sheets installations must run `gdms auth` again to grant the
-Sheets scope.
 
 ## Install the background service
 
