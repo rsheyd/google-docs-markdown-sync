@@ -27,12 +27,34 @@ test("prints gdms-oriented help without an error", async () => {
   assert.match(stdout, /Usage: gdms COMMAND/);
   assert.match(stdout, /configure-deletion/);
   assert.match(stdout, /configure-notifications/);
+  assert.match(stdout, /cleanup-spacing \(--all \| --document-id ID\)/);
   assert.match(stdout, /recover --document-id ID/);
   assert.match(stdout, /--sync-location PATH/);
   assert.doesNotMatch(stdout, /--workspace PATH/);
   assert.match(stdout, /create .*--open/);
   assert.match(stdout, /create-sheet .*--open/);
   assert.match(stdout, /--version/);
+});
+
+test("requires exactly one cleanup-spacing target", async () => {
+  await assert.rejects(
+    execute(process.execPath, [cliPath, "cleanup-spacing"]),
+    (error) => error.stderr.includes(
+      "cleanup-spacing requires exactly one of --all or --document-id.",
+    ),
+  );
+  await assert.rejects(
+    execute(process.execPath, [
+      cliPath,
+      "cleanup-spacing",
+      "--all",
+      "--document-id",
+      "document",
+    ]),
+    (error) => error.stderr.includes(
+      "cleanup-spacing requires exactly one of --all or --document-id.",
+    ),
+  );
 });
 
 test("exposes the CLI as the gdms package binary", async () => {

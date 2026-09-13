@@ -22,7 +22,7 @@ fallbacks, but `gdms` is the supported user-facing interface.
 | `gdms location add` | `--path PATH` | Local registry | Add one sync location and scan it once for portable pairing manifests. |
 | `gdms location remove` | `--path PATH` | Local registry | Stop monitoring one location without deleting local or Google content. |
 | `gdms location scan` | Optional `--path PATH` | Local registry | Rebuild manifest discovery for one or all configured sync locations. |
-| `gdms cleanup-spacing` | `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from one Doc. |
+| `gdms cleanup-spacing` | `--all` or `--document-id ID` | Local state + Google | Remove legacy generated empty paragraphs from every paired Doc or one selected Doc. |
 | `gdms migrate` | `--all` or `--document-id ID` | Local state + Google | Apply pending formatting migrations; add `--dry-run` for no writes. |
 | `gdms configure-deletion` | `--grace-period-minutes N --to EMAIL` or `--disable` | Local settings | Configure automatic deletion globally; optionally pass `--from SENDER`. Docs only. |
 | `gdms configure-checkboxes` | `--enable` or `--disable` | Local settings | Toggle export-verified native checklist conversion globally, off by default. Prints a warning that completion depends on Google’s export; ambiguous matches are skipped. Read on each sync pass; use `gdms sync-once` to process existing documents immediately. See [task-list semantics](formatting.md#lists). |
@@ -458,7 +458,10 @@ The cleanup command refuses to write when any non-spacing content differs:
 
 ```sh
 gdms cleanup-spacing --document-id DOCUMENT_ID
+gdms cleanup-spacing --all
 ```
+
+The command changes only paired Google Docs whose non-spacing content matches the local Markdown. `--all` checks every paired Doc, skips spreadsheet pairings, continues after individual errors, prints per-document progress and a final summary, and exits nonzero if any document could not be checked or cleaned.
 
 ## Moving an installation
 

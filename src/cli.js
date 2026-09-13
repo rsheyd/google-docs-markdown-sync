@@ -21,7 +21,6 @@ import {
 import {
   createDocumentFromMarkdown,
   createGoogleServices,
-  cleanupDocumentSpacing,
   exportMarkdown,
   getRemoteInfo,
   planIncrementalUpdate,
@@ -62,6 +61,7 @@ import {
 } from "./progress.js";
 import { formatVersionReport, readPackageVersion } from "./version.js";
 import { runDocumentMigrations } from "./migrations.js";
+import { runSpacingCleanup } from "./spacing-cleanup.js";
 import { installFinderQuickAction } from "./finder-quick-action.js";
 import { openUrl } from "./macos.js";
 import {
@@ -151,7 +151,7 @@ Commands:
   pair-sheet --url URL --sync-location PATH --directory RELATIVE_DIRECTORY [--name NAME]
   plan --document-id ID
   push (--document-id ID | --spreadsheet-id ID)
-  cleanup-spacing --document-id ID
+  cleanup-spacing (--all | --document-id ID)
   delete (--file MARKDOWN.md | --document-id ID) --yes
   recover --document-id ID --sync-location PATH --file RELATIVE.md
   location list
@@ -603,37 +603,43 @@ async function push(options) {
 }
 
 async function cleanupSpacing(options) {
-  if (!options["document-id"]) {
-    throw new Error("cleanup-spacing requires --document-id.");
+  if (Boolean(options.all) === Boolean(options["document-id"])) {
+    throw new Error("cleanup-spacing requires exactly one of --all or --document-id.");
   }
-  const pairings = await loadPairings();
-  const pairing = pairings.find(
-    (item) => item.documentId === options["document-id"],
+  let announced = false;
+  const results = await runSpacingCleanup({
+    documentId: options["document-id"],
+    onProgress(event) {
+      if (!announced) {
+        console.log(`Checking ${event.total} paired Google Doc(s)…`);
+        announced = true;
+      }
+      if (event.type === "start") return;
+      const prefix = `[${event.current}/${event.total}] ${event.pairing.markdownPath ?? event.pairing.absolutePath}`;
+      if (event.status === "error") {
+        console.log(`${prefix} … error: ${event.error.message}`);
+      } else if (event.emptyParagraphs) {
+        console.log(`${prefix} … removed ${event.emptyParagraphs} generated empty paragraph(s)`);
+      } else {
+        console.log(`${prefix} … no generated empty paragraphs`);
+      }
+    },
+  });
+  if (!results.length) {
+    console.log("No paired Google Docs found.");
+    return;
+  }
+  const cleaned = results.filter((result) => result.status === "cleaned").length;
+  const current = results.filter((result) => result.status === "current").length;
+  const errors = results.filter((result) => result.status === "error").length;
+  const emptyParagraphs = results.reduce(
+    (total, result) => total + result.emptyParagraphs,
+    0,
   );
-  if (!pairing) throw new Error("No pairing found for that document ID.");
-  const [markdown, auth] = await Promise.all([
-    fs.readFile(pairing.absolutePath, "utf8"),
-    getAuthClient(),
-  ]);
-  const services = createGoogleServices(auth);
-  const result = await cleanupDocumentSpacing(
-    services,
-    pairing.documentId,
-    stripDocumentStatus(markdown),
-  );
-  const state = await loadState();
-  const previous = state.documents[stateKey(pairing)] ?? {};
-  state.documents[stateKey(pairing)] = {
-    ...previous,
-    remoteRevisionId: result.remote.revisionId,
-    remoteModifiedTime: result.remote.modifiedTime,
-  };
-  await saveState(state);
   console.log(
-    result.emptyParagraphs
-      ? `Removed ${result.emptyParagraphs} generated empty paragraphs from ${pairing.documentUrl}`
-      : `No generated empty paragraphs found in ${pairing.documentUrl}`,
+    `Complete: ${cleaned} cleaned, ${current} unchanged, ${errors} error(s), ${emptyParagraphs} empty paragraph(s) removed`,
   );
+  if (errors) process.exitCode = 1;
 }
 
 async function configureR2(options) {

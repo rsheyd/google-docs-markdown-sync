@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Add a Homebrew installation path through `rsheyd/tap/gdms`, including release-formula updates and documented upgrade handling for versioned Cellar paths.
+- Add `gdms cleanup-spacing --all` to safely remove legacy generated empty paragraphs across every paired Google Doc while isolating individual failures and reporting aggregate results.
 
 ## [0.8.10] - 2026-09-07
 
