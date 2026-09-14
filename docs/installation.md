@@ -264,10 +264,7 @@ npm run dev
 
 Keep the development command running while using the extension. `npm run build` compiles it but does not register it in Raycast. Run `gdms install-service` before using the Raycast command; installation records the CLI, Node, and OAuth file paths under Application Support so Raycast does not require separate technical preferences. Re-run the service installer after moving the repository, Node executable, or OAuth client file.
 
-Raycast extensions cannot provide a default global hotkey. In Raycast
-Settings, open **Extensions**, find **GDMS → Pair Google Doc or Sheet with
-GDMS**, and assign a hotkey. The recommended shortcut is
-**Command–Shift-M**.
+Raycast extensions cannot provide a default global hotkey. In Raycast Settings, open **Extensions**, find **GDMS → Pair Google Doc or Sheet with GDMS**, and assign a hotkey. The recommended shortcut is **Command–Shift-G**.
 
 ## Configure image staging
 
