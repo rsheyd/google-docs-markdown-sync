@@ -60,13 +60,20 @@ if ! git -C "$repository_root" diff --quiet ||
   exit 1
 fi
 
+branch=$(git -C "$repository_root" symbolic-ref --quiet --short HEAD) || {
+  echo "Check out the branch to release before creating $tag." >&2
+  exit 1
+}
+
 if [[ $release_date == "Unreleased" ]]; then
   release_date=$(date +%F)
   perl -0pi -e 's/^## \[\Q'"$version"'\E\] - Unreleased$/## ['"$version"'] - '"$release_date"'/m' "$changelog_path"
   echo "Dated $version as $release_date in CHANGELOG.md."
-  echo "Commit and push that change, then run this script again to publish $tag." >&2
-  exit 1
+  git -C "$repository_root" add -- "$changelog_path"
+  git -C "$repository_root" commit -m "Release $version"
 fi
+
+git -C "$repository_root" push origin "$branch"
 
 if gh release view "$tag" --repo rsheyd/google-docs-markdown-sync >/dev/null 2>&1; then
   echo "GitHub release $tag already exists; checking its Homebrew formula."
