@@ -65,7 +65,7 @@ Keep the newest changelog heading in the form `## [VERSION] - Unreleased` during
 ./scripts/create-github-release.sh
 ```
 
-The script uses the first release heading as the `vVERSION` tag and release title, and uses that section's content as the release notes. A dry run accepts `Unreleased` without changing the file and shows the date that will be used. The first publishing run replaces `Unreleased` with the current date and stops so that change can be reviewed, committed, and pushed; run the script again to publish. It refuses to publish from a dirty worktree or replace an existing GitHub release. After publishing, it prints a direct link to the new release.
+The script uses the first release heading as the `vVERSION` tag and release title, and uses that section's content as the release notes. A dry run accepts `Unreleased` without changing the file and shows the date that will be used. A publishing run replaces `Unreleased` with the current date, commits only `CHANGELOG.md`, pushes the current branch, publishes the GitHub release, and updates the Homebrew formula. It refuses to publish from a dirty worktree or a detached HEAD. After publishing, it prints a direct link to the new release.
 
 ## Validate the change
 
