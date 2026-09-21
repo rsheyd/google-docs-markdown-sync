@@ -22,7 +22,7 @@ results, and remaining work are documented in the [image synchronization design]
 - Keep Google Docs and Markdown pairings convergent under routine local and
   remote edits.
 - Make synchronization wake-safe and replace routine full-pairing polling with incremental Drive change discovery so normal work scales with actual changes.
-- Keep daily reconciliation sequential while current scans remain comfortably below one minute; if registry growth or observed local-sync delays cross that threshold, introduce cooperative batches that yield to ordinary work and then measured four-way concurrency if needed.
+- Complete validation of cooperative reconciliation batches and bounded eight-way concurrency after live scans exceeded one minute; preserve responsive local edits, stable coordinator commits, and interruption replay.
 - Add actionable image-sync logs and health checks without exposing secrets or
   signed staging URLs.
 - Exercise retry, timeout, crash-recovery, partial-upload, and R2-cleanup paths.
@@ -31,7 +31,7 @@ results, and remaining work are documented in the [image synchronization design]
 - Continue live validation of incremental paragraph, list, link, table, and
   status updates.
 
-The completed lifecycle, change-discovery, and reconciliation work is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md). Its [future reconciliation scaling trigger](design/scalable-wake-safe-sync.md#future-reconciliation-scaling-trigger) records when and how to add cooperative batching and measured concurrency without prematurely complicating the current state coordinator.
+The completed lifecycle, change-discovery, and reconciliation work is documented in the [scalable, wake-safe synchronization design](design/scalable-wake-safe-sync.md). The [September scheduler implementation](design/scalable-wake-safe-sync.md#september-2026-scheduler-implementation) records the live measurements that triggered batching and concurrency, the ownership boundaries, and validation evidence.
 
 ## Next: privacy-preserving usage telemetry
 

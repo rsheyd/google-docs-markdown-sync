@@ -1,6 +1,6 @@
 # Scalable, wake-safe synchronization
 
-GDMS currently performs a complete, sequential scan of every pairing, waits for the configured polling interval, and repeats. Each unchanged Google Doc still requires Drive metadata and the complete Docs document structure, while each unchanged spreadsheet requires a lightweight Drive request. This works for dozens of pairings but scales linearly, delays local work behind long remote passes, and allows requests suspended across laptop sleep to resume during unreliable DarkWake windows and enter ordinary error reporting.
+Before the 0.8.5 incremental-discovery work, GDMS performed a complete, sequential scan of every pairing, waited for the configured polling interval, and repeated. Each unchanged Google Doc required Drive metadata and the complete Docs document structure, while each unchanged spreadsheet required a lightweight Drive request. This worked for dozens of pairings but scaled linearly, delayed local work behind long remote passes, and allowed requests suspended across laptop sleep to resume during unreliable DarkWake windows and enter ordinary error reporting. The phases below preserve that design history; the [September 2026 implementation](#september-2026-scheduler-implementation) records the subsequent scheduler changes and current evidence.
 
 The combined change should make normal synchronization proportional to actual changes while treating sleep and unstable wake networking as expected operating conditions. The implementation should remain a small extension of the existing daemon rather than introduce a general job queue, native macOS helper, or distributed synchronization architecture.
 
@@ -17,7 +17,7 @@ The combined change should make normal synchronization proportional to actual ch
 
 ## Current constraints
 
-`runSyncPass` processes pairings sequentially and owns shared runtime state for the duration of the pass. `createSingleFlight` prevents overlapping remote and local passes, so a targeted local change waits behind a long complete scan. For Google Docs, `getRemoteInfo` requests both Drive metadata and the complete Docs structure before GDMS knows whether the pairing changed. The five-second poll interval begins after the pass finishes, making the effective revisit time `pass duration + interval`.
+Originally, `runSyncPass` processed pairings sequentially and owned shared runtime state for the duration of the pass. `createSingleFlight` prevented overlapping remote and local passes, so a targeted local change waited behind a long complete scan. For Google Docs, `getRemoteInfo` requested both Drive metadata and the complete Docs structure before GDMS knew whether the pairing changed. The five-second poll interval began after the pass finished, making the effective revisit time `pass duration + interval`.
 
 At large pairing counts, merely adding concurrency would reduce wall-clock time but would not reduce Google API traffic. The durable improvement must avoid unchanged-pairing requests during routine polling.
 
@@ -65,9 +65,9 @@ Preserve single ownership of runtime-state persistence, but do not require every
 
 ### 4. Use small bounded concurrency
 
-Process independent targeted pairings with a default concurrency of four. Keep all work for an individual pairing serialized, and update shared state only through one coordinator after each batch completes.
+Process independent targeted pairings with small bounded concurrency. The original proposal suggested four; the September implementation uses an eight-worker ceiling with a configurable sequential baseline. Keep all work for an individual pairing serialized, and update shared state only through one coordinator after each batch completes.
 
-When Google returns rate-limit or server errors, reduce pressure through the existing bounded exponential backoff rather than increasing concurrency. Concurrency should be configurable for diagnostics, but four should remain the supported default until live tests demonstrate a need to change it.
+When Google returns rate-limit or server errors, reduce admission and apply bounded exponential backoff. Keep concurrency configurable for diagnostics, and use live measurements to check the supported default.
 
 Deletion processing, incident reconciliation, and state-file writes must remain deterministic when a batch completes out of order. Accumulate results in memory, then apply state and notification effects in stable pairing order.
 
@@ -152,7 +152,7 @@ Phase 4 is complete when scheduled reconciliation repairs simulated cursor or st
 
 ## Future reconciliation scaling trigger
 
-The current sequential reconciliation is appropriate for the active installation: a live 38-pair scan completed in under 18 seconds, while ordinary polling remains constant-cost and targeted. Revisit the reconciliation scheduler when a complete scan regularly exceeds 30–60 seconds, local edits are observably delayed behind reconciliation, the pairing registry grows into the hundreds, or routine burst batches become noticeably slow. Synthetic 10,000-pair tests prove that quiet change discovery is bounded; they do not prove that a complete sequential reconciliation is fast enough at that scale.
+The original decision to retain sequential reconciliation followed a live 38-pair scan completing in under 18 seconds, with ordinary polling constant-cost and targeted. The documented trigger was a complete scan regularly exceeding 30–60 seconds, observable local-edit delays, hundreds of pairings, or slow burst batches. September measurements crossed that threshold, activating the upgrade below. Synthetic 10,000-pair tests prove that quiet change discovery is bounded; they do not prove that a complete reconciliation is fast enough at that scale.
 
 The recommended upgrade is a cooperative batch scheduler rather than a general job queue:
 
@@ -165,9 +165,40 @@ The recommended upgrade is a cooperative batch scheduler rather than a general j
 
 Adding concurrency requires separating pairing computation from shared side effects. Workers should read local and Google state and return proposed results without writing the shared state file or reconciling notifications. A single coordinator should then apply results, state changes, deletion retries, and notification transitions atomically and deterministically. Sequential batching should be implemented first because it fixes local-edit starvation with less risk; eight-way concurrency should follow only when measurements show that batch duration itself remains problematic.
 
-### Planned eight-way implementation
+### September 2026 scheduler implementation
 
-When development resumes, first capture a current sequential `gdms sync-once` baseline with total and per-pairing timings. Refactor pairing work into workers with a strict concurrency limit of eight while retaining one active operation per pairing. Workers may read local and Google state and return proposed results, but shared state persistence, deletion progress, notifications, and final reporting must remain owned by one coordinator and commit in stable pairing order. Preserve bounded Google API backoff, wake-generation cancellation, cursor-last persistence, and deterministic progress output. Add tests for the eight-worker ceiling, out-of-order completion, same-pair serialization, partial failure, rate limiting, sleep interruption, deletion and notification ordering, and state replay after interruption. Validate with the full test suite plus live comparisons of total duration, per-pair latency, API errors, and local-edit delay against the sequential baseline; reduce the supported limit if eight workers cause material throttling or instability.
+The original sequential threshold has now been crossed. Installed-service logs show full reconciliations of 67 pairings taking 99,851 ms on September 18, 120,472 ms on September 19, and 104,107 ms on September 20. The September 20 reconciliation repeatedly restarted after detected sleep/wake interruptions before completing. In contrast, the September 21 log sample contained 494 incremental discovery cycles with a median duration of 1,580 ms and a maximum of 26,280 ms; quiet cycles are omitted from that log, so these are not all polling cycles. The running LaunchAgent uses this checkout, and the persisted discovery timestamp advanced during inspection. This establishes that incremental discovery is active and that full reconciliation is a distinct slow path. It does not establish which CLI or UI action originally prompted the reported delay.
+
+A fresh sequential baseline on September 21 used the same `runSyncPass` entry point as `gdms sync-once`, with per-pair progress timing and the daemon stopped to prevent overlapping processes. It completed 68 pairings in 155,924 ms: 65 unchanged, three spreadsheet pulls, and zero errors. Individual pairing times ranged from 154 ms to 13,303 ms. The installation has native-checkbox conversion enabled. That option deliberately bypasses the unchanged-Doc fast path and checks the Docs structure and exported Markdown, explaining why an unchanged result can still require multiple network requests. This change preserves that conversion policy; revision-aware caching of conversion checks is separate work.
+
+The product goal remains a responsive bridge between explicitly paired Google documents and ordinary local files. Drive change discovery already avoids per-document requests in quiet polls. Increasing concurrency alone would shorten a full scan but leave local edits waiting behind the entire scan and retain interruption replay costs. The architecture therefore introduces cooperative batches first, then bounded concurrency inside them.
+
+- Discovery selects affected pairings; a full reconciliation is divided into batches of at most 20. Each batch enters the daemon's single-flight queue separately, allowing queued local changes and moves to run before the next maintenance batch.
+- Between reconciliation batches, incremental Drive discovery admits one bounded batch of priority targets. Its cursor is transient; only the original cycle cursor is persisted after the complete reconciliation. Priority targets can be replayed, but cannot be skipped by prematurely advancing a cursor.
+- Up to eight independent pairings perform document/file work concurrently. These workers receive copied pairing baselines and return proposed state. They do not persist shared runtime state, mutate deletion progress, or reconcile notifications. Remote renames and missing-file/deletion decisions are handed back to the coordinator because they can mutate shared manifests or recovery records.
+- One coordinator applies proposed states and shared effects in registry order and persists each completed batch. Progress completion and notifications follow that same order regardless of worker completion order. Deletion operations retain their durable phase checkpoints rather than pretending external writes can form a single atomic transaction.
+- Admission uses bounded waves, with at most eight workers and no overlapping remote identities or local paths within a wave. Duplicate remote targets are coalesced within a pass. Google 429, rate-limit 403, and server errors drain admitted work, reduce concurrency for the remaining batch, and wait using bounded exponential backoff before admitting more work.
+- A stale wake generation prevents new API calls and coordinator commits. All admitted workers settle before the interrupted batch exits, preventing old workers from overlapping a subsequent pass. Previously committed batches remain durable; the incomplete batch is replayed from the unchanged cursor. Reconciliation completion is recorded only after every batch completes.
+- `GOOGLE_DOCS_SYNC_CONCURRENCY=1` supplies a sequential diagnostic baseline; supported values are integers from 1 through 8. The default is eight, subject to the live validation recorded below.
+
+Single-flight ownership remains in-process. Independent CLI processes are not coordinated by the daemon queue; benchmark runs stop the daemon first. A cross-process ownership protocol is outside this change. Likewise, already completed Google/local content writes cannot be rolled back on sleep; replay must converge using persisted baselines and current content.
+
+Live validation used the same registry and native-checkbox setting, with the daemon stopped for each benchmark and restored afterward. Results varied with network latency and background Sheets changes, so these are operational samples rather than controlled throughput guarantees.
+
+| Run | Pairings | Total duration | Median successful pairing | Errors |
+| --- | ---: | ---: | ---: | ---: |
+| Original sequential baseline | 68 | 155.924 s | Not aggregated | 0 |
+| First eight-worker API run | 68 | 60.371 s | 1.670 s | 1 request timeout |
+| Four-worker comparison | 68 | 41.907 s | 1.120 s | 0 |
+| Repeated eight-worker comparison | 68 | 24.037 s | 0.983 s | 0 |
+
+The four-worker pass found all 68 pairings unchanged. The repeated eight-worker pass found 67 unchanged and pulled one spreadsheet; its batches completed cumulatively at 4.616, 14.458, 20.146, and 24.037 seconds. This supports retaining the eight-worker default for this installation, while the earlier timeout remains evidence that concurrency cannot eliminate request stalls. No rate-limit errors surfaced in these comparison runs. An initial smoke run also exposed frozen properties on the actual Google client resources; the wake guard now uses a facade, with a regression test against the real client shape.
+
+Automated validation covers the worker ceiling, out-of-order completion, overlapping-target serialization, partial failures, pressure admission/backoff, actual-client wake guards, deferred renames, deletion/notification ordering, interrupted state replay, cursor-last persistence, priority discovery, and local-queue service between batches. Later full-pass batches reload registry identities so deletion retries cannot cause already unpaired targets to be synced again. Synthetic reconciliation tests at 100, 1,000, and 10,000 targets verify the 20-target bound; quiet-discovery tests retain their constant request count. The final `npm run check` passed all 274 Node tests and the Raycast typecheck. An earlier run encountered an existing ordering-sensitive assertion in `test/locations.test.js` for concurrent location additions; that file was not changed, and the final run passed. After restart, the installed service logged eight workers and 20 pairings per batch and completed a one-target incremental cycle in 404 ms with no errors.
+
+Local-target fairness and sleep interruption were exercised through deterministic injected tests, not a physical laptop sleep or a live content-edit experiment. No claim is made about real API throughput or peak memory at 10,000 pairings. Already committed batches remain durable after interruption, but there is no durable reconciliation-position checkpoint: a restarted reconciliation still revisits its targets using the saved per-pairing baselines.
+
+The implementation stays within the existing unreleased `0.8.11` version. It does not add a general-purpose job queue or a durable per-pairing database. A future retry queue could avoid replaying successful incremental targets alongside a failed target, but existing cursor-last retry semantics are preserved here.
 
 Validation for this upgrade should measure total reconciliation time, maximum delay imposed on a local edit, pending-target drain latency, Google request and rate-limit behavior, memory use, crash replay, sleep interruption, and deterministic state and notification results at 100, 1,000, and 10,000 pairings. A useful success criterion is that local and incremental remote targets begin within one batch duration even while a large reconciliation is underway.
 

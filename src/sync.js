@@ -40,8 +40,9 @@ import {
 import { createTimestampLogger } from "./progress.js";
 import { createSyncErrorReporter } from "./notifications.js";
 import { createNetworkGate, createWakeMonitor } from "./network.js";
-import { reconciliationDue, runDriveChangeCycle } from "./drive-changes.js";
+import { reconciliationDue, runDriveChangeCycle, createReconciliationPriorityDrain } from "./drive-changes.js";
 import { readPackageVersion } from "./version.js";
+import { computeSyncBatch, guardSyncServices, isPressureError, SYNC_BATCH_SIZE, syncConcurrency } from "./sync-scheduler.js";
 import {
   getSpreadsheetDetails,
   getSpreadsheetDriveInfo,
@@ -283,13 +284,17 @@ export async function syncPairing(
   services,
   pairing,
   previous,
-  { deferMissingLocal, refreshStatus = false, autoConvertNativeCheckboxes = false } = {},
+  { deferMissingLocal, refreshStatus = false, autoConvertNativeCheckboxes = false, deferRemoteTitle = false } = {},
 ) {
   const spreadsheet = pairing.type === "spreadsheet";
   let remote = spreadsheet
     ? await getSpreadsheetDriveInfo(services, pairing.spreadsheetId)
     : await getDocumentDriveInfo(services, pairing.documentId);
   if (!spreadsheet && remote.trashed) return { action: "remote-trash", pairing, state: previous };
+  // Renames update shared manifests and move assets; only the coordinator may do them.
+  if (!spreadsheet && deferRemoteTitle && String(remote.name ?? "").trim() && pairing.name !== String(remote.name).trim()) {
+    return { action: "coordinator-sync", pairing };
+  }
   const documentDetails = async () => {
     if (spreadsheet || remote.document) return remote;
     remote = await getDocumentDetails(
@@ -563,7 +568,44 @@ export async function commitSyncPass({
   }));
 }
 
-export async function runSyncPass({
+const enqueueSyncPass = createSingleFlight();
+
+export function runSyncPass(options = {}) {
+  return enqueueSyncPass(() => runSyncPassBatches(options));
+}
+
+async function runSyncPassBatches(options) {
+  const concurrency = syncConcurrency(options.concurrency);
+  const discovered = options.pairings ?? await loadPairings({ logger: options.logger });
+  const seen = new Set();
+  const pairings = discovered.filter((pairing) => {
+    if (options.targetPaths && !options.targetPaths.has(pairing.absolutePath)) return false;
+    const key = stateKey(pairing);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const results = [];
+  for (let offset = 0; offset < pairings.length; offset += SYNC_BATCH_SIZE) {
+    let targets = pairings.slice(offset, offset + SYNC_BATCH_SIZE);
+    const reloadPairings = options.reloadPairings ?? (!options.pairings ? loadPairings : undefined);
+    if (offset > 0 && reloadPairings) {
+      // A deletion retry in the preceding batch can unpair a later target.
+      const current = new Map((await reloadPairings({ logger: options.logger })).map((pairing) => [stateKey(pairing), pairing]));
+      targets = targets.map((pairing) => current.get(stateKey(pairing))).filter(Boolean);
+    }
+    const batch = await runSyncBatch({
+      ...options, concurrency, pairings: targets,
+      onProgress: options.onProgress && ((event) => options.onProgress({
+        ...event, current: offset + event.current, total: pairings.length,
+      })),
+    });
+    results.push(...batch);
+  }
+  return results;
+}
+
+export async function runSyncBatch({
   interactiveAuth = false,
   logger = console,
   errorReporter,
@@ -574,11 +616,23 @@ export async function runSyncPass({
   onProgress,
   missingLocalWaitMs,
   isCurrent = () => true,
+  concurrency = syncConcurrency(),
+  services: suppliedServices,
+  state: suppliedState,
+  settings: suppliedSettings,
+  persistState = saveState,
+  synchronize = syncPairing,
+  retryNotifications = retryDeletionNotifications,
+  archiveTrashed = archiveRemoteTrashedPairing,
+  wait,
 } = {}) {
-  const auth = await getAuthClient({ interactive: interactiveAuth });
-  const services = createGoogleServices(auth);
+  assertCurrentSyncPass(isCurrent);
+  const services = guardSyncServices(
+    suppliedServices ?? createGoogleServices(await getAuthClient({ interactive: interactiveAuth })),
+    () => assertCurrentSyncPass(isCurrent),
+  );
   const discoveredPairings = suppliedPairings ?? (await loadPairings({ logger }));
-  const settings = await loadSettings();
+  const settings = suppliedSettings ?? await loadSettings();
   const configuredPairings = discoveredPairings.map((pairing) => ({
     ...pairing,
     deletionPolicy: settings.deletionPolicy,
@@ -588,18 +642,48 @@ export async function runSyncPass({
         targetPaths.has(pairing.absolutePath),
       )
     : configuredPairings;
-  const state = await loadState();
+  const state = suppliedState ?? await loadState();
   const results = [];
 
-  for (const pairing of pairings) {
+  const guardedPersist = async (value) => {
+    assertCurrentSyncPass(isCurrent);
+    await persistState(value);
+    assertCurrentSyncPass(isCurrent);
+  };
+  const starts = new Map();
+  const proposals = await computeSyncBatch({
+    pairings, concurrency, wait,
+    pressureDelay: (failures) => backoffDelay(5_000, failures),
+    assertCurrent: () => assertCurrentSyncPass(isCurrent),
+    work: async (pairing) => {
+      starts.set(pairing, Date.now());
+      onProgress?.({ type: "start", current: pairings.indexOf(pairing) + 1, total: pairings.length, pairing });
+      // Deletion state machines and missing-file decisions belong to the coordinator.
+      if (state.deletions?.[pairing.documentId]) return { action: "coordinator-sync", pairing };
+      const exists = await fs.access(pairing.absolutePath).then(() => true, (error) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      if (!exists) return { action: "coordinator-sync", pairing };
+      const startedAt = Date.now();
+      const result = await synchronize(services, pairing, structuredClone(state.documents[stateKey(pairing)]), {
+        refreshStatus, autoConvertNativeCheckboxes: settings.autoConvertNativeCheckboxes,
+        deferRemoteTitle: true,
+      });
+      return { ...result, elapsedMs: Date.now() - startedAt };
+    },
+  });
+
+  for (const [index, pairing] of pairings.entries()) {
     assertCurrentSyncPass(isCurrent);
     const current = results.length + 1;
-    onProgress?.({ type: "start", current, total: pairings.length, pairing });
     const key = stateKey(pairing);
     try {
+      const proposed = proposals[index];
+      if (proposed.action === "error") throw proposed.error;
       if (state.deletions?.[pairing.documentId]?.origin === "remote" &&
           ["archiving", "archived", "unpaired"].includes(state.deletions[pairing.documentId].phase)) {
-        const deletion = await archiveRemoteTrashedPairing({ pairing, state, persistState: saveState });
+        const deletion = await archiveTrashed({ pairing, state, persistState: guardedPersist });
         const completed = { pairing, action: "remote-trash" };
         results.push(completed);
         onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
@@ -619,7 +703,7 @@ export async function runSyncPass({
           },
         );
         if (localExists) {
-          await cancelMissingDeletion(pairing, state, { persistState: saveState });
+          await cancelMissingDeletion(pairing, state, { persistState: guardedPersist });
         } else if (
           (state.deletions?.[pairing.documentId] &&
             state.deletions[pairing.documentId].phase !== "notified") ||
@@ -627,7 +711,7 @@ export async function runSyncPass({
           !(await deferMissingLocal(pairing))
         ) {
           const deletion = await recordMissingDeletion(pairing, state, {
-            persistState: saveState,
+            persistState: guardedPersist,
           });
           if (deletionDue(pairing, deletion)) {
             await trashPairedDocument({
@@ -635,7 +719,7 @@ export async function runSyncPass({
               pairing,
               state,
               deletion,
-              persistState: saveState,
+              persistState: guardedPersist,
             });
             const completed = { pairing, action: "trash" };
             results.push(completed);
@@ -678,14 +762,14 @@ export async function runSyncPass({
           continue;
         }
       }
-      const result = await syncPairing(services, pairing, state.documents[key], {
+      const result = proposed.action !== "coordinator-sync" ? proposed : await synchronize(services, pairing, state.documents[key], {
         deferMissingLocal,
         refreshStatus,
         autoConvertNativeCheckboxes: settings.autoConvertNativeCheckboxes,
       });
       assertCurrentSyncPass(isCurrent);
       if (result.action === "remote-trash") {
-        const deletion = await archiveRemoteTrashedPairing({ pairing, state, persistState: saveState });
+        const deletion = await archiveTrashed({ pairing, state, persistState: guardedPersist });
         logger.log(`remote-trash: pairing removed; local recovery: ${deletion.recoveryDirectory}`);
       } else {
         state.documents[key] = result.state;
@@ -693,6 +777,7 @@ export async function runSyncPass({
       const completed = {
         pairing: result.pairing,
         action: result.action,
+        elapsedMs: result.elapsedMs ?? Date.now() - starts.get(pairing),
         ...(result.action === "defer"
           ? { moveDetectionSeconds: Math.ceil((missingLocalWaitMs ?? 0) / 1_000) }
           : {}),
@@ -718,9 +803,14 @@ export async function runSyncPass({
       }
     } catch (error) {
       if (error instanceof SyncPassInterruptedError) throw error;
+      assertCurrentSyncPass(isCurrent);
       const completed = { pairing, action: "error", error };
       results.push(completed);
       onProgress?.({ type: "complete", current, total: pairings.length, ...completed });
+      if (proposals[index].action === "coordinator-sync" && isPressureError(error)) {
+        await (wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(backoffDelay(5_000, 1));
+        assertCurrentSyncPass(isCurrent);
+      }
     }
   }
   await commitSyncPass({
@@ -731,6 +821,8 @@ export async function runSyncPass({
     errorReporter,
     reportErrors: !onProgress,
     isCurrent,
+    persistState: guardedPersist,
+    retryNotifications,
   });
   return results;
 }
@@ -860,6 +952,7 @@ export async function runDaemon({
   ),
 } = {}) {
   logger = createTimestampLogger(logger);
+  const concurrency = syncConcurrency();
   const settings = await loadSettings();
   const notifications = settings.notifications;
   errorReporter ??= createSyncErrorReporter({
@@ -884,7 +977,7 @@ export async function runDaemon({
   };
   await persistState(daemonState);
   logger.log(
-    `Google Docs Markdown Sync ${runningVersion} started (${debounceMs}ms local debounce, ${intervalMs}ms remote poll).`,
+    `Google Docs Markdown Sync ${runningVersion} started (${debounceMs}ms local debounce, ${intervalMs}ms remote poll, ${concurrency} workers, ${SYNC_BATCH_SIZE} pairings/batch).`,
   );
   let stopping = false;
   let sleepTimer;
@@ -908,7 +1001,10 @@ export async function runDaemon({
   async function runWakeSafe(operation) {
     const cycle = wakeMonitor.beginCycle();
     try {
-      const value = await networkGate.run(() => operation(cycle.isCurrent));
+      // Serialize the connectivity check, not the complete reconciliation. Each
+      // batch enters the single-flight queue independently so local work can run.
+      const available = await networkGate.run(() => true);
+      const value = available ? await operation(cycle.isCurrent) : undefined;
       return { interrupted: false, value };
     } catch (error) {
       if (!(error instanceof SyncPassInterruptedError)) throw error;
@@ -944,6 +1040,14 @@ export async function runDaemon({
     const services = createGoogleServices(auth);
     const state = await getState();
     const startedAt = Date.now();
+    const syncOptions = { deferMissingLocal, missingLocalWaitMs: intervalMs * 2, logger, errorReporter, isCurrent };
+    const drainPriority = createReconciliationPriorityDrain({
+      services, runExclusive: enqueue,
+      assertCurrent: () => assertCurrentSyncPass(isCurrent),
+      loadPairings: () => loadPairings({ logger }),
+      isPendingMove: (pairing) => pendingMoves.has(pairing.absolutePath),
+      syncPairings: (targets) => runSyncPass({ ...syncOptions, pairings: targets }),
+    });
     const forceReconciliation = Boolean(state.remoteChanges?.pageToken) &&
       reconciliationDue(state, reconciliationIntervalMs, startedAt);
     if (forceReconciliation) {
@@ -953,17 +1057,23 @@ export async function runDaemon({
       services,
       pairings,
       state,
+      runExclusive: enqueue,
       assertCurrent: () => assertCurrentSyncPass(isCurrent),
-      syncPairings: (targets) => runSyncPass({
-        pairings: targets.filter(
-          (pairing) => !pendingMoves.has(pairing.absolutePath),
-        ),
-        deferMissingLocal,
-        missingLocalWaitMs: intervalMs * 2,
-        logger,
-        errorReporter,
-        isCurrent,
-      }),
+      syncPairings: async (targets) => {
+        // Reload identities after a local move or deletion in a preceding batch.
+        const current = new Map((await loadPairings({ logger })).map((pairing) => [stateKey(pairing), pairing]));
+        return runSyncPass({
+          ...syncOptions,
+          pairings: targets.map((pairing) => current.get(stateKey(pairing))).filter(
+            (pairing) => pairing && !pendingMoves.has(pairing.absolutePath),
+          ),
+        });
+      },
+      betweenBatches: async ({ reconciled, completed, total, pageToken }) => {
+        if (!reconciled) return;
+        logger.log(`reconciliation: committed ${completed}/${total} pairing(s).`);
+        await drainPriority({ pageToken });
+      },
       persistCursor: persistDriveCursor,
       forceReconciliation,
     });
@@ -1063,9 +1173,7 @@ export async function runDaemon({
       await watcherManager.refresh(pairings);
       let outcome;
       try {
-        outcome = await enqueue(() =>
-          runWakeSafe((isCurrent) => pollRemoteChanges(pairings, isCurrent)),
-        );
+        outcome = await runWakeSafe((isCurrent) => pollRemoteChanges(pairings, isCurrent));
       } catch (error) {
         if (!remoteDiscoveryFailed) logger.error(`remote discovery paused: ${error.message}`);
         remoteDiscoveryFailed = true;

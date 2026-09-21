@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createSingleFlight, SyncPassInterruptedError } from "../src/sync.js";
 import {
   getDriveStartPageToken,
   isInvalidDriveChangeToken,
@@ -7,7 +8,107 @@ import {
   readDriveChanges,
   reconciliationDue,
   runDriveChangeCycle,
+  createReconciliationPriorityDrain,
 } from "../src/drive-changes.js";
+
+test("priority discovery is bounded, deduplicated, refreshes moved paths, and keeps its cursor transient", async () => {
+  const pairings = Array.from({ length: 25 }, (_, i) => ({ documentId: String(i), absolutePath: `/old/${i}` }));
+  const batches = [];
+  const tokens = [];
+  let first = true;
+  const drain = createReconciliationPriorityDrain({
+    services: {}, runExclusive: createSingleFlight(), assertCurrent() {},
+    loadPairings: async () => pairings,
+    isPendingMove: (pairing) => pairing.documentId === "0" && first,
+    readChanges: async (_services, token) => {
+      tokens.push(token);
+      return { fileIds: first ? [...pairings.map((p) => p.documentId), "unpaired", "1"] : [], newStartPageToken: first ? "priority-1" : "priority-2" };
+    },
+    syncPairings: async (targets) => { batches.push(targets); },
+  });
+  await drain({ pageToken: "original" });
+  first = false;
+  pairings[0] = { ...pairings[0], absolutePath: "/moved/0" };
+  pairings.pop(); // A previously queued target was unpaired between batches.
+  await drain({ pageToken: "original" });
+  assert.deepEqual(tokens, ["original", "priority-1"]);
+  assert.deepEqual(batches.map((batch) => batch.length), [20, 4]);
+  assert.equal(batches[1][0].absolutePath, "/moved/0");
+  assert.ok(!batches.flat().some((pairing) => pairing.documentId === "24"));
+});
+
+for (const count of [100, 1_000, 10_000]) {
+  test(`full reconciliation retains bounded batch size at ${count} pairings`, async () => {
+    let largest = 0;
+    let processed = 0;
+    await runDriveChangeCycle({
+      services: {}, pairings: Array.from({ length: count }, (_, i) => ({ documentId: String(i) })), state: {},
+      getStartPageToken: async () => "cursor",
+      syncPairings: async (targets) => {
+        largest = Math.max(largest, targets.length);
+        processed += targets.length;
+        return targets.map((pairing) => ({ pairing, action: "none" }));
+      },
+      persistCursor: async () => { assert.equal(processed, count); },
+    });
+    assert.equal(largest, 20);
+  });
+}
+
+test("reconciliation yields to queued local work at batch boundaries and saves the cursor last", async () => {
+  const enqueue = createSingleFlight();
+  const events = [];
+  const pairings = Array.from({ length: 45 }, (_, i) => ({ documentId: String(i) }));
+  let queuedLocal;
+  await runDriveChangeCycle({
+    services: {}, pairings, state: {}, runExclusive: enqueue,
+    getStartPageToken: async () => "initial",
+    syncPairings: async (targets) => {
+      events.push(`sync:${targets[0].documentId}:${targets.length}`);
+      if (!queuedLocal) queuedLocal = enqueue(async () => { events.push("local"); });
+      events.push("batch-state-saved");
+      return targets.map((pairing) => ({ pairing, action: "none" }));
+    },
+    betweenBatches: async ({ pageToken }) => {
+      assert.equal(pageToken, "initial");
+      await enqueue(async () => { events.push("priority-remote"); });
+    },
+    persistCursor: async () => { events.push("cursor"); },
+  });
+  await queuedLocal;
+  assert.deepEqual(events, [
+    "sync:0:20", "batch-state-saved", "local", "priority-remote",
+    "sync:20:20", "batch-state-saved", "priority-remote",
+    "sync:40:5", "batch-state-saved", "cursor",
+  ]);
+});
+
+test("interruption retains committed batches but no completion cursor; restart replays safely", async () => {
+  const pairings = Array.from({ length: 45 }, (_, i) => ({ documentId: String(i) }));
+  const committed = new Set();
+  let current = true;
+  let cursor;
+  let batches = 0;
+  const options = {
+    services: {}, pairings, state: {},
+    getStartPageToken: async () => "start",
+    assertCurrent: () => { if (!current) throw new SyncPassInterruptedError(); },
+    syncPairings: async (targets) => {
+      batches += 1;
+      if (batches === 2) { current = false; throw new SyncPassInterruptedError(); }
+      for (const pairing of targets) committed.add(pairing.documentId);
+      return targets.map((pairing) => ({ pairing, action: "none" }));
+    },
+    persistCursor: async (token) => { cursor = token; },
+  };
+  await assert.rejects(runDriveChangeCycle(options), { name: "SyncPassInterruptedError" });
+  assert.equal(committed.size, 20);
+  assert.equal(cursor, undefined);
+  current = true;
+  await runDriveChangeCycle(options);
+  assert.equal(committed.size, 45);
+  assert.equal(cursor, "start");
+});
 
 test("reads paginated Drive changes and deduplicates file IDs", async () => {
   const requests = [];

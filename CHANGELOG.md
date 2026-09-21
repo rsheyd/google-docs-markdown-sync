@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [0.8.11] - Unreleased
 
+### Changed
+
+- Process sync work in batches of at most 20 with up to eight independent pairings in flight, while committing shared state, deletion progress, notifications, and completion output in stable order. Daily reconciliation yields between batches to queued local edits and incremental Drive targets; completed batches remain durable after interruption. Set `GOOGLE_DOCS_SYNC_CONCURRENCY=1` for sequential diagnostics.
+
 ### Fixed
 
 - Resume interrupted Doc trash operations by reconciling the saved `trashing` phase with Google Drive before local cleanup, and keep the originally recorded Markdown and asset paths authoritative across manual retries.
