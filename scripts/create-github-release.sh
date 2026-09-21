@@ -14,7 +14,7 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
-for command in awk brew curl gh git perl shasum; do
+for command in awk brew curl date gh git perl shasum; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Required command not found: $command" >&2
     exit 1
@@ -22,13 +22,13 @@ for command in awk brew curl gh git perl shasum; do
 done
 
 release_header=$(awk '/^## \[[^]]+\] - / { print; exit }' "$changelog_path")
-if [[ ! $release_header =~ ^##\ \[([^]]+)\]\ -\ ([0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
-  echo "Could not find a release heading like '## [0.8.4] - 2026-08-25' in CHANGELOG.md." >&2
-  echo "Replace an Unreleased marker with the release date before publishing." >&2
+if [[ ! $release_header =~ ^##\ \[([^]]+)\]\ -\ (Unreleased|[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+  echo "Could not find a release heading like '## [0.8.11] - Unreleased' or '## [0.8.11] - 2026-09-21' in CHANGELOG.md." >&2
   exit 1
 fi
 
 version=${BASH_REMATCH[1]}
+release_date=${BASH_REMATCH[2]}
 tag="v$version"
 notes_file=$(mktemp "${TMPDIR:-/tmp}/gdms-release-notes.XXXXXX")
 trap 'rm -f "$notes_file"' EXIT
@@ -46,6 +46,9 @@ fi
 
 if $dry_run; then
   echo "Release: $tag"
+  if [[ $release_date == "Unreleased" ]]; then
+    echo "Changelog date: $(date +%F) (will be written before publishing)"
+  fi
   echo
   sed -e '/./,$!d' "$notes_file"
   exit 0
@@ -54,6 +57,14 @@ fi
 if ! git -C "$repository_root" diff --quiet ||
   ! git -C "$repository_root" diff --cached --quiet; then
   echo "Commit the release changes before creating $tag." >&2
+  exit 1
+fi
+
+if [[ $release_date == "Unreleased" ]]; then
+  release_date=$(date +%F)
+  perl -0pi -e 's/^## \[\Q'"$version"'\E\] - Unreleased$/## ['"$version"'] - '"$release_date"'/m' "$changelog_path"
+  echo "Dated $version as $release_date in CHANGELOG.md."
+  echo "Commit and push that change, then run this script again to publish $tag." >&2
   exit 1
 fi
 

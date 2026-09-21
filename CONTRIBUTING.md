@@ -58,14 +58,14 @@ version-bump commit. Do not change the numeric `version` fields in
 `google-docs-sync.json`, `GDMS.md`, or their examples; those
 are data-format schema versions, not application release versions.
 
-Keep the newest changelog heading in the form `## [VERSION] - Unreleased` during development. Immediately before publishing, replace `Unreleased` with the release date. After the version bump and changelog entry are committed and pushed, create the GitHub release from that newest `CHANGELOG.md` section:
+Keep the newest changelog heading in the form `## [VERSION] - Unreleased` during development. After the version bump and changelog entry are committed and pushed, preview and create the GitHub release from that newest `CHANGELOG.md` section:
 
 ```sh
 ./scripts/create-github-release.sh --dry-run
 ./scripts/create-github-release.sh
 ```
 
-The script uses the first release heading as the `vVERSION` tag and release title, and uses that section's content as the release notes. It refuses to publish from a dirty worktree or replace an existing GitHub release. After publishing, it prints a direct link to the new release.
+The script uses the first release heading as the `vVERSION` tag and release title, and uses that section's content as the release notes. A dry run accepts `Unreleased` without changing the file and shows the date that will be used. The first publishing run replaces `Unreleased` with the current date and stops so that change can be reviewed, committed, and pushed; run the script again to publish. It refuses to publish from a dirty worktree or replace an existing GitHub release. After publishing, it prints a direct link to the new release.
 
 ## Validate the change
 
