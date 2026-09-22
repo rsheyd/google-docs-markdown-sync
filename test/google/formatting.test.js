@@ -332,3 +332,43 @@ test("spacing cleanup accepts only deletion of empty paragraphs", () => {
   assert.equal(contentChange.emptyParagraphs, 0);
   assert.deepEqual(contentChange.requests, []);
 });
+
+test("normal Markdown updates remove excess Doc paragraphs before applying spacing", async () => {
+  const first = paragraph(1, "First\n");
+  const blank = paragraph(first.endIndex, "\n");
+  const second = paragraph(blank.endIndex, "Second\n");
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [first, blank, second] },
+  };
+  const updates = [];
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async ({ requestBody }) => {
+        updates.push(requestBody);
+        if (updates.length === 1) {
+          document.body.content = [first, paragraph(first.endIndex, "Second\n")];
+          document.revisionId = "revision-2";
+        }
+      },
+    } },
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: "2026-09-22T12:00:00Z",
+      name: "Example",
+      version: "2",
+    } }) } },
+  };
+
+  await updateDocumentFromMarkdown(services, "document", "First\n\nSecond");
+
+  assert.deepEqual(updates[0].requests, [{
+    deleteContentRange: {
+      range: { startIndex: blank.startIndex, endIndex: blank.endIndex },
+    },
+  }]);
+  assert.equal(updates[0].writeControl.requiredRevisionId, "revision-1");
+  assert.ok(updates.slice(1).some(({ requests }) => requests.some(
+    (request) => request.updateParagraphStyle?.paragraphStyle?.spaceBelow?.magnitude === 8,
+  )));
+});

@@ -473,9 +473,9 @@ configuration from the [installation guide](installation.md#configure-image-stag
 
 Changed table structure requires a full Docs body rebuild. With image staging configured, GDMS can rebuild documents containing supported standalone image paragraphs and at most one image per table cell. A rebuilt cell image retains its position relative to the cell text but uses Google Docs' default image size. Cells containing multiple images remain unsupported; simplify those cells before retrying.
 
-### Remove generated spacing paragraphs
+### Remove surplus spacing paragraphs
 
-The cleanup command refuses to write when any non-spacing content differs:
+Normal Markdown pushes now remove surplus empty Docs paragraphs where the surrounding content matches unambiguously. For a paired Doc that needs cleanup before another local edit, the cleanup command refuses to write when any non-spacing content differs:
 
 ```sh
 gdms cleanup-spacing --document-id DOCUMENT_ID

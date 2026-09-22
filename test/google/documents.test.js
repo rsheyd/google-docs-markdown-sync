@@ -83,6 +83,44 @@ test("uses Docs paragraph metadata to export a one-click indent as a blockquote"
   assert.equal(await exportMarkdown(services, "document"), "> Quoted paragraph\n");
 });
 
+test("restores a missing Markdown paragraph break from a native 8-point gap", async () => {
+  const first = paragraph(1, "First paragraph\n");
+  first.paragraph.paragraphStyle.spaceBelow = { magnitude: 8, unit: "PT" };
+  const second = paragraph(first.endIndex, "Second paragraph\n");
+  const document = { body: { content: [first, second] } };
+  const services = {
+    drive: { files: { export: async () => ({ data: "First paragraph\nSecond paragraph\n" }) } },
+  };
+  assert.equal(
+    await exportMarkdown(services, "document", { document }),
+    "First paragraph\n\nSecond paragraph\n",
+  );
+});
+
+test("recognizes inherited 8-point spacing without changing compact paragraphs", async () => {
+  const first = paragraph(1, "First paragraph\n");
+  const second = paragraph(first.endIndex, "Second paragraph\n");
+  const document = {
+    namedStyles: { styles: [{
+      namedStyleType: "NORMAL_TEXT",
+      paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
+    }] },
+    body: { content: [first, second] },
+  };
+  const services = {
+    drive: { files: { export: async () => ({ data: "First paragraph\nSecond paragraph\n" }) } },
+  };
+  assert.equal(
+    await exportMarkdown(services, "document", { document }),
+    "First paragraph\n\nSecond paragraph\n",
+  );
+  delete document.namedStyles;
+  assert.equal(
+    await exportMarkdown(services, "document", { document }),
+    "First paragraph\nSecond paragraph\n",
+  );
+});
+
 test("creates a Google Doc and populates it from Markdown", async () => {
   const calls = [];
   const progress = [];

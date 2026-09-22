@@ -96,16 +96,31 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
       suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
     })).data;
     const sourceBlocks = blocksFromDocument(source);
+    const exported = Buffer.from(response.data).toString("utf8");
+    const namedSpacing = new Map((source.namedStyles?.styles ?? []).map((style) => [
+      style.namedStyleType,
+      style.paragraphStyle?.spaceBelow?.magnitude,
+    ]));
+    const contentParagraphs = sourceBlocks.filter((block) =>
+      block.type === "text" && block.text && !block.nativeTableOfContents,
+    );
+    const uniformlySpaced = contentParagraphs.length > 1 &&
+      contentParagraphs.slice(0, -1).every((block) =>
+        (block.paragraphSpaceBelow ?? namedSpacing.get(block.paragraphStyle)) === 8,
+      ) && sourceBlocks.every((block) => block.type === "text" && !block.nativeTableOfContents);
+    const apiMarkdown = uniformlySpaced ? markdownFromDocument(source) : undefined;
+    const paragraphGaps = (value) => (stripRemoteDocumentStatus(value).match(/\n\n/g) ?? []).length;
     if (
       sourceBlocks.some(hasBlockquoteIndent) ||
       sourceBlocks.some(hasTableCellBreak) ||
       sourceBlocks.some((block) => block.type === "listItem" &&
-        /^[ox]\] /.test(block.text) && block.styles.some((style) => style.start < 3))
+        /^[ox]\] /.test(block.text) && block.styles.some((style) => style.start < 3)) ||
+      (apiMarkdown && paragraphGaps(exported) < paragraphGaps(apiMarkdown))
     ) {
-      return stripRemoteDocumentStatus(markdownFromDocument(source));
+      return stripRemoteDocumentStatus(apiMarkdown ?? markdownFromDocument(source));
     }
     return stripRemoteDocumentStatus(restoreTaskListMarkers(addTableColumnWidths(
-      Buffer.from(response.data).toString("utf8"),
+      exported,
       sourceBlocks
         .filter((block) => block.type === "table")
         .map((block) => block.columnWidths),
@@ -1786,8 +1801,20 @@ export async function updateDocumentFromMarkdown(
   markdown,
   { onProgress, imageSync } = {},
 ) {
-  const document = await currentDocument(services, documentId);
-  const plan = planIncrementalUpdate(document, markdown, imageSync);
+  let document = await currentDocument(services, documentId);
+  let plan = planIncrementalUpdate(document, markdown, imageSync);
+  const spacing = plan.mode === "incremental" ? planSpacingCleanup(document, markdown) : null;
+  if (spacing?.requests.length) {
+    await services.docs.documents.batchUpdate({
+      documentId,
+      requestBody: {
+        requests: spacing.requests,
+        writeControl: { requiredRevisionId: document.revisionId },
+      },
+    });
+    document = await currentDocument(services, documentId);
+    plan = planIncrementalUpdate(document, markdown, imageSync);
+  }
   if (plan.mode === "full-rebuild") {
     const imageSizes = new Map();
     for (const desiredBlock of plan.desired.filter(blockHasImages)) {

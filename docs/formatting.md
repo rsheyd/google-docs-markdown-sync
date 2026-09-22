@@ -147,6 +147,8 @@ GDMS stores visual block separation as Google Docs paragraph `space below`, not
 as generated empty paragraphs. This keeps list numbering stable and produces a
 cleaner two-way Markdown representation.
 
+When a simple Google Doc uses a uniform native 8-point gap after its text paragraphs but Google's Markdown export omits the blank lines, GDMS reconstructs those paragraph breaks in the paired Markdown from the Docs paragraph metadata. A later Markdown push removes only surplus empty Docs paragraphs whose surrounding content matches the Markdown, then applies the corresponding 8-point gap. Deliberate additional blank lines remain explicit empty paragraphs.
+
 On a later synchronization pass, GDMS may reconcile supported paragraph spacing
 even when the text itself has not changed. Manual Google Docs spacing that
 disagrees with the paired Markdown blank lines can therefore be normalized. GDMS
