@@ -75,6 +75,13 @@ The justification, storage model, migration requirements, implementation phases,
 The phases, rollback guarantees, affected identifiers, and validation plan are
 documented in the [namespace migration plan](design/namespace-migration.md).
 
+## Later: public Raycast Store extension
+
+- Replace the source-imported development extension with a public Raycast Store release so Raycast can install and update the command without a local `npm run dev` registration step.
+- Confirm with Raycast reviewers whether a Store extension may invoke the locally installed GDMS CLI when that CLI reads Google OAuth credentials from macOS Keychain; if not, expose a narrow local service interface that keeps credential access outside the extension process.
+- Add Store-ready metadata, a Raycast-account author, macOS platform declaration, categories, setup documentation, screenshots, linting, formatting, and a clean-install validation path.
+- Keep the GDMS service and CLI as the synchronization authority. Store publication should improve installation and updates without creating a second configuration or credential store inside Raycast.
+
 ## Later: packaged app and guided onboarding
 
 - Package GDMS as a signed and notarized macOS app that does not require Node.js, a source checkout, or manual background-service installation.

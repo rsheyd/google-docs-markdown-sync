@@ -406,6 +406,18 @@ reaches its grace-period deadline.
 
 ## Recovery and troubleshooting
 
+### Raycast reports `Missing executable` after an update
+
+The GDMS Raycast command is currently imported from this source checkout as a development extension. A Raycast update may remove or invalidate its generated command executable. Rebuild and re-import it:
+
+```sh
+cd /path/to/google-docs-markdown-sync/raycast-extension
+npm install
+npm run dev
+```
+
+Wait for `built extension successfully`, confirm that the command works, and then stop the development process with Control-C. The imported command remains available in Raycast; rerun `npm run dev` after extension source changes or if a later Raycast update produces the same error. `npm run build` validates the extension but does not import it into Raycast.
+
 ### The service is not running
 
 Run `gdms install-service`, then inspect the error log. The LaunchAgent uses
