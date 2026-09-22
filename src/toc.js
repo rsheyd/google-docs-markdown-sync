@@ -74,8 +74,23 @@ export function refreshGeneratedTableOfContents(markdown) {
   return `${markdown.slice(0, range.start)}${generatedTableOfContents(markdown)}${markdown.slice(range.end)}`;
 }
 
-function exportedNativeTocRange(markdown) {
+function nativeTableOfContentsLabels(document) {
+  const body = document?.body ?? document?.tabs?.[0]?.documentTab?.body;
+  return (body?.content ?? [])
+    .filter((element) => element.tableOfContents)
+    .map((element) => (element.tableOfContents.content ?? [])
+      .filter((item) => item.paragraph)
+      .map((item) => (item.paragraph.elements ?? [])
+        .map((part) => part.textRun?.content ?? "")
+        .join("")
+        .trim())
+      .filter(Boolean))
+    .filter((labels) => labels.length > 0);
+}
+
+function exportedNativeTocRange(markdown, document) {
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
+  const nativeLabelSets = nativeTableOfContentsLabels(document);
   const headings = [];
   for (let index = 0; index < lines.length; index += 1) {
     if (!/^#{1,6}\s+(.+?)\s*$/.test(lines[index])) continue;
@@ -103,6 +118,9 @@ function exportedNativeTocRange(markdown) {
       end += 1;
     }
     if (links.length === 0) continue;
+    const matchesNativeStructure = nativeLabelSets.some((labels) =>
+      labels.length === links.length && labels.every((label, index) => label === links[index].label),
+    );
     let previousHeading = end - 1;
     const matchesHeadings = links.every(({ label }) => {
       const heading = headings.find(({ text, index }) => index > previousHeading && text === label);
@@ -110,7 +128,7 @@ function exportedNativeTocRange(markdown) {
       previousHeading = heading.index;
       return true;
     });
-    if (matchesHeadings) {
+    if (matchesNativeStructure || matchesHeadings) {
       let rangeStart = start;
       while (rangeStart > 0 && lines[rangeStart - 1].trim() === "") rangeStart -= 1;
       if (rangeStart > 0 && /^#{1,6}\s*$/.test(lines[rangeStart - 1])) rangeStart -= 1;
@@ -131,10 +149,10 @@ function exportedNativeTocRange(markdown) {
   return candidates.sort((left, right) => right.linkCount - left.linkCount || left.start - right.start)[0];
 }
 
-export function representNativeTableOfContents(markdown) {
+export function representNativeTableOfContents(markdown, document) {
   const existing = markerRange(markdown);
   if (existing) return refreshGeneratedTableOfContents(markdown);
-  const native = exportedNativeTocRange(markdown);
+  const native = exportedNativeTocRange(markdown, document);
   if (!native) {
     throw new Error("Google Docs contains a native table of contents, but its Markdown position could not be identified.");
   }
@@ -145,9 +163,9 @@ export function representNativeTableOfContents(markdown) {
   ].join("\n");
 }
 
-export function representNativeTableOfContentsFromRemote(markdown, remoteMarkdown) {
+export function representNativeTableOfContentsFromRemote(markdown, remoteMarkdown, document) {
   if (markerRange(markdown)) return refreshGeneratedTableOfContents(markdown);
-  const remote = exportedNativeTocRange(remoteMarkdown);
+  const remote = exportedNativeTocRange(remoteMarkdown, document);
   if (!remote) {
     throw new Error("Google Docs contains a native table of contents, but its Markdown position could not be identified.");
   }
@@ -179,9 +197,9 @@ export function representNativeTableOfContentsFromRemote(markdown, remoteMarkdow
   ].join("\n");
 }
 
-export function restoreNativeTableOfContents(markdown, remoteMarkdown) {
+export function restoreNativeTableOfContents(markdown, remoteMarkdown, document) {
   const generated = markerRange(markdown);
-  const native = exportedNativeTocRange(remoteMarkdown);
+  const native = exportedNativeTocRange(remoteMarkdown, document);
   if (!generated || !native) return markdown;
   const remoteRange = native.lines
     .slice(native.contentStart, native.contentEnd)

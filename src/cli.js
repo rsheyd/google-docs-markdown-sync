@@ -214,7 +214,7 @@ async function pair(options) {
       exportedMarkdown,
     );
     const markdown = documentHasNativeTableOfContents(remote.document)
-      ? representNativeTableOfContents(materialized)
+      ? representNativeTableOfContents(materialized, remote.document)
       : materialized;
     const status = {
       content: markdown,
@@ -451,10 +451,14 @@ async function plan(options) {
     ? await exportMarkdown(services, pairing.documentId, { document: remote.document })
     : undefined;
   if (remoteExport) {
-    localContent = representNativeTableOfContentsFromRemote(localContent, remoteExport);
+    localContent = representNativeTableOfContentsFromRemote(
+      localContent,
+      remoteExport,
+      remote.document,
+    );
   }
   const content = remoteExport
-    ? restoreNativeTableOfContents(localContent, remoteExport)
+    ? restoreNativeTableOfContents(localContent, remoteExport, remote.document)
     : localContent;
   const result = planIncrementalUpdate(
     remote.document,
@@ -550,7 +554,11 @@ async function push(options) {
     ? await exportMarkdown(services, pairing.documentId, { document: before.document })
     : undefined;
   if (remoteExport) {
-    localContent = representNativeTableOfContentsFromRemote(localContent, remoteExport);
+    localContent = representNativeTableOfContentsFromRemote(
+      localContent,
+      remoteExport,
+      before.document,
+    );
   }
   const status = {
     content: localContent,
@@ -559,7 +567,7 @@ async function push(options) {
   };
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
   const content = remoteExport
-    ? restoreNativeTableOfContents(localContent, remoteExport)
+    ? restoreNativeTableOfContents(localContent, remoteExport, before.document)
     : localContent;
   const imageSync = hasImagesForSync(before.document, content)
     ? await prepareImagePush(

@@ -246,6 +246,43 @@ test("coordinator commits successful proposals and notifications in stable order
   assert.deepEqual(events.slice(-4), ["report:1", "deletion-retry", "persist:0,2", "reconcile:0,1,2"]);
 });
 
+test("a failed document sync surfaces a compact local status and recovery clears it", async (t) => {
+  const options = await batchFixture(t, 1);
+  const pairing = {
+    ...options.pairings[0],
+    markdownPath: "0.md",
+    name: "Guide",
+  };
+  options.pairings = [pairing];
+  options.persistState = async () => {};
+  options.state.documents["0"] = {
+    lastWriter: "markdown",
+    lastSuccessfulSync: "2026-09-22T15:23:47.000Z",
+  };
+  await runSyncBatch({
+    ...options,
+    synchronize: async () => {
+      throw new Error("Google Docs contains a native table of contents, but its Markdown position could not be identified.");
+    },
+  });
+  assert.match(
+    await fs.readFile(pairing.absolutePath, "utf8"),
+    /Markdown sync status · Needs attention: Native table of contents could not be matched/,
+  );
+
+  await runSyncBatch({
+    ...options,
+    synchronize: async () => ({
+      pairing,
+      action: "none",
+      state: options.state.documents["0"],
+    }),
+  });
+  const recovered = await fs.readFile(pairing.absolutePath, "utf8");
+  assert.match(recovered, /\*\u2194 Markdown sync status\*/);
+  assert.doesNotMatch(recovered, /Needs attention/);
+});
+
 test("interrupted proposals produce no persistence or notifications and replay cleanly", async (t) => {
   const options = await batchFixture(t);
   let current = true;

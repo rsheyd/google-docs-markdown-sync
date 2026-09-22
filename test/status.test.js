@@ -33,6 +33,34 @@ test("adds a visible managed Markdown footer without changing canonical content"
   assert.equal(stripMarkdownStatus(rendered), "# Example\n\nBody\n");
 });
 
+test("surfaces a compact sync issue without adding another status line", () => {
+  const rendered = documentStatusMarkdown(documentPairing, {
+    ...state,
+    content: "Body\n",
+    syncIssue: {
+      kind: "needs-attention",
+      message: "Native table of contents could not be matched",
+    },
+  });
+  assert.match(
+    rendered,
+    /Markdown sync status · Needs attention: Native table of contents could not be matched/,
+  );
+  assert.equal(rendered.split("\n").length, documentStatusMarkdown(documentPairing, {
+    ...state,
+    content: "Body\n",
+  }).split("\n").length);
+});
+
+test("labels temporary connectivity failures as paused", () => {
+  const rendered = documentStatusMarkdown(documentPairing, {
+    ...state,
+    content: "Body\n",
+    syncIssue: { kind: "temporary-connectivity", message: "Connection unavailable" },
+  });
+  assert.match(rendered, /Markdown sync status · Temporarily paused: Connection unavailable/);
+});
+
 test("replaces an edited managed Markdown footer as one unit", () => {
   const rendered = documentStatusMarkdown(documentPairing, {
     ...state,

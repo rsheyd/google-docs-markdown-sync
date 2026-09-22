@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.12] - Unreleased
+
+### Changed
+
+- Surface current Google Docs sync failures compactly in the first line of the managed Markdown status footer, while retaining the last successful sync time and automatically restoring the normal title after recovery.
+- Preserve stale native Google Docs tables of contents as opaque native blocks so outdated entries no longer prevent unrelated Markdown changes from synchronizing; local generated entries continue to follow current headings.
+
 ## [0.8.11] - 2026-09-21
 
 ### Changed

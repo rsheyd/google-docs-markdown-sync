@@ -38,7 +38,7 @@ import {
   trashPairedDocument,
 } from "./deletions.js";
 import { createTimestampLogger } from "./progress.js";
-import { createSyncErrorReporter } from "./notifications.js";
+import { classifySyncError, createSyncErrorReporter } from "./notifications.js";
 import { createNetworkGate, createWakeMonitor } from "./network.js";
 import { reconciliationDue, runDriveChangeCycle, createReconciliationPriorityDrain } from "./drive-changes.js";
 import { readPackageVersion } from "./version.js";
@@ -95,6 +95,35 @@ async function localSnapshot(filePath) {
   }
 }
 
+function documentSyncIssue(error) {
+  const message = String(error?.message ?? "");
+  if (message.includes("native table of contents")) {
+    return {
+      kind: "needs-attention",
+      message: "Native table of contents could not be matched",
+    };
+  }
+  if (classifySyncError(error) === "temporary-connectivity") {
+    return { kind: "temporary-connectivity", message: "Connection unavailable" };
+  }
+  return { kind: "needs-attention", message: "See GDMS logs" };
+}
+
+async function writeLocalDocumentStatus(pairing, state, syncIssue) {
+  if (pairing.type === "spreadsheet" || !state) return;
+  const text = await fs.readFile(pairing.absolutePath, "utf8").catch((error) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (text === undefined) return;
+  const rendered = documentStatusMarkdown(pairing, {
+    ...state,
+    content: text,
+    ...(syncIssue ? { syncIssue } : {}),
+  });
+  if (rendered !== text) await writeTextAtomic(pairing.absolutePath, rendered);
+}
+
 export async function pullDocument(services, pairing, remote) {
   const status = {
     lastWriter: "google-docs",
@@ -118,7 +147,7 @@ export async function pullDocument(services, pairing, remote) {
     exported,
   );
   const content = documentHasNativeTableOfContents(updatedRemote.document)
-    ? representNativeTableOfContents(materialized)
+    ? representNativeTableOfContents(materialized, updatedRemote.document)
     : materialized;
   status.content = content;
   await writeTextAtomic(pairing.absolutePath, documentStatusMarkdown(pairing, status));
@@ -139,10 +168,10 @@ async function push(services, pairing, local, before) {
     ? await exportMarkdown(services, pairing.documentId, { document: before.document })
     : undefined;
   const localContent = remoteExport
-    ? representNativeTableOfContentsFromRemote(local.content, remoteExport)
+    ? representNativeTableOfContentsFromRemote(local.content, remoteExport, before.document)
     : refreshGeneratedTableOfContents(local.content);
   const content = remoteExport
-    ? restoreNativeTableOfContents(localContent, remoteExport)
+    ? restoreNativeTableOfContents(localContent, remoteExport, before.document)
     : localContent;
   const status = {
     content: localContent,
@@ -267,7 +296,7 @@ export function shouldRaiseImageConflict({ remoteContentVerifiedUnchanged, ...sn
 
 export async function comparableMarkdownHash(filePath, content, document = {}) {
   const comparable = documentHasNativeTableOfContents(document)
-    ? stripGeneratedTableOfContents(representNativeTableOfContents(content))
+    ? stripGeneratedTableOfContents(representNativeTableOfContents(content, document))
     : stripGeneratedTableOfContents(content);
   return hasImagesForSync(document, content)
     ? hashMarkdownWithAssets(filePath, comparable)
@@ -427,7 +456,11 @@ export async function syncPairing(
         const remoteExport = await exportMarkdown(services, effectivePairing.documentId, {
           document: remote.document,
         });
-        managedContent = representNativeTableOfContentsFromRemote(local.content, remoteExport);
+        managedContent = representNativeTableOfContentsFromRemote(
+          local.content,
+          remoteExport,
+          remote.document,
+        );
       }
       if (local.managedContentChanged || managedContent !== local.content) {
         local.content = managedContent;
@@ -773,6 +806,7 @@ export async function runSyncBatch({
         logger.log(`remote-trash: pairing removed; local recovery: ${deletion.recoveryDirectory}`);
       } else {
         state.documents[key] = result.state;
+        await writeLocalDocumentStatus(result.pairing, result.state);
       }
       const completed = {
         pairing: result.pairing,
@@ -804,6 +838,15 @@ export async function runSyncBatch({
     } catch (error) {
       if (error instanceof SyncPassInterruptedError) throw error;
       assertCurrentSyncPass(isCurrent);
+      try {
+        await writeLocalDocumentStatus(
+          pairing,
+          state.documents[key],
+          documentSyncIssue(error),
+        );
+      } catch (statusError) {
+        logger.error(`status: ${pairing.absolutePath}: ${statusError.message}`);
+      }
       const completed = { pairing, action: "error", error };
       results.push(completed);
       onProgress?.({ type: "complete", current, total: pairings.length, ...completed });

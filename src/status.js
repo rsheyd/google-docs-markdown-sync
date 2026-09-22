@@ -27,6 +27,14 @@ function documentLocalPath(pairing) {
   return pairing.markdownPath;
 }
 
+function documentStatusTitle(issue) {
+  if (!issue) return DOC_STATUS_TITLE;
+  const label = issue.kind === "temporary-connectivity"
+    ? "Temporarily paused"
+    : "Needs attention";
+  return `${DOC_STATUS_TITLE} · ${label}: ${issue.message}`;
+}
+
 export function stripMarkdownStatus(markdown) {
   const start = markdown.indexOf(MARKDOWN_STATUS_START);
   if (start < 0) return markdown;
@@ -52,7 +60,7 @@ export function documentStatusMarkdown(pairing, state) {
   const status = [
     MARKDOWN_STATUS_START,
     "---",
-    `*${DOC_STATUS_TITLE}*`,
+    `*${documentStatusTitle(state.syncIssue)}*`,
     `*Last successful sync: ${displayTime(state.lastSuccessfulSync)} · ${directionLabel(state.lastWriter)}*`,
     `*[Google Doc](${url}) · Local file: \`${documentLocalPath(pairing)}\`*`,
     MARKDOWN_STATUS_END,

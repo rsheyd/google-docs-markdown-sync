@@ -139,7 +139,7 @@ GDMS identifies a native table of contents from the Google Docs document structu
 
 The entries are generated from the Markdown headings. Edit the headings rather than the generated list; GDMS replaces changes inside the marked range during the next sync. The markers are invisible in rendered Markdown, and the visible content remains a normal linked table of contents.
 
-The local generated list and the native Google Docs table of contents are independent views. GDMS does not rewrite the native element or its links. After heading changes synchronize, refresh the native table of contents in Google Docs if you want its displayed entries updated immediately. To remove a native table of contents, delete it in Google Docs; removing only the generated local range does not request that structural deletion.
+The local generated list and the native Google Docs table of contents are independent views. GDMS does not rewrite the native element or its links. A stale native table of contents does not block other synchronization: GDMS identifies and preserves its exact native label sequence while generating the local list from current headings. After heading changes synchronize, refresh the native table of contents in Google Docs if you want its displayed entries updated. To remove a native table of contents, delete it in Google Docs; removing only the generated local range does not request that structural deletion.
 
 ## Synchronization and normalization
 

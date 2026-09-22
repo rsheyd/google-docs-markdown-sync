@@ -11,6 +11,20 @@ import {
   stripGeneratedTableOfContents,
 } from "../src/toc.js";
 
+function nativeTocDocument(labels) {
+  return {
+    body: {
+      content: [{
+        tableOfContents: {
+          content: labels.map((label) => ({
+            paragraph: { elements: [{ textRun: { content: `${label}\n` } }] },
+          })),
+        },
+      }],
+    },
+  };
+}
+
 test("generates a quiet Markdown TOC from headings and explicit fragments", () => {
   const markdown = "# Guide\n\n## First [topic]\n\n## Duplicate\n\n## Duplicate {#chosen}\n";
   assert.equal(generatedTableOfContents(markdown), [
@@ -87,6 +101,38 @@ test("matches native TOC labels to headings with inline formatting", () => {
   assert.match(represented, /\[Other styled heading\]/);
 });
 
+test("uses native structure to preserve a stale Google TOC while generating current local entries", () => {
+  const exported = [
+    "**Table of Contents**",
+    "",
+    "[Other TV Station Websites](#heading=other)",
+    "",
+    "[Pre-Sept-14 Design](#heading=pre)",
+    "",
+    "[Sept-14 Design](#heading=removed)",
+    "",
+    "## My Design Feedback / Message to Teri",
+    "",
+    "## Other TV Station Websites",
+    "",
+    "## Pre-Sept-14 Design",
+    "",
+  ].join("\n");
+  const document = nativeTocDocument([
+    "Other TV Station Websites",
+    "Pre-Sept-14 Design",
+    "Sept-14 Design",
+  ]);
+  assert.throws(
+    () => representNativeTableOfContents(exported),
+    /position could not be identified/,
+  );
+  const represented = representNativeTableOfContents(exported, document);
+  assert.match(represented, /\[My Design Feedback \/ Message to Teri\]\(#my-design-feedback-message-to-teri\)/);
+  assert.match(represented, /\[Other TV Station Websites\]\(#other-tv-station-websites\)/);
+  assert.doesNotMatch(represented, /\[Sept-14 Design\]/);
+});
+
 test("restores the remote native TOC only for the Google update view", () => {
   const local = `Intro\n\n${GENERATED_TOC_START}\n\n[New](#new)\n\n${GENERATED_TOC_END}\n\n## New\n`;
   const remote = "Old intro\n\n[Old](#old)\n\n## Old\n";
@@ -94,6 +140,19 @@ test("restores the remote native TOC only for the Google update view", () => {
   assert.match(restored, /\[Old\]\(#old\)/);
   assert.doesNotMatch(restored, /gdms:generated-toc/);
   assert.match(restored, /## New/);
+});
+
+test("restores a stale native TOC from its exact native label sequence", () => {
+  const local = `${GENERATED_TOC_START}\n\n[Current](#current)\n\n${GENERATED_TOC_END}\n\n## Current\n`;
+  const remote = "[Old](#heading=old)\n\n[Removed](#heading=removed)\n\n## Current\n";
+  const restored = restoreNativeTableOfContents(
+    local,
+    remote,
+    nativeTocDocument(["Old", "Removed"]),
+  );
+  assert.match(restored, /^\[Old\]\(#heading=old\)\n\n\[Removed\]\(#heading=removed\)/);
+  assert.match(restored, /## Current/);
+  assert.doesNotMatch(restored, /gdms:generated-toc/);
 });
 
 test("normalizes Google export spacing between native TOC entries", () => {
