@@ -61,6 +61,18 @@ test("labels temporary connectivity failures as paused", () => {
   assert.match(rendered, /Markdown sync status · Temporarily paused: Connection unavailable/);
 });
 
+test("renders and strips the same sync issue in the Google Docs footer", () => {
+  const rendered = remoteDocumentStatusMarkdown(documentPairing, {
+    ...state,
+    syncIssue: { kind: "needs-attention", message: "See GDMS logs" },
+  });
+  assert.match(rendered, /Markdown sync status · Needs attention: See GDMS logs/);
+  assert.equal(
+    stripRemoteDocumentStatus(`Body\n\n${rendered}\n`),
+    "Body\n",
+  );
+});
+
 test("replaces an edited managed Markdown footer as one unit", () => {
   const rendered = documentStatusMarkdown(documentPairing, {
     ...state,

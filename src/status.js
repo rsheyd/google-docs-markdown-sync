@@ -71,7 +71,7 @@ export function documentStatusMarkdown(pairing, state) {
 export function remoteDocumentStatusMarkdown(pairing, state) {
   return [
     "---",
-    `*${DOC_STATUS_TITLE}*`,
+    `*${documentStatusTitle(state.syncIssue)}*`,
     `*Last successful sync: ${displayTime(state.lastSuccessfulSync)} · ${directionLabel(state.lastWriter)}*`,
     `*Local file: \`${documentLocalPath(pairing)}\`*`,
   ].join("\n");
@@ -80,7 +80,9 @@ export function remoteDocumentStatusMarkdown(pairing, state) {
 export function stripRemoteDocumentStatus(markdown) {
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
   const plain = (line) => line.trim().replace(/^[_*]+|[_*]+$/g, "").trim();
-  const titleIndex = lines.findLastIndex((line) => plain(line) === DOC_STATUS_TITLE);
+  const titleIndex = lines.findLastIndex((line) =>
+    plain(line) === DOC_STATUS_TITLE || plain(line).startsWith(`${DOC_STATUS_TITLE} · `),
+  );
   if (
     titleIndex < 0 ||
     !lines.slice(titleIndex + 1).some((line) =>

@@ -70,3 +70,34 @@ test("replaces only the managed status suffix", async () => {
     },
   });
 });
+
+test("replaces an error-bearing managed status suffix instead of appending another", async () => {
+  const updates = [];
+  const body = paragraph(1, "Body\n");
+  const separator = paragraph(body.endIndex, "---\n");
+  const title = paragraph(separator.endIndex, "↔ Markdown sync status · Needs attention: See GDMS logs\n");
+  const timestamp = paragraph(title.endIndex, "Last successful sync: old\n");
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [body, separator, title, timestamp] },
+  };
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async (request) => updates.push(request),
+    } },
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: "2026-08-03T12:00:00Z",
+      name: "Example",
+    } }) } },
+  };
+
+  await updateDocumentStatus(
+    services,
+    "document",
+    "---\n\n*↔ Markdown sync status*\n\n*Last successful sync: now*",
+  );
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].requestBody.requests[0].deleteContentRange.range.startIndex, separator.startIndex);
+});

@@ -109,6 +109,12 @@ function documentSyncIssue(error) {
   return { kind: "needs-attention", message: "See GDMS logs" };
 }
 
+function withoutSyncIssue(state) {
+  if (!state?.syncIssue) return state;
+  const { syncIssue: _syncIssue, ...recovered } = state;
+  return recovered;
+}
+
 async function writeLocalDocumentStatus(pairing, state, syncIssue) {
   if (pairing.type === "spreadsheet" || !state) return;
   const text = await fs.readFile(pairing.absolutePath, "utf8").catch((error) => {
@@ -357,6 +363,7 @@ export async function syncPairing(
     !spreadsheet &&
     !autoConvertNativeCheckboxes &&
     !refreshStatus &&
+    !previous?.syncIssue &&
     previous?.remoteDriveRevisionId &&
     local.exists &&
     !local.managedContentChanged &&
@@ -488,6 +495,20 @@ export async function syncPairing(
             remoteDriveRevisionId: styledRemote.driveRevisionId,
             remoteModifiedTime: styledRemote.modifiedTime,
           },
+        };
+      }
+      if (previous?.syncIssue) {
+        const recovered = withoutSyncIssue(previous);
+        return {
+          action: "recovered",
+          pairing: effectivePairing,
+          state: await repairStatus(
+            services,
+            effectivePairing,
+            recovered,
+            local,
+            remote,
+          ),
         };
       }
     }
@@ -838,14 +859,37 @@ export async function runSyncBatch({
     } catch (error) {
       if (error instanceof SyncPassInterruptedError) throw error;
       assertCurrentSyncPass(isCurrent);
+      const syncIssue = documentSyncIssue(error);
+      let issueState = pairing.type !== "spreadsheet" && state.documents[key]
+        ? { ...state.documents[key], syncIssue }
+        : undefined;
+      if (issueState) state.documents[key] = issueState;
       try {
         await writeLocalDocumentStatus(
           pairing,
-          state.documents[key],
-          documentSyncIssue(error),
+          issueState,
+          syncIssue,
         );
       } catch (statusError) {
         logger.error(`status: ${pairing.absolutePath}: ${statusError.message}`);
+      }
+      if (pairing.type !== "spreadsheet" && issueState) {
+        try {
+          const remote = await updateDocumentStatus(
+            services,
+            pairing.documentId,
+            remoteDocumentStatusMarkdown(pairing, issueState),
+          );
+          issueState = {
+            ...issueState,
+            remoteRevisionId: remote.revisionId,
+            remoteDriveRevisionId: remote.driveRevisionId,
+            remoteModifiedTime: remote.modifiedTime,
+          };
+          state.documents[key] = issueState;
+        } catch (statusError) {
+          logger.error(`remote status: ${pairing.absolutePath}: ${statusError.message}`);
+        }
       }
       const completed = { pairing, action: "error", error };
       results.push(completed);

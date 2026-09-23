@@ -255,6 +255,22 @@ test("a failed document sync surfaces a compact local status and recovery clears
   };
   options.pairings = [pairing];
   options.persistState = async () => {};
+  const remoteWrites = [];
+  const remoteDocument = {
+    revisionId: "remote-1",
+    body: { content: [{ startIndex: 1, endIndex: 1, sectionBreak: {} }] },
+  };
+  options.services = {
+    docs: { documents: {
+      get: async () => ({ data: remoteDocument }),
+      batchUpdate: async (request) => { remoteWrites.push(request); },
+    } },
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: "2026-09-22T15:23:47.000Z",
+      name: "Guide",
+      version: "drive-2",
+    } }) } },
+  };
   options.state.documents["0"] = {
     lastWriter: "markdown",
     lastSuccessfulSync: "2026-09-22T15:23:47.000Z",
@@ -269,13 +285,24 @@ test("a failed document sync surfaces a compact local status and recovery clears
     await fs.readFile(pairing.absolutePath, "utf8"),
     /Markdown sync status · Needs attention: Native table of contents could not be matched/,
   );
+  assert.deepEqual(options.state.documents["0"].syncIssue, {
+    kind: "needs-attention",
+    message: "Native table of contents could not be matched",
+  });
+  assert.match(
+    remoteWrites[0].requestBody.requests.find((request) => request.insertText)?.insertText.text,
+    /Markdown sync status · Needs attention: Native table of contents could not be matched/,
+  );
 
   await runSyncBatch({
     ...options,
     synchronize: async () => ({
       pairing,
       action: "none",
-      state: options.state.documents["0"],
+      state: {
+        ...options.state.documents["0"],
+        syncIssue: undefined,
+      },
     }),
   });
   const recovered = await fs.readFile(pairing.absolutePath, "utf8");

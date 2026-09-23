@@ -263,7 +263,7 @@ the same recipient. Errors that need attention use the configured delay, 15
 minutes by default. Temporary connectivity failures wait at least 30 minutes
 or the configured delay, whichever is longer.
 
-For paired Markdown files, the managed footer also surfaces the current failure compactly on its first line as **Needs attention** or **Temporarily paused** while retaining the last successful sync time. A successful retry restores the normal footer title. Detailed diagnostics remain in the service error log.
+For paired documents, both managed status footers surface the current failure compactly on their first line as **Needs attention** or **Temporarily paused** while retaining the last successful sync time. The error state remains stable across automatic retries, and a successful retry restores the normal footer title on both sides. Remote propagation is best-effort: a connectivity failure can be shown only in Markdown while Google Docs is unreachable. Detailed diagnostics remain in the service error log.
 
 Configure the shared recipient or delay directly with:
 

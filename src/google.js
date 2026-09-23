@@ -1878,7 +1878,9 @@ export async function updateDocumentStatus(
   const document = await currentDocument(services, documentId);
   const current = blocksFromDocument(document);
   const statusIndex = current.findIndex(
-    (block) => block.type === "text" && block.text === DOC_STATUS_TITLE,
+    (block) => block.type === "text" && (
+      block.text === DOC_STATUS_TITLE || block.text.startsWith(`${DOC_STATUS_TITLE} · `)
+    ),
   );
   let insertionIndex = bodyEndIndex(document) - 1;
   const requests = [];
