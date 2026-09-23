@@ -6,7 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Surface current Google Docs sync failures compactly in the first line of both managed status footers, keep the error state stable across automatic retries, retain the last successful sync time, and automatically restore the normal title after recovery.
+- Surface current Google Docs sync failures compactly in the first line of both managed status footers, keep unchanged error state stable across automatic retries without rewriting either footer or accumulating blank Google Docs paragraphs, retain the last successful sync time, and automatically restore the normal title after recovery.
+- Preserve the required paragraph boundary when replacing Markdown content immediately before a native Google Docs table of contents, avoiding rejected deletion ranges.
 - Preserve stale native Google Docs tables of contents as opaque native blocks so outdated entries no longer prevent unrelated Markdown changes from synchronizing; local generated entries continue to follow current headings.
 - Restore missing Markdown paragraph breaks when a simple Google Doc has uniform native 8-point post-paragraph spacing, and remove matching surplus empty Docs paragraphs during normal Markdown pushes.
 

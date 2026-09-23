@@ -101,3 +101,43 @@ test("replaces an error-bearing managed status suffix instead of appending anoth
   assert.equal(updates.length, 1);
   assert.equal(updates[0].requestBody.requests[0].deleteContentRange.range.startIndex, separator.startIndex);
 });
+
+test("replaces accumulated blank paragraphs before the managed status suffix", async () => {
+  const updates = [];
+  const body = paragraph(1, "Body\n");
+  const firstBlank = paragraph(body.endIndex, "\n");
+  const secondBlank = paragraph(firstBlank.endIndex, "\n");
+  const separator = paragraph(secondBlank.endIndex, "---\n");
+  const title = paragraph(separator.endIndex, "↔ Markdown sync status · Needs attention: See GDMS logs\n");
+  const timestamp = paragraph(title.endIndex, "Last successful sync: old\n");
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [body, firstBlank, secondBlank, separator, title, timestamp] },
+  };
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: document }),
+      batchUpdate: async (request) => updates.push(request),
+    } },
+    drive: { files: { get: async () => ({ data: {
+      modifiedTime: "2026-08-03T12:00:00Z",
+      name: "Example",
+    } }) } },
+  };
+
+  await updateDocumentStatus(
+    services,
+    "document",
+    "---\n\n*↔ Markdown sync status · Needs attention: See GDMS logs*\n\n*Last successful sync: old*",
+  );
+
+  assert.equal(
+    updates[0].requestBody.requests[0].deleteContentRange.range.startIndex,
+    firstBlank.startIndex,
+  );
+  assert.equal(
+    updates[0].requestBody.requests[1].insertText.location.index,
+    firstBlank.startIndex,
+  );
+  assert.match(updates[0].requestBody.requests[1].insertText.text, /^\n\n---\n/);
+});

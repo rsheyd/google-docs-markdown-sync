@@ -288,11 +288,22 @@ test("a failed document sync surfaces a compact local status and recovery clears
   assert.deepEqual(options.state.documents["0"].syncIssue, {
     kind: "needs-attention",
     message: "Native table of contents could not be matched",
+    remoteStatusApplied: true,
   });
   assert.match(
     remoteWrites[0].requestBody.requests.find((request) => request.insertText)?.insertText.text,
     /Markdown sync status · Needs attention: Native table of contents could not be matched/,
   );
+  const failedStatus = await fs.readFile(pairing.absolutePath, "utf8");
+
+  await runSyncBatch({
+    ...options,
+    synchronize: async () => {
+      throw new Error("Google Docs contains a native table of contents, but its Markdown position could not be identified.");
+    },
+  });
+  assert.equal(remoteWrites.length, 1);
+  assert.equal(await fs.readFile(pairing.absolutePath, "utf8"), failedStatus);
 
   await runSyncBatch({
     ...options,

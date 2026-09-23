@@ -138,6 +138,42 @@ test("refuses to patch inside a native Google Docs table of contents", () => {
   );
 });
 
+test("preserves the paragraph boundary immediately before a native table of contents", () => {
+  const title = paragraph(1, "Title\n", "HEADING_1");
+  title.paragraph.paragraphStyle.headingId = "heading-title";
+  const summary = paragraph(title.endIndex, "Old\n");
+  const tocItem = paragraph(summary.endIndex + 1, "Section\n");
+  tocItem.paragraph.elements[0].textRun.textStyle.link = {
+    headingId: "heading-section",
+  };
+  const toc = {
+    startIndex: summary.endIndex,
+    endIndex: tocItem.endIndex,
+    tableOfContents: { content: [tocItem] },
+  };
+  const heading = paragraph(toc.endIndex, "Section\n", "HEADING_2");
+  heading.paragraph.paragraphStyle.headingId = "heading-section";
+  const document = { body: { content: [title, summary, toc, heading] } };
+
+  const plan = planIncrementalUpdate(
+    document,
+    "# Title\n\nNew\n\n[Section](#section)\n\n## Section",
+  );
+  const deletion = plan.requests.find((request) =>
+    request.deleteContentRange?.range.startIndex === summary.startIndex,
+  );
+  const insertion = plan.requests.find((request) =>
+    request.insertText?.location.index === summary.startIndex,
+  );
+
+  assert.deepEqual(deletion, {
+    deleteContentRange: {
+      range: { startIndex: summary.startIndex, endIndex: summary.endIndex - 1 },
+    },
+  });
+  assert.equal(insertion.insertText.text, "New");
+});
+
 test("does not validate or rewrite native table-of-contents heading links", () => {
   const tocItem = paragraph(1, "Old heading\n");
   tocItem.paragraph.elements[0].textRun.textStyle.link = {

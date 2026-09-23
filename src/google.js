@@ -1338,6 +1338,7 @@ function insertionRequests(
     imageUris,
     imageSizes = new Map(),
     retainedTerminalParagraph = false,
+    reuseTrailingParagraph = false,
     applyParagraphSpacing = true,
   } = {},
 ) {
@@ -1386,7 +1387,14 @@ function insertionRequests(
     block,
     prefix: block.type === "listItem" ? "\t".repeat(block.nestingLevel ?? 0) : "",
   }));
-  const text = `${prefix}${rendered.map(({ block, prefix: blockPrefix }) => `${blockPrefix}${block.text}\n`).join("")}`;
+  const renderedText = rendered
+    .map(({ block, prefix: blockPrefix }) => `${blockPrefix}${block.text}\n`)
+    .join("");
+  const text = `${prefix}${
+    reuseTrailingParagraph && renderedText.endsWith("\n")
+      ? renderedText.slice(0, -1)
+      : renderedText
+  }`;
   if (!text) return [];
   const requests = [
     { insertText: { location: { index: startIndex }, text } },
@@ -1632,9 +1640,18 @@ export function planIncrementalUpdate(
         ? current[hunk.currentStart].startIndex
         : endIndex - 1;
     let retainedTerminalParagraph = false;
+    let preservesNativeTocBoundary = false;
     if (hunk.currentStart < hunk.currentEnd) {
       const rawEnd = current[hunk.currentEnd - 1].endIndex;
-      const deletionEnd = Math.min(rawEnd, endIndex - 1);
+      preservesNativeTocBoundary = Boolean(
+        (bodyOf(document).content ?? []).some((element) =>
+          element.tableOfContents && element.startIndex === rawEnd,
+        ),
+      );
+      const deletionEnd = Math.min(
+        rawEnd - (preservesNativeTocBoundary ? 1 : 0),
+        endIndex - 1,
+      );
       retainedTerminalParagraph = rawEnd > deletionEnd;
       if (deletionEnd > insertionIndex) {
         requests.push({
@@ -1664,6 +1681,7 @@ export function planIncrementalUpdate(
         imageUris,
         imageSizes,
         retainedTerminalParagraph,
+        reuseTrailingParagraph: preservesNativeTocBoundary,
       }),
     );
   }
@@ -1897,6 +1915,13 @@ export async function updateDocumentStatus(
       firstStatusBlock > 0 &&
       current[firstStatusBlock - 1].type === "text" &&
       current[firstStatusBlock - 1].text === "---"
+    ) {
+      firstStatusBlock -= 1;
+    }
+    while (
+      firstStatusBlock > 0 &&
+      current[firstStatusBlock - 1].type === "text" &&
+      current[firstStatusBlock - 1].text === ""
     ) {
       firstStatusBlock -= 1;
     }

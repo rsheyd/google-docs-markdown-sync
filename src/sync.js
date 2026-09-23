@@ -860,8 +860,20 @@ export async function runSyncBatch({
       if (error instanceof SyncPassInterruptedError) throw error;
       assertCurrentSyncPass(isCurrent);
       const syncIssue = documentSyncIssue(error);
+      const previousIssue = state.documents[key]?.syncIssue;
+      const remoteStatusAlreadyApplied = Boolean(
+        previousIssue?.remoteStatusApplied &&
+        previousIssue.kind === syncIssue.kind &&
+        previousIssue.message === syncIssue.message,
+      );
       let issueState = pairing.type !== "spreadsheet" && state.documents[key]
-        ? { ...state.documents[key], syncIssue }
+        ? {
+            ...state.documents[key],
+            syncIssue: {
+              ...syncIssue,
+              ...(remoteStatusAlreadyApplied ? { remoteStatusApplied: true } : {}),
+            },
+          }
         : undefined;
       if (issueState) state.documents[key] = issueState;
       try {
@@ -873,7 +885,7 @@ export async function runSyncBatch({
       } catch (statusError) {
         logger.error(`status: ${pairing.absolutePath}: ${statusError.message}`);
       }
-      if (pairing.type !== "spreadsheet" && issueState) {
+      if (pairing.type !== "spreadsheet" && issueState && !remoteStatusAlreadyApplied) {
         try {
           const remote = await updateDocumentStatus(
             services,
@@ -882,6 +894,7 @@ export async function runSyncBatch({
           );
           issueState = {
             ...issueState,
+            syncIssue: { ...syncIssue, remoteStatusApplied: true },
             remoteRevisionId: remote.revisionId,
             remoteDriveRevisionId: remote.driveRevisionId,
             remoteModifiedTime: remote.modifiedTime,
