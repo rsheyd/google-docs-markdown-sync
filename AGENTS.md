@@ -85,6 +85,7 @@
 - `test/launch-agent.test.js`: Compatibility coverage for moving legacy service logs into the standard macOS Logs directory.
 - `test/deletions.test.js`: Deletion propagation, remote-trash content preservation, interrupted cleanup, and notification retry coverage.
 - `test/recovery.test.js`: Recovery backup collision and Drive restoration coverage.
+- `test/dependencies.test.js`: Locked transitive-dependency security and compatibility invariants.
 - `raycast-extension/`: Optional Raycast extension for active-browser document
   pairing.
 - `examples/google-docs-sync.example.json`: Inert example sync-location pairing
