@@ -125,7 +125,7 @@ Explicit breaks inside table cells use inline HTML `<br>` elements because a phy
 
 An ordinary static Markdown table of contents is regular synchronized content. For example, `[Planning](#planning)` is sent to Google Docs as a heading link and is not rewritten by GDMS.
 
-GDMS identifies a native table of contents from the Google Docs document structure, then locates its Markdown export by matching the exported heading links to the document headings. A nearby `Table of Contents` label is ordinary user-authored content: GDMS preserves it but does not use it to detect the native element or generate another label. The native element appears locally as a generated Markdown range:
+GDMS identifies a native table of contents from the Google Docs document structure and carries its position through Markdown export. It uses the native entry formatting to distinguish TOC entries from ordinary paragraphs inside the same Google Docs element, preserving those paragraphs as content. A nearby `Table of Contents` label is ordinary user-authored content: GDMS preserves it but does not use it to detect the native element or generate another label. The native entries appear locally as a generated Markdown range:
 
 ```md
 <!-- gdms:generated-toc:start | auto-generated from headings; edit headings, not this list -->

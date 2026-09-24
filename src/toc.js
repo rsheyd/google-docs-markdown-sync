@@ -1,4 +1,6 @@
 import { parseMarkdown } from "./markdown.js";
+import { markdownFromDocumentWithBlockBoundaries } from "./google.js";
+import { stripRemoteDocumentStatus } from "./status.js";
 
 export const GENERATED_TOC_START =
   "<!-- gdms:generated-toc:start | auto-generated from headings; edit headings, not this list -->";
@@ -89,6 +91,28 @@ function nativeTableOfContentsLabels(document) {
 }
 
 function exportedNativeTocRange(markdown, document) {
+  if (document && documentHasNativeTableOfContents(document)) {
+    const rendered = markdownFromDocumentWithBlockBoundaries(document);
+    if (stripRemoteDocumentStatus(rendered.markdown) === markdown) {
+      // Preserve prose inside the native container; only indented or linked
+      // entries belong to the generated Markdown range.
+      const blocks = rendered.blockBoundaries;
+      const entries = blocks.map((block, index) => ({ ...block, index }))
+        .filter((block) => block.nativeToc && block.tocEntry);
+      if (!entries.length || entries.some((block, index) =>
+        index > 0 && blocks.slice(entries[index - 1].index + 1, block.index)
+          .some((between) => !between.nativeToc || !between.structuralSpacer)
+      )) {
+        throw new Error("Google Docs has a native table of contents without a contiguous entry range.");
+      }
+      const lines = markdown.replaceAll("\r\n", "\n").split("\n");
+      let start = entries[0].startLine;
+      while (start > 0 && lines[start - 1].trim() === "") start -= 1;
+      if (start > 0 && start < entries[0].startLine) start += 1;
+      const end = blocks[entries.at(-1).index + 1]?.startLine ?? lines.length;
+      return { lines, start, end, contentStart: start, contentEnd: end };
+    }
+  }
   const lines = markdown.replaceAll("\r\n", "\n").split("\n");
   const nativeLabelSets = nativeTableOfContentsLabels(document);
   const headings = [];
@@ -159,6 +183,7 @@ export function representNativeTableOfContents(markdown, document) {
   return [
     ...native.lines.slice(0, native.start),
     generatedTableOfContents(markdown),
+    ...(native.end < native.lines.length && native.lines[native.end].trim() ? [""] : []),
     ...native.lines.slice(native.end),
   ].join("\n");
 }

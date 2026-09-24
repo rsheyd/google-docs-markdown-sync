@@ -10,6 +10,8 @@ import {
   restoreNativeTableOfContents,
   stripGeneratedTableOfContents,
 } from "../src/toc.js";
+import { markdownFromDocument } from "../src/google.js";
+import { paragraph } from "./google/fixtures.js";
 
 function nativeTocDocument(labels) {
   return {
@@ -131,6 +133,31 @@ test("uses native structure to preserve a stale Google TOC while generating curr
   assert.match(represented, /\[My Design Feedback \/ Message to Teri\]\(#my-design-feedback-message-to-teri\)/);
   assert.match(represented, /\[Other TV Station Websites\]\(#other-tv-station-websites\)/);
   assert.doesNotMatch(represented, /\[Sept-14 Design\]/);
+});
+
+test("uses native block boundaries when a TOC contains prose and entries without resolved links", () => {
+  const intro = paragraph(1, "Intro\n", "HEADING_1");
+  const prose = paragraph(7, "Keep this note.\n");
+  const linked = paragraph(23, "Old heading\n");
+  linked.paragraph.elements[0].textRun.textStyle.link = { headingId: "old-heading" };
+  linked.paragraph.paragraphStyle.indentStart = { magnitude: 18, unit: "PT" };
+  const unlinked = paragraph(35, "Removed heading\n");
+  unlinked.paragraph.paragraphStyle.indentStart = { magnitude: 18, unit: "PT" };
+  const current = paragraph(52, "Current heading\n", "HEADING_2");
+  const document = { body: { content: [
+    intro,
+    { startIndex: 7, endIndex: 52, tableOfContents: { content: [prose, linked, unlinked] } },
+    current,
+  ] } };
+  const exported = markdownFromDocument(document);
+  const represented = representNativeTableOfContents(exported, document);
+  assert.equal(represented.match(/Keep this note\./g)?.length, 1);
+  assert.match(represented, /Keep this note\.\n\n<!-- gdms:generated-toc:start/);
+  assert.doesNotMatch(represented, /Removed heading/);
+  const restored = restoreNativeTableOfContents(represented, exported, document);
+  assert.equal(restored.match(/Keep this note\./g)?.length, 1);
+  assert.match(restored, /Old heading/);
+  assert.match(restored, /Removed heading/);
 });
 
 test("restores the remote native TOC only for the Google update view", () => {

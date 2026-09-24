@@ -86,6 +86,11 @@ function hasTableCellBreak(block) {
 }
 
 export async function exportMarkdown(services, documentId, { document } = {}) {
+  // Drive's Markdown export loses native TOC boundaries. When the Docs
+  // structure is already available, avoid requesting an export we cannot use.
+  if (document && (bodyOf(document).content ?? []).some((element) => element.tableOfContents)) {
+    return stripRemoteDocumentStatus(markdownFromDocument(document));
+  }
   try {
     const response = await services.drive.files.export(
       { fileId: documentId, mimeType: "text/markdown" },
@@ -97,6 +102,10 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
     })).data;
     const sourceBlocks = blocksFromDocument(source);
     const exported = Buffer.from(response.data).toString("utf8");
+    // A caller without the Docs structure may discover a native TOC here.
+    if (sourceBlocks.some((block) => block.nativeTableOfContents)) {
+      return stripRemoteDocumentStatus(markdownFromDocument(source));
+    }
     const namedSpacing = new Map((source.namedStyles?.styles ?? []).map((style) => [
       style.namedStyleType,
       style.paragraphStyle?.spaceBelow?.magnitude,
@@ -567,12 +576,22 @@ function tableCellMarkdown(cell, imageReference) {
     .replace(/ {2}\n/g, "<br>");
 }
 
-export function markdownFromDocument(document) {
+function renderMarkdownFromDocument(document) {
   let imageNumber = 0;
   const imageReference = () => `image${++imageNumber}`;
   const lines = [];
+  const blockBoundaries = [];
   let previousList;
   for (const block of blocksFromDocument(document)) {
+    blockBoundaries.push({
+      startLine: lines.length + (previousList !== undefined && block.type !== "listItem" ? 1 : 0),
+      nativeToc: Boolean(block.nativeTableOfContents),
+      structuralSpacer: Boolean(block.nativeTableOfContents && block.startIndex === block.endIndex),
+      tocEntry: Boolean(block.nativeTableOfContents && block.type === "text" && (
+        block.styles.some((range) => String(range.style?.link ?? "").startsWith("#")) ||
+        (block.paragraphIndentStart ?? 0) > 0
+      )),
+    });
     if (block.type === "table") {
       const rows = block.rows.map((row) =>
         row.map((cell) => tableCellMarkdown(cell, imageReference)),
@@ -622,7 +641,16 @@ export function markdownFromDocument(document) {
     previousList = undefined;
   }
   while (lines.at(-1) === "") lines.pop();
-  return restoreTaskListMarkers(`${lines.join("\n")}\n`);
+  const markdown = restoreTaskListMarkers(`${lines.join("\n")}\n`);
+  return { markdown, blockBoundaries };
+}
+
+export function markdownFromDocument(document) {
+  return renderMarkdownFromDocument(document).markdown;
+}
+
+export function markdownFromDocumentWithBlockBoundaries(document) {
+  return renderMarkdownFromDocument(document);
 }
 
 function comparableBlock(block, imageHashes = new Map()) {

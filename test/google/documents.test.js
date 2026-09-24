@@ -61,6 +61,21 @@ test("falls back to the Docs API when Drive Markdown export is too large", async
   assert.equal(documentReads, 1);
 });
 
+test("exports a native TOC from Docs blocks so its structural positions remain available", async () => {
+  const note = paragraph(1, "Keep this note.\n");
+  const entry = paragraph(17, "Old heading\n");
+  entry.paragraph.paragraphStyle.indentStart = { magnitude: 18, unit: "PT" };
+  const heading = paragraph(29, "Current heading\n", "HEADING_2");
+  const document = { body: { content: [
+    { startIndex: 1, endIndex: 29, tableOfContents: { content: [note, entry] } },
+    heading,
+  ] } };
+  const services = {
+    drive: { files: { export: async () => assert.fail("native TOC should skip Drive export") } },
+  };
+  assert.equal(await exportMarkdown(services, "document", { document }), markdownFromDocument(document));
+});
+
 test("does not hide unrelated Drive export errors", async () => {
   const denied = new Error("Access denied");
   const services = {
