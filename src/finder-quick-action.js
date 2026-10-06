@@ -60,14 +60,14 @@ done
 export function syncPairedFileQuickActionShellCommand({ nodePath, cliPath }) {
   return `set -e
 if (( $# == 0 )); then
-  echo "GDMS requires at least one paired Markdown file." >&2
+  echo "GDMS requires at least one paired Markdown or CSV file." >&2
   exit 64
 fi
 file_arguments=()
-for markdown_file in "$@"; do
-  case "$markdown_file" in
-    *.md) file_arguments+=(--file "$markdown_file") ;;
-    *) echo "GDMS only accepts Markdown (.md) files: $markdown_file" >&2; exit 64 ;;
+for paired_file in "$@"; do
+  case "$paired_file" in
+    *.md|*.csv) file_arguments+=(--file "$paired_file") ;;
+    *) echo "GDMS only accepts Markdown (.md) or CSV (.csv) files: $paired_file" >&2; exit 64 ;;
   esac
 done
 if sync_result="$(${shellQuote(nodePath)} ${shellQuote(cliPath)} sync-once "${"${file_arguments[@]}"}" 2>&1)"; then
@@ -230,7 +230,7 @@ function quickActionInfoPlist(name, uti) {
       <key>NSMenuItem</key><dict><key>default</key><string>${xmlEscape(name)}</string></dict>
       <key>NSMessage</key><string>runWorkflowAsService</string>
       <key>NSRequiredContext</key><dict><key>NSApplicationIdentifier</key><string>com.apple.finder</string></dict>
-      <key>NSSendFileTypes</key><array><string>${xmlEscape(uti)}</string></array>
+      <key>NSSendFileTypes</key><array><string>${(Array.isArray(uti) ? uti : [uti]).map((type) => xmlEscape(type)).join("</string><string>")}</string></array>
     </dict>
   </array>
 </dict>
@@ -244,7 +244,7 @@ export function finderQuickActionInfoPlist() {
 }
 
 export function syncPairedFileQuickActionInfoPlist() {
-  return quickActionInfoPlist(SYNC_PAIRED_FILE_QUICK_ACTION_NAME, MARKDOWN_UTI);
+  return quickActionInfoPlist(SYNC_PAIRED_FILE_QUICK_ACTION_NAME, [MARKDOWN_UTI, CSV_UTI]);
 }
 
 export function csvFinderQuickActionInfoPlist() {

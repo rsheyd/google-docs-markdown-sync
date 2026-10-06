@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.13] - Unreleased
+
+### Added
+
+- Extend Finder’s **Sync Paired File Now (GDMS)** Quick Action to paired CSV files for immediate two-way synchronization with existing Google Sheets.
+
 ## [0.8.12] - 2026-09-24
 
 ### Changed

@@ -231,7 +231,7 @@ registers each pairing. A single new Doc opens in the default browser. For a
 multi-file selection, GDMS avoids opening many tabs and instead shows a
 completion notification with the number of Docs created.
 
-To synchronize existing pairings immediately, Control-click one or more paired `.md` files and choose **Quick Actions → Sync Paired File Now (GDMS)**. GDMS runs its normal two-way reconciliation only for the selected files, refreshes the successful-sync timestamp even when content is unchanged, and shows a completion dialog with the result. Failures show an error dialog, and an unpaired selection fails without creating a new Google Doc.
+To synchronize existing pairings immediately, Control-click one or more paired `.md` or `.csv` files and choose **Quick Actions → Sync Paired File Now (GDMS)**. GDMS runs its normal two-way reconciliation only for the selected files, refreshes the successful-sync timestamp even when content is unchanged, and shows a completion dialog with the result. Failures show an error dialog, and an unpaired selection fails without creating a new Google Doc or Sheet. CSV selections reconcile the selected paired tabs with their existing Google Sheet. Re-run `gdms install-finder-action` to update an existing installation.
 
 For Sheets, select one or more `.csv` files in the same directory and choose
 **Quick Actions → Combine & Sync CSVs with New Google Sheet (GDMS)**. GDMS

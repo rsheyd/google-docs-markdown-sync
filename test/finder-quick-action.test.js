@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -69,15 +70,15 @@ test("paired-file Finder Quick Action requests an immediate targeted sync", () =
     nodePath: "/path with spaces/node",
     cliPath: "/project/src/cli.js",
   });
-  assert.match(command, /for markdown_file in "\$@"/);
-  assert.match(command, /file_arguments\+=\(--file "\$markdown_file"\)/);
+  assert.match(command, /for paired_file in "\$@"/);
+  assert.match(command, /file_arguments\+=\(--file "\$paired_file"\)/);
   assert.match(command, /sync-once/);
   assert.match(command, /"\$\{file_arguments\[@\]\}"/);
   assert.match(command, /display dialog/);
   assert.match(command, /GDMS Sync Complete/);
   assert.match(command, /display alert/);
   assert.match(command, /GDMS Sync Failed/);
-  assert.match(command, /\*\.md\)/);
+  assert.match(command, /\*\.md\|\*\.csv\)/);
 });
 
 test("Finder Quick Action workflow is a Finder service with escaped XML", () => {
@@ -103,13 +104,14 @@ test("Finder Quick Action registers only for Markdown files", () => {
   assert.equal(FINDER_QUICK_ACTION_NAME, "Sync MDs with New Google Docs (GDMS)");
 });
 
-test("paired-file Finder Quick Action registers only for Markdown files", () => {
+test("paired-file Finder Quick Action registers for Markdown and CSV files", () => {
   const workflow = syncPairedFileQuickActionWorkflow({
     nodePath: "/node",
     cliPath: "/cli",
   });
   assert.match(workflow, /sync-once/);
   const info = syncPairedFileQuickActionInfoPlist();
+  assert.match(info, new RegExp(CSV_UTI.replaceAll(".", "\\.")));
   assert.match(
     info,
     new RegExp(SYNC_PAIRED_FILE_QUICK_ACTION_NAME.replace(/[()]/g, "\\$&")),
@@ -170,6 +172,21 @@ test("installer writes the named workflow under Library Services", async () => {
     "utf8",
   );
   assert.match(pairedFileInfo, /net\.daringfireball\.markdown/);
+  assert.match(pairedFileInfo, /public\.comma-separated-values-text/);
   await Promise.all(legacyCsvInstalled.map((directory) => assert.rejects(fs.access(directory))));
   await assert.rejects(fs.access(legacyMarkdownInstalled));
+});
+
+
+test("paired-file action passes mixed Markdown and CSV paths intact and rejects other files", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-action-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const cliPath = path.join(directory, "fake cli.js");
+  await fs.writeFile(cliPath, "console.log(JSON.stringify(process.argv.slice(2)));\n");
+  const command = syncPairedFileQuickActionShellCommand({ nodePath: process.execPath, cliPath })
+    .replaceAll("/usr/bin/osascript", "/bin/echo");
+  const files = ["/tmp/paired notes.md", "/tmp/paired data.csv"];
+  const output = execFileSync("/bin/zsh", ["-c", command, "gdms-action", ...files], { encoding: "utf8" });
+  assert.ok(output.includes(JSON.stringify(["sync-once", "--file", files[0], "--file", files[1]])));
+  assert.throws(() => execFileSync("/bin/zsh", ["-c", command, "gdms-action", "/tmp/unsupported.txt"], { stdio: "pipe" }), (error) => error.status === 64);
 });
