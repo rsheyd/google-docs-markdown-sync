@@ -1,3 +1,4 @@
+import { splitHeader, headerSource, headerDocument, joinHeader } from "./headers.js";
 import { google } from "googleapis";
 import { googleRequestTimeoutMs } from "./config.js";
 import {
@@ -86,6 +87,7 @@ function hasTableCellBreak(block) {
 }
 
 export async function exportMarkdown(services, documentId, { document } = {}) {
+  if (document && headerSource(document)) return stripRemoteDocumentStatus(markdownFromDocument(document));
   // Drive's Markdown export loses native TOC boundaries. When the Docs
   // structure is already available, avoid requesting an export we cannot use.
   if (document && (bodyOf(document).content ?? []).some((element) => element.tableOfContents)) {
@@ -100,6 +102,7 @@ export async function exportMarkdown(services, documentId, { document } = {}) {
       documentId,
       suggestionsViewMode: "PREVIEW_WITHOUT_SUGGESTIONS",
     })).data;
+    if (headerSource(source)) return stripRemoteDocumentStatus(markdownFromDocument(source));
     const sourceBlocks = blocksFromDocument(source);
     const exported = Buffer.from(response.data).toString("utf8");
     // A caller without the Docs structure may discover a native TOC here.
@@ -576,8 +579,17 @@ function tableCellMarkdown(cell, imageReference) {
     .replace(/ {2}\n/g, "<br>");
 }
 
-function renderMarkdownFromDocument(document) {
-  let imageNumber = 0;
+function renderMarkdownFromDocument(document, { includeHeader = true, imageStart = 0 } = {}) {
+  const header = includeHeader ? headerSource(document) : null;
+  if (header) {
+    const renderedHeader = renderMarkdownFromDocument(headerDocument(document, header), { includeHeader: false });
+    const imageCount = (renderedHeader.markdown.match(/!\[[^\]]*\]\[image\d+\]/g) ?? []).length;
+    const renderedBody = renderMarkdownFromDocument(document, { includeHeader: false, imageStart: imageCount });
+    const markdown = joinHeader({ ...header, markdown: renderedHeader.markdown }, renderedBody.markdown);
+    const offset = markdown.split("\n").length - renderedBody.markdown.split("\n").length;
+    return { markdown, blockBoundaries: renderedBody.blockBoundaries.map(block => ({ ...block, startLine: block.startLine + offset })) };
+  }
+  let imageNumber = imageStart;
   const imageReference = () => `image${++imageNumber}`;
   const lines = [];
   const blockBoundaries = [];
@@ -1841,7 +1853,72 @@ async function reconcileHeadingLinks(services, documentId, markdown) {
   }
 }
 
-export async function updateDocumentFromMarkdown(
+export async function updateDocumentFromMarkdown(services, documentId, markdown, options = {}) {
+  const { header, body } = splitHeader(markdown);
+  const document = await currentDocument(services, documentId);
+  const plan = planHeaderUpdate(document, header, options.imageSync);
+  // Preflight both halves before making any mutation.
+  planIncrementalUpdate(document, body, options.imageSync);
+  if (plan.create) {
+    await services.docs.documents.batchUpdate({ documentId, requestBody: { requests: [{ createHeader: { type: "DEFAULT" } }], writeControl: { requiredRevisionId: document.revisionId } } });
+  }
+  if (plan.changed || plan.create) {
+    const latest = plan.create ? await currentDocument(services, documentId) : document;
+    const ready = planHeaderUpdate(latest, header, options.imageSync);
+    if (ready.requests.length) await services.docs.documents.batchUpdate({ documentId, requestBody: { requests: ready.requests, writeControl: { requiredRevisionId: latest.revisionId } } });
+  }
+  return updateBodyFromMarkdown(services, documentId, body, options);
+}
+
+export function planHeaderUpdate(document, desiredHeader, imageSync) {
+  const current = headerSource(document);
+  if (!desiredHeader && !current) return { changed: false, requests: [] };
+  const style = document.documentStyle ?? document.tabs?.[0]?.documentTab?.documentStyle ?? {};
+  const source = document.body ? document : document.tabs?.[0]?.documentTab;
+  const headers = source?.headers ?? document.headers ?? {};
+  const desired = desiredHeader ? parseMarkdown(desiredHeader.markdown) : [];
+  if (desiredHeader && (source?.body?.content ?? []).filter(element => element.sectionBreak).length > 1) throw new Error("GDMS headers do not support section-specific layouts.");
+  for (const block of desired) for (const image of block.images ?? []) if (!imageSync?.imageUris?.has(image.url)) throw new Error(`No staged image URL is available for ${image.url}.`);
+  if (desired.some(block => block.type !== "text" || (block.images?.length && !standaloneImage(block)))) throw new Error("GDMS headers support text paragraphs and standalone inline images only.");
+  if (desiredHeader?.pages === "first" && !style.firstPageHeaderId) throw new Error('Google Docs API cannot create first-page headers. Enable "Different first page" and add a first-page header in Google Docs once, then sync again.');
+  if (style.documentMode === "PAGELESS" || style.documentFormat?.documentMode === "PAGELESS") throw new Error("Google Docs headers require a paged document.");
+  if (desiredHeader && (desiredHeader.pages === "first") !== Boolean(style.useFirstPageHeaderFooter) && (style.defaultFooterId || style.firstPageFooterId)) throw new Error("Changing first-page header mode would also change footer behavior; configure Different first page in Google Docs first.");
+  const id = desiredHeader ? (desiredHeader.pages === "first" ? style.firstPageHeaderId : style.defaultHeaderId) : current.id;
+  if (desiredHeader && !id) return { create: true, changed: true, requests: [] };
+  const target = headers[id];
+  const currentBlocks = target ? blocksFromDocument({ ...document, ...source, body: { content: target.content }, documentStyle: {}, headers: {}, tabs: undefined }) : [];
+  const left = currentBlocks.map(block => comparableBlock(block, imageSync?.currentImageHashes));
+  const right = desired.map(block => comparableBlock(block, imageSync?.desiredImageHashes));
+  const modeChanged = desiredHeader && ((desiredHeader.pages === "first") !== Boolean(style.useFirstPageHeaderFooter));
+  const alignmentChanged = desiredHeader && current?.alignment !== desiredHeader.alignment;
+  if (!modeChanged && !alignmentChanged && JSON.stringify(left) === JSON.stringify(right)) return { changed: false, requests: [] };
+  const requests = [];
+  if (modeChanged) requests.push({ updateDocumentStyle: { documentStyle: { useFirstPageHeaderFooter: desiredHeader.pages === "first" }, fields: "useFirstPageHeaderFooter" } });
+  // Clear the obsolete active header when switching modes so it cannot repeat.
+  const clearIds = new Set([id, ...(current && current.id !== id ? [current.id] : [])]);
+  for (const clearId of clearIds) {
+    const content = headers[clearId]?.content ?? [];
+    const end = Math.max(1, ...content.map(element => element.endIndex ?? 1));
+    if (end > 1) requests.push({ deleteContentRange: { range: { segmentId: clearId, startIndex: 0, endIndex: end - 1 } } });
+  }
+  const imageSizes = new Map();
+  for (const block of desired) for (const image of block.images ?? []) {
+    const matching = currentBlocks.flatMap(block => block.images ?? []).find(old => imageSync?.currentImageHashes?.get(old.objectId) !== undefined && imageSync.currentImageHashes.get(old.objectId) === imageSync?.desiredImageHashes?.get(image.url));
+    if (matching?.size) imageSizes.set(image.url, matching.size);
+    else imageSizes.set(image.url, { width: { magnitude: 468, unit: "PT" } });
+  }
+  const insertions = insertionRequests(0, desired, { imageUris: imageSync?.imageUris, imageSizes, reuseTrailingParagraph: true });
+  for (const request of insertions) {
+    const operation = Object.values(request)[0];
+    if (operation.location) operation.location.segmentId = id;
+    if (operation.range) operation.range.segmentId = id;
+  }
+  requests.push(...insertions);
+  if (desired.length) requests.push({ updateParagraphStyle: { range: { segmentId: id, startIndex: 0, endIndex: Math.max(1, desired.reduce((sum, block) => sum + block.text.length + 1, 0)) }, paragraphStyle: { alignment: desiredHeader.alignment }, fields: "alignment" } });
+  return { changed: true, requests };
+}
+
+async function updateBodyFromMarkdown(
   services,
   documentId,
   markdown,
@@ -2117,6 +2194,7 @@ export async function replaceDocumentFromMarkdown(
   markdown,
   { onProgress, imageUris, imageSizes } = {},
 ) {
+  if (splitHeader(markdown).header) return updateDocumentFromMarkdown(services, documentId, markdown, { onProgress, imageSync: { imageUris, currentImageHashes: new Map(), desiredImageHashes: new Map() } });
   const blocks = parseMarkdown(markdown);
   const imageBlocks = blocks.filter(blockHasImages);
   if (imageBlocks.some((block) => !supportedImageBlock(block))) {

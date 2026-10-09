@@ -171,3 +171,22 @@ Google Docs' native Markdown export normally defines much of the supported round
 
 See the [README](../README.md#supported-content-and-important-limits) for the full
 supported-content summary and current limitations.
+
+
+## Document Headers
+
+Put one header block at the beginning of the same Markdown file, before body content:
+
+```markdown
+<!-- gdms:header pages="first" -->
+![](terms.assets/letterhead.png)
+<!-- gdms:header:end -->
+
+# Proposed Consulting Terms
+```
+
+Use `pages="all"` for a repeating header. The block is exported back into the same file; its image assets use the ordinary image-sync pipeline. Text paragraphs and standalone inline images are supported. A single optional `align="CENTER"` or `align="END"` setting controls paragraph alignment; otherwise alignment is `START`. Existing matched images keep their size; new images use a 468-point width. Set document and header margins in Google Docs.
+
+Google Docs' public API can create only default headers. Before using `pages="first"` on a document for the first time, enable **Different first page** and add a first-page header in Google Docs. GDMS can then update it. A missing first-page header produces an actionable error before the body is changed. Changing first-page mode with existing footers is refused because that flag affects footers too; configure the mode in Google Docs first.
+
+Removing a header block clears the supported active header. Alternating-page headers, section-specific headers, different populated first-page and default headers, mixed paragraph alignment, header tables, positioned images, and pageless documents are not supported and are rejected rather than flattened into the body. Leave such documents outside header synchronization until their layout is simplified.

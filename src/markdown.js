@@ -1,3 +1,4 @@
+import { splitHeader } from "./headers.js";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
@@ -262,6 +263,7 @@ function headingInline(node) {
 }
 
 export function parseMarkdown(markdown) {
+  markdown = splitHeader(markdown).body;
   const tree = parser.parse(normalizeGoogleImageReferences(markdown));
   const blocks = [];
   let previousEndLine = 0;

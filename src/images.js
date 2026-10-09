@@ -1,8 +1,14 @@
+import { splitHeader, headerDocument } from "./headers.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ensureDirectory, sha256, writeFileAtomic } from "./files.js";
 import { blocksFromDocument } from "./google.js";
 import { parseMarkdown } from "./markdown.js";
+
+function parseImageMarkdown(markdown) {
+  const { header, body } = splitHeader(markdown);
+  return [...(header ? parseMarkdown(header.markdown) : []), ...parseMarkdown(body)];
+}
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const GOOGLE_IMAGE_REFERENCE = /!\[([^\]]*)\]\[(image\d+)\]/gi;
@@ -17,7 +23,7 @@ export function assetDirectoryPath(markdownPath) {
 
 export function localImagePaths(markdownPath, markdown) {
   const directory = assetDirectoryPath(markdownPath);
-  const relativeUrls = parseMarkdown(markdown).flatMap((block) => {
+  const relativeUrls = parseImageMarkdown(markdown).flatMap((block) => {
     if (block.type === "table") {
       return block.rows.flatMap((row) =>
         row.flatMap((cell) => (cell.images ?? []).map((image) => image.url)),
@@ -109,7 +115,8 @@ export async function rollbackAssetRelocation(relocation) {
 }
 
 function documentImages(document) {
-  return blocksFromDocument(document).flatMap((block, blockIndex) => {
+  const header = headerDocument(document);
+  return [...(header ? blocksFromDocument(header) : []), ...blocksFromDocument(document)].flatMap((block, blockIndex) => {
     if (block.type === "table") {
       return block.rows.flatMap((row, rowIndex) =>
         row.flatMap((cell, columnIndex) =>
@@ -127,7 +134,7 @@ function documentImages(document) {
 }
 
 function exportedImageReferences(markdown) {
-  return parseMarkdown(markdown).flatMap((block, blockIndex) => {
+  return parseImageMarkdown(markdown).flatMap((block, blockIndex) => {
     if (block.type === "table") {
       return block.rows.flatMap((row, rowIndex) =>
         row.flatMap((cell, columnIndex) =>
@@ -177,7 +184,7 @@ async function downloadImage(auth, image) {
 }
 
 function markdownImages(markdown) {
-  return parseMarkdown(markdown).flatMap((block) => {
+  return parseImageMarkdown(markdown).flatMap((block) => {
     if (block.type === "table") {
       return block.rows.flatMap((row) =>
         row.flatMap((cell) => cell.images ?? []),

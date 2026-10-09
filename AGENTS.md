@@ -68,6 +68,7 @@
 - `src/locations.js`: Shared sync-location registry, rebuildable manifest index, legacy migration, bounded scans, and location lifecycle operations.
 - `src/deletions.js`: Local deletion propagation, confirmed remote-trash archiving, durable cleanup progress, and notification retries.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
+- `src/headers.js`: Same-file header metadata parsing and Google Docs header layout validation.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.
 - `src/macos.js`: Best-effort macOS integration for opening created Google URLs.
 - `src/network.js`: Google API reachability gating and post-sleep network-settling helpers.

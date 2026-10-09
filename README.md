@@ -185,3 +185,5 @@ synchronization behavior.
 ## License
 
 Licensed under the [MIT License](LICENSE).
+
+Header content can live in an explicit same-file `gdms:header pages="all"` or `pages="first"` block. See [document header syntax and first-page setup](docs/formatting.md#document-headers).
