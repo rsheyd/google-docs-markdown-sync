@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [0.8.13] - Unreleased
 
+### Fixed
+
+- Update text and inline formatting in ordinary rectangular table cells, and insert a contiguous group of rows when existing rows are unchanged, without rebuilding the document or disturbing its native table of contents. Commit row insertion and content atomically with a revision check.
+
+- Compare remote inline images without writing local assets, recognize identical images under different filenames, and preserve edited files when downloaded asset names collide.
+
+### Changed
+
+- Resolve competing image-bearing document edits in the background after backing up both Markdown versions and referenced assets. Prefer the newer modification time, include referenced asset edits in local timestamps, and send one retryable resolution email through the existing error-email configuration.
+
 ### Added
 
 - Synchronize a same-file `gdms:header` block to default or existing first-page Google Docs headers, including inline images, with explicit layout guards.

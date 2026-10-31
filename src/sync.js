@@ -6,10 +6,13 @@ import { sha256, writeTextAtomic } from "./files.js";
 import {
   assetDirectoryPath,
   hashMarkdownWithAssets,
+  imageContentHash,
+  localImagePaths,
   hasImagesForSync,
   materializeRemoteImages,
   prepareImagePush,
 } from "./images.js";
+import { backupImageConflict } from "./conflicts.js";
 import { createR2Stager, loadR2Configuration } from "./r2.js";
 import {
   createGoogleServices,
@@ -87,7 +90,7 @@ async function localSnapshot(filePath) {
         stripGeneratedTableOfContents(content),
       ),
       managedContentChanged: content !== rawContent,
-      modifiedTime: stat.mtimeMs,
+      modifiedTime: Math.max(stat.mtimeMs, ...await Promise.all(localImagePaths(filePath, content).map(async (imagePath) => (await fs.stat(imagePath)).mtimeMs))),
     };
   } catch (error) {
     if (error.code === "ENOENT") return { exists: false };
@@ -300,12 +303,12 @@ export function shouldRaiseImageConflict({ remoteContentVerifiedUnchanged, ...sn
   return !remoteContentVerifiedUnchanged && hasImageConflict(snapshots);
 }
 
-export async function comparableMarkdownHash(filePath, content, document = {}) {
+export async function comparableMarkdownHash(filePath, content, document = {}, assets) {
   const comparable = documentHasNativeTableOfContents(document)
     ? stripGeneratedTableOfContents(representNativeTableOfContents(content, document))
     : stripGeneratedTableOfContents(content);
   return hasImagesForSync(document, content)
-    ? hashMarkdownWithAssets(filePath, comparable)
+    ? hashMarkdownWithAssets(filePath, comparable, assets)
     : sha256(comparable);
 }
 
@@ -319,7 +322,7 @@ export async function syncPairing(
   services,
   pairing,
   previous,
-  { deferMissingLocal, refreshStatus = false, autoConvertNativeCheckboxes = false, deferRemoteTitle = false } = {},
+  { deferMissingLocal, refreshStatus = false, autoConvertNativeCheckboxes = false, deferRemoteTitle = false, conflictBackupRoot } = {},
 ) {
   const spreadsheet = pairing.type === "spreadsheet";
   let remote = spreadsheet
@@ -379,6 +382,9 @@ export async function syncPairing(
   if (!spreadsheet) await documentDetails();
   let action = chooseSyncAction({ local, remote, previous });
   let remoteContentVerifiedUnchanged = false;
+  let comparableRemoteContent;
+  let resolution;
+  const remoteAssets = new Map();
   if (
     !spreadsheet &&
     previous &&
@@ -389,18 +395,20 @@ export async function syncPairing(
     const remoteContent = await exportMarkdown(services, effectivePairing.documentId, {
       document: remote.document,
     });
-    const comparableRemoteContent = hasImagesForSync(remote.document, local.content)
+    comparableRemoteContent = hasImagesForSync(remote.document, local.content)
       ? await materializeRemoteImages(
           services,
           effectivePairing,
           remote.document,
           remoteContent,
+          { readOnly: true, assets: remoteAssets },
         )
       : remoteContent;
     const comparableRemoteHash = await comparableMarkdownHash(
       effectivePairing.absolutePath,
       comparableRemoteContent,
       remote.document,
+      remoteAssets,
     );
     const refinedAction = refineTwoSidedAction({
       localHash: local.hash,
@@ -410,7 +418,9 @@ export async function syncPairing(
     if (refinedAction === "push") {
       action = "push";
       remoteContentVerifiedUnchanged = true;
-    } else if (refinedAction === "repair-status") {
+    } else if (refinedAction === "repair-status" ||
+      await imageContentHash(effectivePairing.absolutePath, stripGeneratedTableOfContents(local.content)) ===
+      await imageContentHash(effectivePairing.absolutePath, stripGeneratedTableOfContents(comparableRemoteContent), remoteAssets)) {
       return {
         action: "repair-status",
         pairing: effectivePairing,
@@ -430,10 +440,14 @@ export async function syncPairing(
     previous,
     remoteContentVerifiedUnchanged,
   })) {
-    throw new Error(
-      "Image conflict: both Markdown/assets and Google Docs changed since " +
-        "the last synchronized baseline. Resolve one side before syncing.",
-    );
+    resolution = await backupImageConflict(effectivePairing, {
+      local, remote, remoteContent: comparableRemoteContent, assets: remoteAssets, action,
+    }, conflictBackupRoot);
+    const refreshedLocal = await localSnapshot(effectivePairing.absolutePath);
+    const refreshedRemote = await getRemoteInfo(services, effectivePairing.documentId);
+    if (refreshedLocal.hash !== local.hash || refreshedRemote.revisionId !== remote.revisionId) {
+      throw new Error("Content changed while backing up an image conflict; retrying with fresh snapshots.");
+    }
   }
   if (!spreadsheet && autoConvertNativeCheckboxes && ["pull", "none"].includes(action)) {
     const requests = await nativeCheckboxConversionRequests(services, effectivePairing.documentId, remote.document);
@@ -450,10 +464,13 @@ export async function syncPairing(
     if (spreadsheet) await spreadsheetDetails();
     return {
       action: "pull",
+      resolution,
       pairing: effectivePairing,
-      state: spreadsheet
+      state: { ...(spreadsheet
         ? await pullSheet(services, effectivePairing, remote)
-        : await pullDocument(services, effectivePairing, remote),
+        : await pullDocument(services, effectivePairing, remote)),
+        ...(resolution ? { imageConflictResolution: resolution } : {}),
+      },
     };
   }
   if (action === "none") {
@@ -567,10 +584,13 @@ export async function syncPairing(
   if (spreadsheet) await spreadsheetDetails();
   return {
     action: "push",
+    resolution,
     pairing: effectivePairing,
-    state: spreadsheet
+    state: { ...(spreadsheet
       ? await pushSheet(services, effectivePairing, local, remote)
-      : await push(services, effectivePairing, local, remote),
+      : await push(services, effectivePairing, local, remote)),
+      ...(resolution ? { imageConflictResolution: resolution } : {}),
+    },
   };
 }
 
@@ -832,6 +852,9 @@ export async function runSyncBatch({
       const completed = {
         pairing: result.pairing,
         action: result.action,
+        ...(result.resolution ?? result.state?.imageConflictResolution
+          ? { resolution: result.resolution ?? result.state.imageConflictResolution }
+          : {}),
         elapsedMs: result.elapsedMs ?? Date.now() - starts.get(pairing),
         ...(result.action === "defer"
           ? { moveDetectionSeconds: Math.ceil((missingLocalWaitMs ?? 0) / 1_000) }

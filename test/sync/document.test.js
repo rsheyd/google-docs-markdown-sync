@@ -243,3 +243,33 @@ test("cleanup completed by the retry queue clears an earlier error as remote tra
   });
   assert.equal(reconciled[0].action, "remote-trash");
 });
+
+test("competing image edits back up the timestamp winner before a revision race, without mutating assets", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-conflict-sync-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const absolutePath = path.join(directory, "paired.md");
+  await fs.mkdir(path.join(directory, "paired.assets"));
+  const asset = path.join(directory, "paired.assets", "edited.png");
+  const bytes = Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]), Buffer.from("local")]);
+  await fs.writeFile(asset, bytes);
+  const content = "![](paired.assets/edited.png)\n";
+  await fs.writeFile(absolutePath, content);
+  const document = { revisionId: "r2", body: { content: [{ startIndex: 1, endIndex: 3, paragraph: { elements: [{ startIndex: 1, endIndex: 2, inlineObjectElement: { inlineObjectId: "img" } }, { startIndex: 2, endIndex: 3, textRun: { content: "\n", textStyle: {} } }], paragraphStyle: { namedStyleType: "NORMAL_TEXT" } } }] }, inlineObjects: { img: { inlineObjectProperties: { embeddedObject: { imageProperties: { contentUri: "https://image" } } } } } };
+  const pairing = { documentId: "doc", name: "Paired", markdownPath: "paired.md", absolutePath, syncLocation: directory };
+  for (const [remoteTime, winner] of [["2000-01-01T00:00:00Z", "local"], ["2099-01-01T00:00:00Z", "Google Docs"]]) {
+    let reads = 0;
+    const services = {
+      auth: { request: async () => ({ data: Buffer.concat([bytes, Buffer.from("remote")]) }) },
+      drive: { files: { get: async () => ({ data: { name: "Paired", modifiedTime: remoteTime, version: "2" } }), export: async () => ({ data: Buffer.from("![][image1]\n") }) } },
+      docs: { documents: { get: async () => ({ data: { ...document, revisionId: ++reads === 1 ? "r2" : "r3" } }), batchUpdate: async () => { throw new Error("must not write after revision race"); } } },
+    };
+    const root = path.join(directory, winner.replaceAll(" ", "-"));
+    await assert.rejects(syncPairing(services, pairing, { localHash: "old", remoteRevisionId: "r1", remoteModifiedTime: "1999-01-01T00:00:00Z" }, { conflictBackupRoot: root }), /Content changed while backing up/);
+    const [id] = await fs.readdir(root);
+    const decision = JSON.parse(await fs.readFile(path.join(root, id, "decision.json"), "utf8"));
+    assert.equal(decision.chosenSide, winner);
+    assert.equal(await fs.readFile(absolutePath, "utf8"), content);
+    assert.deepEqual(await fs.readFile(asset), bytes);
+    assert.deepEqual(await fs.readdir(path.dirname(asset)), ["edited.png"]);
+  }
+});

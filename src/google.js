@@ -1595,6 +1595,80 @@ function statusInsertionRequests(startIndex, statusMarkdown) {
   return requests;
 }
 
+// Keep supported table edits in the same revision-checked batch as body edits.
+// In particular, never commit empty inserted rows separately from their content.
+function incrementalTableRequests(document, current, desired) {
+  const element = (bodyOf(document).content ?? []).find(
+    (item) => item.table && item.startIndex === current.startIndex,
+  );
+  const rows = element?.table.tableRows;
+  const columns = current.rows[0]?.length;
+  if (!rows?.length || !columns ||
+      current.rows.some((row) => row.length !== columns) ||
+      desired.rows.some((row) => row.length !== columns) ||
+      blockHasImages(current) || blockHasImages(desired) ||
+      rows.some((row) => row.tableCells.length !== columns ||
+        row.tableCells.some((cell) =>
+          (cell.tableCellStyle?.rowSpan ?? 1) !== 1 ||
+          (cell.tableCellStyle?.columnSpan ?? 1) !== 1 ||
+          !cell.content?.length || cell.content.some((item) =>
+            !item.paragraph || item.paragraph.bullet ||
+            item.paragraph.elements.some((part) => !part.textRun))))) return null;
+
+  const requests = [];
+  const writeCell = (startIndex, endIndex, cell) => {
+    if (endIndex > startIndex) requests.push({
+      deleteContentRange: { range: { startIndex, endIndex } },
+    });
+    if (!cell.text) return;
+    requests.push({ insertText: { location: { index: startIndex }, text: cell.text } });
+    // New text inherits neighbouring styles, including links. Reset the supported
+    // inline properties before applying the Markdown spans.
+    requests.push({ updateTextStyle: {
+      range: { startIndex, endIndex: startIndex + cell.text.length },
+      textStyle: {}, fields: "bold,italic,strikethrough,link",
+    } });
+    requests.push(...inlineStyleRequests(startIndex, cell.styles));
+  };
+  if (desired.rows.length === current.rows.length) {
+    for (let r = rows.length - 1; r >= 0; r -= 1) {
+      for (let c = columns - 1; c >= 0; c -= 1) {
+        if (JSON.stringify(current.rows[r][c]) === JSON.stringify(desired.rows[r][c])) continue;
+        const content = rows[r].tableCells[c].content;
+        writeCell(content[0].startIndex, content.at(-1).endIndex - 1, desired.rows[r][c]);
+      }
+    }
+    return requests;
+  }
+
+  // A single contiguous insertion with otherwise identical rows is unambiguous.
+  // Deletions, reorders and simultaneous existing-row edits retain the fallback.
+  const added = desired.rows.length - current.rows.length;
+  if (added <= 0) return null;
+  const equalRow = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  let offset = 0;
+  while (offset < current.rows.length && equalRow(current.rows[offset], desired.rows[offset])) offset += 1;
+  if (!current.rows.slice(offset).every((row, i) => equalRow(row, desired.rows[offset + added + i]))) return null;
+  const reference = Math.min(offset, rows.length - 1);
+  const rowStart = offset < rows.length ? rows[offset].startIndex : rows.at(-1).endIndex;
+  if (!Number.isInteger(rowStart)) return null;
+  for (let r = 0; r < added; r += 1) requests.push({ insertTableRow: {
+    tableCellLocation: {
+      tableStartLocation: { index: current.startIndex }, rowIndex: reference, columnIndex: 0,
+    },
+    insertBelow: offset === rows.length,
+  } });
+  // An empty row occupies one row boundary plus two indexes per empty cell.
+  // Fill in descending order so earlier cell indexes remain valid.
+  for (let r = added - 1; r >= 0; r -= 1) {
+    for (let c = columns - 1; c >= 0; c -= 1) {
+      const index = rowStart + r * (1 + 2 * columns) + 2 + 2 * c;
+      writeCell(index, index, desired.rows[offset + r][c]);
+    }
+  }
+  return requests;
+}
+
 export function planIncrementalUpdate(
   document,
   markdown,
@@ -1625,7 +1699,18 @@ export function planIncrementalUpdate(
         }
       : block,
   );
-  const hunks = diffBlockHunks(current, comparableDesired, {
+  const currentTables = current.filter((block) => block.type === "table");
+  const desiredTables = desired.filter((block) => block.type === "table");
+  const tableEdits = new Map();
+  if (currentTables.length === desiredTables.length) {
+    for (let i = 0; i < currentTables.length; i += 1) {
+      if (fingerprint(currentTables[i], currentImageHashes) === fingerprint(desiredTables[i], desiredImageHashes)) continue;
+      const requests = incrementalTableRequests(document, currentTables[i], desiredTables[i]);
+      if (requests) tableEdits.set(desiredTables[i], { current: currentTables[i], requests });
+    }
+  }
+  const hunks = diffBlockHunks(current, comparableDesired.map((block) =>
+    tableEdits.get(block)?.current ?? block), {
     currentImageHashes,
     desiredImageHashes,
   });
@@ -1674,7 +1759,16 @@ export function planIncrementalUpdate(
 
   const endIndex = bodyEndIndex(document);
   const requests = [];
-  for (const hunk of [...hunks].reverse()) {
+  const actions = [
+    ...hunks.map((hunk) => ({ hunk, index: current[hunk.currentStart]?.startIndex ?? endIndex - 1 })),
+    ...[...tableEdits.values()].map((edit) => ({ ...edit, index: edit.current.startIndex })),
+  ].sort((a, b) => b.index - a.index || Number(Boolean(b.requests)) - Number(Boolean(a.requests)));
+  for (const action of actions) {
+    if (action.requests) {
+      requests.push(...action.requests);
+      continue;
+    }
+    const { hunk } = action;
     const insertionIndex =
       hunk.currentStart < current.length
         ? current[hunk.currentStart].startIndex

@@ -210,3 +210,37 @@ test("compares remote bytes, hashes local assets, stages them, and cleans up", a
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+test("comparison is read-only and colliding pulls preserve edited assets", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-image-collision-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const pairing = { absolutePath: path.join(directory, "project.md") };
+  const services = { auth: { request: async () => ({ data: PNG }) } };
+  const assets = new Map();
+  const comparison = await materializeRemoteImages(services, pairing, imageDocument(["image"]), "![][image1]\n", { readOnly: true, assets });
+  await assert.rejects(fs.access(assetDirectoryPath(pairing.absolutePath)), /ENOENT/);
+  const [originalPath] = assets.keys();
+  await fs.mkdir(path.dirname(originalPath));
+  const edited = Buffer.concat([PNG, Buffer.from("edited")]);
+  await fs.writeFile(originalPath, edited);
+  assert.equal(await materializeRemoteImages(services, pairing, imageDocument(["image"]), "![][image1]\n", { readOnly: true, assets }), comparison);
+  const pulled = await materializeRemoteImages(services, pairing, imageDocument(["image"]), "![][image1]\n");
+  assert.notEqual(pulled, comparison);
+  assert.deepEqual(await fs.readFile(originalPath), edited);
+  const { localImagePaths } = await import("../src/images.js");
+  assert.deepEqual(await fs.readFile(localImagePaths(pairing.absolutePath, pulled)[0]), PNG);
+  assert.equal(await materializeRemoteImages(services, pairing, imageDocument(["image"]), "![][image1]\n"), pulled);
+});
+
+test("image comparison ignores filenames while retaining bytes and placement", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "gdms-image-semantic-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "project.md");
+  await fs.mkdir(assetDirectoryPath(file));
+  await fs.writeFile(path.join(assetDirectoryPath(file), "custom.png"), PNG);
+  const { imageContentHash } = await import("../src/images.js");
+  const virtual = new Map([[path.join(assetDirectoryPath(file), "download.png"), PNG]]);
+  const local = await imageContentHash(file, "Before\n\n![](project.assets/custom.png)\n");
+  assert.equal(local, await imageContentHash(file, "Before\n\n![](project.assets/download.png)\n", virtual));
+  assert.notEqual(local, await imageContentHash(file, "![](project.assets/download.png)\n\nBefore\n", virtual));
+});

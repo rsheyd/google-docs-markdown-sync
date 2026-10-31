@@ -119,6 +119,10 @@ The marker remains invisible in rendered Markdown. Editing its point values upda
 
 Tables whose columns use Google Docs' evenly distributed mode do not receive width metadata. To begin managing their widths from Markdown, add a valid fixed-width marker or resize the columns in Google Docs so the API reports fixed widths.
 
+For ordinary rectangular tables without images or merged cells, GDMS patches cell text and inline formatting in place when the row and column counts stay the same. It also inserts one contiguous group of new rows when the existing rows are unchanged. These updates preserve the existing table, column widths, surrounding content, and native table of contents. Row insertion and population share one revision-checked atomic update, so a rejected or retried request cannot leave partially populated rows. Lists and nested tables inside cells are excluded from this incremental path.
+
+Row deletion, column changes, simultaneous row insertion and existing-row edits, and other unsupported table changes retain the full-document rebuild fallback. A native Google Docs table of contents blocks that fallback because GDMS cannot recreate the native element; simplify the edit or make the structural table change in Google Docs instead.
+
 Explicit breaks inside table cells use inline HTML `<br>` elements because a physical Markdown newline would end the table row. Consecutive breaks remain consecutive, so an empty paragraph between two populated cell paragraphs round-trips as `<br><br>`. Inline bold, italic, strikethrough, links, and images retain their positions across these breaks. A changed table may contain at most one image per cell; when GDMS rebuilds the table, it retains the image's text-relative position but lets Google Docs choose the new image size. Automatic visual wrapping is not stored as breaks; Google Docs recalculates it from the synchronized column width.
 
 ## Tables of contents
@@ -190,3 +194,7 @@ Use `pages="all"` for a repeating header. The block is exported back into the sa
 Google Docs' public API can create only default headers. Before using `pages="first"` on a document for the first time, enable **Different first page** and add a first-page header in Google Docs. GDMS can then update it. A missing first-page header produces an actionable error before the body is changed. Changing first-page mode with existing footers is refused because that flag affects footers too; configure the mode in Google Docs first.
 
 Removing a header block clears the supported active header. Alternating-page headers, section-specific headers, different populated first-page and default headers, mixed paragraph alignment, header tables, positioned images, and pageless documents are not supported and are rejected rather than flattened into the body. Leave such documents outside header synchronization until their layout is simplified.
+
+## Replacing inline images
+
+Copy an image into the paired Markdown file's sibling `.assets` directory and update its Markdown reference. Editing an existing referenced image is also detected. Google Docs image replacement and deletion synchronize through the same pipeline. Downloaded filenames are based on image content; if an existing file at that name contains different bytes, GDMS preserves it and uses another filename. Competing edits on both sides use the backup and timestamp policy described in [automatic image conflict resolution](operations.md#automatic-image-conflict-resolution).

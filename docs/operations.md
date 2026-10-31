@@ -361,10 +361,7 @@ Google API or OAuth request from blocking the queue indefinitely.
   updates the local representation.
 - Local CSV changes update only changed Google Sheets cell values. Existing cell formatting and native Sheets structure remain in Google Sheets; native tables expand when CSV data grows beyond their current bounds but do not shrink automatically.
 - A Google Sheets formatting-only revision advances the remote baseline without rewriting unchanged CSV files.
-- Simultaneous text-only changes use the later filesystem or Drive
-  modification time. Image-bearing documents stop with a conflict when the
-  local content, Google revision, and Drive modification time all changed from
-  the shared baseline. Revision-token churn alone is not treated as an edit.
+- Simultaneous changes use the later filesystem or Drive modification time. For competing image-bearing document edits, GDMS backs up both versions before synchronizing the newer side; equal timestamps prefer Google Docs. Referenced asset modification times count as local edits. Revision-token churn alone is not treated as an edit.
 - Writes are hashed and revision-tracked to prevent feedback loops. Pairings
   share one single-flight synchronization queue.
 
@@ -443,17 +440,15 @@ import fails for another reason, GDMS restores the sync-location manifest instea
 of leaving a new pairing entry without its Markdown file. The Raycast command
 shows the CLI's specific error output when further action is required.
 
-### A synchronization pass reports an image conflict
+### Automatic image conflict resolution
 
-GDMS stops when both sides of an image-bearing document changed since their
-shared baseline. A Google revision-token change with an unchanged Drive
-modification time is treated as normalization rather than a second-side edit.
-If a prior push updated the document body before a later formatting step
-failed, GDMS compares normalized remote content and image bytes with the local
-snapshot and repairs the shared baseline when they match. For a genuine
-conflict, compare the Google Doc with the Markdown file and its
-asset directory before choosing which content to retain. GDMS does not yet
-create an automatic conflict copy.
+GDMS compares remote image bytes without writing to the local assets folder. Identical image content under different filenames compares as equivalent. A generated asset filename occupied by different bytes is preserved; a pull chooses a different deterministic filename for the downloaded image.
+
+When both sides of an image-bearing document differ from the shared baseline, GDMS backs up both Markdown snapshots and referenced assets under `~/Library/Application Support/google-docs-markdown-sync/conflict-backups/`. Each backup contains `local/`, `google-docs/`, and `decision.json`. GDMS then synchronizes the whole version with the newer modification time; local time includes referenced asset modification times, and equal times prefer Google Docs. This is a timestamp heuristic, and GDMS status updates can affect timestamps. Revision-only churn and remote content matching the prior baseline do not trigger conflict resolution.
+
+When error email is enabled, one resolution email explains the chosen side, timestamps, and backup path. Failed delivery is retried through the existing durable notification store; Resend idempotency prevents duplicate delivery on retries. Backup failure or changes detected during backup stop the pass and use ordinary error reporting. Backups are retained until you remove them; Docs-only layout, comments, and suggestions are not included in Markdown snapshots.
+
+To restore another version, pause the GDMS daemon, copy that version's Markdown and sibling assets from the backup into the original local location, then resume GDMS without editing Google Docs simultaneously. Restoration follows the normal local-edit synchronization path. Existing-file assets are preserved during collision handling even outside a two-sided conflict.
 
 For a Google Doc with a native table of contents, GDMS generates the entries
 inside the local `gdms:generated-toc` markers from the Markdown headings. Edits
@@ -471,7 +466,9 @@ configuration from the [installation guide](installation.md#configure-image-stag
 
 ### A table edit is refused
 
-Changed table structure requires a full Docs body rebuild. With image staging configured, GDMS can rebuild documents containing supported standalone image paragraphs and at most one image per table cell. A rebuilt cell image retains its position relative to the cell text but uses Google Docs' default image size. Cells containing multiple images remain unsupported; simplify those cells before retrying.
+Ordinary rectangular tables without images or merged cells support cell text and inline-formatting edits in place, plus one contiguous group of added rows when existing rows are unchanged. These edits preserve native tables of contents. For simultaneous row insertion and existing-row edits, synchronize the row additions first, then edit the existing cells.
+
+Other table changes still require a full Docs body rebuild, which GDMS refuses when a native table of contents is present. Make the unsupported structural change in Google Docs or simplify the Markdown edit before retrying. With image staging configured, GDMS can rebuild documents containing supported standalone image paragraphs and at most one image per table cell. A rebuilt cell image retains its position relative to the cell text but uses Google Docs' default image size. Cells containing multiple images remain unsupported; simplify those cells before retrying. See the [table formatting rules](formatting.md#tables).
 
 ### Remove surplus spacing paragraphs
 

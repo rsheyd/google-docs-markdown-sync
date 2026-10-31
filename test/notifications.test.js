@@ -196,3 +196,28 @@ test("remote trash clears the old incident without a misleading sync-recovered n
   await reporter.reconcile([{ pairing: { documentId: "doc" }, action: "remote-trash" }]);
   assert.deepEqual(store.read().incidents, {});
 });
+
+test("conflict resolution email retries after restart and sends once", async () => {
+  const store = incidentStore();
+  const pairing = { documentId: "doc", name: "Terms", absolutePath: "/terms.md" };
+  const resolution = { backupPath: "/backups/unique", chosenSide: "local" };
+  const logger = { log() {}, error() {} };
+  const first = createSyncErrorReporter({ ...store, logger, emailRecipient: "person@example.com", sendRecoveryEmail: async () => { throw new Error("offline"); } });
+  await first.reconcile([{ pairing, action: "push", resolution }]);
+  let sent = 0;
+  const restarted = createSyncErrorReporter({ ...store, logger, emailRecipient: "person@example.com", sendRecoveryEmail: async (options) => { sent++; assert.deepEqual(options.resolution, resolution); } });
+  await restarted.reconcile([]);
+  await restarted.reconcile([{ pairing, action: "none", state: { imageConflictResolution: resolution } }]);
+  assert.equal(sent, 1);
+});
+
+test("resolution email describes the winner, backups, and restoration", async () => {
+  let request;
+  await sendSyncRecoveryEmail({ token: "test", recipient: "person@example.com", pairing: { documentId: "doc", name: "Terms", absolutePath: "/terms.md" }, resolution: { backupPath: "/backups/unique", chosenSide: "Google Docs", reason: "newer", localModifiedTime: "local-time", remoteModifiedTime: "remote-time" }, fetchImplementation: async (_url, options) => { request = options; return { ok: true, json: async () => ({ id: "sent" }) }; } });
+  const body = JSON.parse(request.body);
+  assert.match(body.subject, /image conflict resolved/);
+  assert.match(body.text, /Chosen version: Google Docs/);
+  assert.match(body.text, /\/backups\/unique/);
+  assert.match(body.text, /pause GDMS/);
+  assert.equal(request.headers["Idempotency-Key"], "gdms-image-resolution-doc-unique");
+});

@@ -125,16 +125,10 @@ Google Sheets pairings use one local directory per spreadsheet, one CSV per tab,
 Important current limitations:
 
 - Mixed text-and-image paragraphs outside tables cannot be changed from Markdown; GDMS fails safely instead of risking image loss.
-- A changed table structure may require a full Docs body rebuild. Cells with more than one image are refused; a supported cell image is reinserted at its text-relative position with the default Google Docs size.
+- Ordinary rectangular tables without images support cell edits and one contiguous group of added rows in place, preserving native tables of contents. Other structural changes may require a full Docs body rebuild, which is blocked when a native TOC is present. Cells with more than one image are refused; a supported cell image is reinserted at its text-relative position with the default Google Docs size.
 - Comments and suggestions are not represented in Markdown. Anchors inside a
   replaced range can be affected.
-- General simultaneous text edits use the later modification timestamp. If an
-  image-bearing document changed on both sides, synchronization stops with an
-  explicit conflict. Background errors are deduplicated in durable logs and
-  across service restarts. When weekly health email is configured, persistent
-  actionable errors email the same recipient after 15 minutes by default;
-  temporary connectivity failures wait at least 30 minutes. GDMS follows an
-  emailed incident with one recovery email when synchronization succeeds.
+- Simultaneous edits use the later modification timestamp. Competing edits in image-bearing documents first back up both Markdown versions and referenced assets, then synchronize the newer side and email a resolution summary when error email is enabled. Background errors remain deduplicated across service restarts; persistent actionable errors email after 15 minutes by default, and temporary connectivity failures wait at least 30 minutes. Emailed incidents receive one recovery email when synchronization succeeds.
 - Floating images, drawings, linked charts, cropping, rotation, and other
   advanced visual effects are unsupported.
 - Deleting a generated status artifact does not unpair a document; it is

@@ -67,6 +67,8 @@
 - `src/formatting.js`: Shared Google Docs paragraph-formatting rules and measurements.
 - `src/locations.js`: Shared sync-location registry, rebuildable manifest index, legacy migration, bounded scans, and location lifecycle operations.
 - `src/deletions.js`: Local deletion propagation, confirmed remote-trash archiving, durable cleanup progress, and notification retries.
+- `src/conflicts.js`: Restorable local and remote Markdown/image snapshots for automatic timestamp-based conflict resolution.
+- `test/conflicts.test.js`: Independent backup trees and preservation coverage.
 - `src/recovery.js`: Safe local backup naming and Drive-trash restoration helpers for pairing recovery.
 - `src/headers.js`: Same-file header metadata parsing and Google Docs header layout validation.
 - `src/toc.js`: Generated Markdown representation and canonicalization for native Google Docs tables of contents.

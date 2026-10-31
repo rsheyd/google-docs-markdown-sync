@@ -136,6 +136,7 @@ export async function sendSyncRecoveryEmail({
   error,
   firstSeenAt,
   recoveredAt,
+  resolution,
   fetchImplementation = fetch,
 } = {}) {
   if (!recipient) return undefined;
@@ -144,13 +145,24 @@ export async function sendSyncRecoveryEmail({
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "Idempotency-Key": `gdms-sync-recovery-${pairing.documentId ?? pairing.spreadsheetId}-${firstSeenAt}`,
+      "Idempotency-Key": resolution ? `gdms-image-resolution-${pairing.documentId}-${resolution.backupPath.split("/").pop()}` : `gdms-sync-recovery-${pairing.documentId ?? pairing.spreadsheetId}-${firstSeenAt}`,
     },
     body: JSON.stringify({
       from: sender,
       to: [recipient],
-      subject: `GDMS sync recovered: ${pairing.name ?? pairing.markdownPath ?? pairing.directoryPath}`,
-      text: [
+      subject: `${resolution ? "GDMS image conflict resolved" : "GDMS sync recovered"}: ${pairing.name ?? pairing.markdownPath ?? pairing.directoryPath}`,
+      text: resolution ? [
+        "GDMS automatically resolved competing image-bearing document edits.",
+        `Pairing: ${pairing.name ?? pairing.markdownPath}`,
+        `Local path: ${pairing.absolutePath}`,
+        pairing.documentUrl ? `Google Doc: ${pairing.documentUrl}` : undefined,
+        `Chosen version: ${resolution.chosenSide}`,
+        `Reason: ${resolution.reason}`,
+        `Local modified: ${resolution.localModifiedTime}`,
+        `Google Docs modified: ${resolution.remoteModifiedTime}`,
+        `Both versions backed up at: ${resolution.backupPath}`,
+        "To restore the other version, pause GDMS, copy that version's Markdown and sibling assets back to the original local location, then resume GDMS without editing Google Docs at the same time.",
+      ].filter(Boolean).join("\n") : [
         "Google Docs Markdown Sync recovered from a previously emailed error.",
         "",
         `Pairing: ${pairing.name ?? pairing.markdownPath ?? pairing.directoryPath}`,
@@ -272,6 +284,14 @@ export function createSyncErrorReporter({
     await ensureLoaded();
     for (const result of results) {
       if (result.action === "error") continue;
+      const resolution = result.resolution ?? result.state?.imageConflictResolution;
+      if (resolution) {
+        const conflictKey = `conflict:${pairingKey(result.pairing)}`;
+        if (active.get(conflictKey)?.resolution?.backupPath !== resolution.backupPath) {
+          active.set(conflictKey, { type: "image-resolution", pairing: result.pairing, resolution });
+          await persist();
+        }
+      }
       const key = pairingKey(result.pairing);
       const record = active.get(key);
       if (!record) continue;
@@ -279,7 +299,7 @@ export function createSyncErrorReporter({
       await persist();
       if (result.action === "remote-trash") continue;
       logger.log(`recovered: ${result.pairing.absolutePath}`);
-      if (record.emailSentAt && emailRecipient) {
+      if (record.emailSentAt && emailRecipient && !resolution) {
         try {
           await sendRecoveryEmail({
             recipient: emailRecipient,
@@ -303,6 +323,17 @@ export function createSyncErrorReporter({
         } catch (notificationError) {
           logger.error(`notification: ${notificationError.message}`);
         }
+      }
+    }
+    for (const record of active.values()) {
+      if (record.type !== "image-resolution" || record.emailSentAt || !emailRecipient) continue;
+      try {
+        await sendRecoveryEmail({ recipient: emailRecipient, sender: emailSender, pairing: record.pairing, resolution: record.resolution });
+        record.emailSentAt = now().toISOString();
+        await persist();
+        logger.log(`image-conflict resolution email sent for ${record.pairing.absolutePath}`);
+      } catch (error) {
+        logger.error(`image-conflict resolution email: ${error.message}`);
       }
     }
   }

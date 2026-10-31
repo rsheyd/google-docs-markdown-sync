@@ -45,12 +45,12 @@ export function localImagePaths(markdownPath, markdown) {
   }))].sort();
 }
 
-export async function hashMarkdownWithAssets(markdownPath, markdown) {
+export async function hashMarkdownWithAssets(markdownPath, markdown, assets = new Map()) {
   const imagePaths = localImagePaths(markdownPath, markdown);
   if (!imagePaths.length) return sha256(markdown);
   const pieces = [Buffer.from(markdown)];
   for (const imagePath of imagePaths) {
-    const bytes = await fs.readFile(imagePath);
+    const bytes = assets.get(imagePath) ?? await fs.readFile(imagePath);
     pieces.push(
       Buffer.from(`\0${path.relative(path.dirname(markdownPath), imagePath)}\0`),
       bytes,
@@ -267,17 +267,30 @@ export async function prepareImagePush(
 }
 
 async function writeAsset(filePath, bytes) {
-  const existing = await fs.readFile(filePath).catch((error) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (existing) {
-    if (sha256(existing) !== sha256(bytes)) {
-      throw new Error(`Refusing to overwrite a different image at ${filePath}.`);
+  // Never replace an occupied path, including one edited by the user.
+  const extension = path.extname(filePath);
+  const stem = filePath.slice(0, -extension.length);
+  for (let attempt = 0; ; attempt += 1) {
+    const candidate = attempt === 0 ? filePath : `${stem}-${sha256(bytes)}-${attempt}${extension}`;
+    try {
+      await fs.writeFile(candidate, bytes, { flag: "wx" });
+      return candidate;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (sha256(await fs.readFile(candidate)) === sha256(bytes)) return candidate;
     }
-    return;
   }
-  await writeFileAtomic(filePath, bytes);
+}
+
+export async function imageContentHash(markdownPath, markdown, assets = new Map()) {
+  let content = markdown;
+  for (const image of markdownImages(markdown)) {
+    if (!image.url || /^[a-z][a-z0-9+.-]*:/i.test(image.url)) continue;
+    const [imagePath] = localImagePaths(markdownPath, `![image](${image.url})`);
+    const bytes = assets.get(imagePath) ?? await fs.readFile(imagePath);
+    content = content.split(`](${image.url})`).join(`](sha256:${sha256(bytes)})`);
+  }
+  return sha256(content);
 }
 
 export async function materializeRemoteImages(
@@ -285,6 +298,7 @@ export async function materializeRemoteImages(
   pairing,
   document,
   markdown,
+  { assets, readOnly = false } = {},
 ) {
   const remoteImages = documentImages(document);
   const references = exportedImageReferences(markdown);
@@ -300,7 +314,7 @@ export async function materializeRemoteImages(
   }
 
   const directory = assetDirectoryPath(pairing.absolutePath);
-  await ensureDirectory(directory);
+  if (!readOnly) await ensureDirectory(directory);
   const replacements = [];
   for (let index = 0; index < remoteImages.length; index += 1) {
     const remote = remoteImages[index];
@@ -313,9 +327,13 @@ export async function materializeRemoteImages(
     }
     const { bytes, extension } = await downloadImage(services.auth, remote);
     const digest = sha256(bytes);
-    const filename = `image-${digest.slice(0, 12)}${extension}`;
-    const filePath = path.join(directory, filename);
-    await writeAsset(filePath, bytes);
+    let filename = `image-${digest.slice(0, 12)}${extension}`;
+    let filePath = path.join(directory, filename);
+    if (!readOnly) {
+      filePath = await writeAsset(filePath, bytes);
+      filename = path.basename(filePath);
+    }
+    assets?.set(filePath, bytes);
     replacements.push({
       reference: reference.reference,
       alt: reference.alt,

@@ -275,3 +275,147 @@ test("applies width-only table edits without rebuilding content", async () => {
     (request) => request.updateTableColumnProperties,
   ));
 });
+
+// Real Docs index layout: table + row boundaries + cell boundaries + paragraphs.
+function editableTable(rows, startIndex = 10) {
+  let index = startIndex + 1;
+  const tableRows = rows.map((row) => {
+    const rowStart = index++;
+    const tableCells = row.map((text) => {
+      const cellStart = index++;
+      const content = [paragraph(index, `${text}\n`)];
+      index = content[0].endIndex;
+      return { startIndex: cellStart, endIndex: index, content };
+    });
+    return { startIndex: rowStart, endIndex: index, tableCells };
+  });
+  return { startIndex, endIndex: index + 1, table: { columns: rows[0].length, tableRows } };
+}
+
+function tableDocument(rows, { toc = false } = {}) {
+  const table = editableTable(rows);
+  const entry = paragraph(2, 'Index\n');
+  const content = toc ? [{ startIndex: 1, endIndex: 9,
+    tableOfContents: { content: [entry] } }] : [];
+  return { revisionId: 'revision-1', body: { content: [
+    ...content, table, paragraph(table.endIndex, 'After\n'),
+  ] } };
+}
+
+function tableMarkdown(rows, toc = false) {
+  return [toc ? 'Index' : '',
+    `| ${rows[0].join(' | ')} |\n| ${rows[0].map(() => '---').join(' | ')} |`,
+    ...rows.slice(1).map((row) => `| ${row.join(' | ')} |`), '', 'After',
+  ].join('\n');
+}
+
+test('inserts a contiguous row group atomically while preserving a native TOC', () => {
+  const rows = [['A', 'B'], ['C', 'D']];
+  const document = tableDocument(rows, { toc: true });
+  const before = structuredClone(document);
+  const plan = planIncrementalUpdate(document,
+    tableMarkdown([rows[0], ['New', '**Bold**'], ['Next', ''], rows[1]], true));
+  assert.equal(plan.mode, 'incremental');
+  assert.equal(plan.requests.filter((r) => r.insertTableRow).length, 2);
+  const rowStart = document.body.content[1].table.tableRows[1].startIndex;
+  assert.deepEqual(plan.requests.filter((r) => r.insertText).map((r) => r.insertText), [
+    { location: { index: rowStart + 7 }, text: 'Next' },
+    { location: { index: rowStart + 4 }, text: 'Bold' },
+    { location: { index: rowStart + 2 }, text: 'New' },
+  ]);
+  assert.ok(plan.requests.every((r) => !r.deleteContentRange));
+  assert.deepEqual(document, before);
+});
+
+test('inserts rows at the beginning and end without replacing the table', () => {
+  for (const desired of [
+    [['New', 'Row'], ['A', 'B']],
+    [['A', 'B'], ['New', 'Row'], ['More', 'Rows']],
+  ]) {
+    const doc = tableDocument([['A', 'B']]);
+    const plan = planIncrementalUpdate(doc, tableMarkdown(desired));
+    const inserts = plan.requests.filter((r) => r.insertTableRow);
+    assert.equal(inserts.length, desired.length - 1);
+    assert.equal(inserts[0].insertTableRow.insertBelow, desired[0][0] === 'A');
+    assert.ok(!plan.requests.some((r) => r.deleteContentRange));
+  }
+});
+
+test('patches cell text and clears inherited emphasis and links before adding styles', () => {
+  const doc = tableDocument([['A', 'B'], ['C', 'D']], { toc: true });
+  const plan = planIncrementalUpdate(doc, tableMarkdown([['A', 'B'], ['Changed', '**Bold**']], true));
+  assert.equal(plan.mode, 'incremental');
+  assert.equal(plan.requests.filter((r) => r.deleteContentRange).length, 2);
+  assert.equal(plan.requests.filter((r) => r.insertText).length, 2);
+  assert.equal(plan.requests.filter((r) => r.updateTextStyle?.fields === 'bold,italic,strikethrough,link').length, 2);
+  assert.ok(plan.requests.some((r) => r.updateTextStyle?.textStyle.bold));
+  assert.deepEqual(planIncrementalUpdate(doc, tableMarkdown([['A', 'B'], ['C', 'D']], true)).requests, []);
+});
+
+test('orders cell updates and surrounding body edits by descending index', () => {
+  const doc = tableDocument([['A', 'B']]);
+  const md = tableMarkdown([['Changed', 'B']]).replace('After', 'Updated');
+  const plan = planIncrementalUpdate(doc, md);
+  const deletions = plan.requests.filter((r) => r.deleteContentRange).map((r) => r.deleteContentRange.range.startIndex);
+  assert.equal(deletions.length, 2);
+  assert.ok(deletions[0] > deletions[1]);
+});
+
+test('keeps unsupported structural and image-bearing table changes behind the TOC guard', () => {
+  const rows = [['A', 'B'], ['C', 'D']];
+  for (const desired of [
+    [rows[0]], // deletion
+    [['A', 'B', 'C'], ['C', 'D', 'E']], // columns
+    [rows[0], ['New', 'Row'], ['Edited', 'D']], // simultaneous insertion and edit
+    [rows[0], ['![image](asset.png)', 'D']],
+  ]) {
+    assert.throws(() => planIncrementalUpdate(tableDocument(rows, { toc: true }),
+      tableMarkdown(desired, true), { imageUris: new Map([['asset.png', 'https://example.com/image.png']]) }),
+    /full-rebuild table fallback/);
+  }
+  const doc = tableDocument(rows, { toc: true });
+  doc.body.content[1].table.tableRows[1].tableCells[0].tableCellStyle = { columnSpan: 2 };
+  assert.throws(() => planIncrementalUpdate(doc,
+    tableMarkdown([rows[0], ['Changed', 'D']], true)), /full-rebuild table fallback/);
+});
+
+test('sends table row insertion and population in one revision-checked batch', async () => {
+  const doc = tableDocument([['A', 'B']]);
+  const updates = [];
+  const services = {
+    docs: { documents: {
+      get: async () => ({ data: doc }),
+      batchUpdate: async (request) => { updates.push(request); return { data: {} }; },
+    } },
+    drive: { files: { get: async () => ({ data: { modifiedTime: '2026-10-31T12:00:00Z', name: 'Table', version: '2' } }) } },
+  };
+  await updateDocumentFromMarkdown(services, 'document', tableMarkdown([['A', 'B'], ['New', 'Row']]));
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].requestBody.writeControl.requiredRevisionId, 'revision-1');
+  assert.ok(updates[0].requestBody.requests.some((r) => r.insertTableRow));
+  assert.equal(updates[0].requestBody.requests.filter((r) => r.insertText).length, 2);
+});
+
+test('updates a table before inserting body text at the same boundary', () => {
+  const doc = tableDocument([['A', 'B']]);
+  const plan = planIncrementalUpdate(doc, 'Before\n\n' + tableMarkdown([['Changed', 'B']]).trimStart());
+  const cellInsertion = plan.requests.findIndex((r) => r.insertText?.text === 'Changed');
+  const bodyInsertion = plan.requests.findIndex((r) => r.insertText?.text.includes('Before'));
+  assert.ok(cellInsertion >= 0 && bodyInsertion > cellInsertion);
+});
+
+test('does not continue to formatting or metadata writes after a revision rejection', async () => {
+  const doc = tableDocument([['A', 'B']]);
+  let batches = 0;
+  const services = { docs: { documents: {
+    get: async () => ({ data: doc }),
+    batchUpdate: async (request) => {
+      batches += 1;
+      assert.equal(request.requestBody.writeControl.requiredRevisionId, 'revision-1');
+      throw new Error('revision rejected');
+    },
+  } } };
+  await assert.rejects(updateDocumentFromMarkdown(services, 'document',
+    tableMarkdown([['A', 'B'], ['New', 'Row']])), /revision rejected/);
+  assert.equal(batches, 1);
+});
