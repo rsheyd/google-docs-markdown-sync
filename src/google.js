@@ -1015,11 +1015,31 @@ function nativeTableOfContentsAlignment(current, desired) {
   return { currentStart, currentEnd, desiredStart, nativeBlocks };
 }
 
-export function planHeadingLinkUpdate(document, markdown) {
-  const desired = parseMarkdown(markdown);
-  const current = withoutNativeTocStructuralSpacers(
+// Use the remote Markdown projection only to recognize native content that the
+// exporter cannot represent. Never rewrite a native title or an omitted empty
+// paragraph merely because a different block was edited locally.
+function projectedDocumentBlocks(document, desired, sourceMarkdown) {
+  let current = withoutNativeTocStructuralSpacers(
     withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
   );
+  if (sourceMarkdown === undefined) return current;
+  const source = parseMarkdown(sourceMarkdown);
+  const omitted = planSpacingCleanup(document, sourceMarkdown).requests
+    .map(request => request.deleteContentRange.range);
+  current = current.filter(block => !omitted.some(range =>
+    block.type === "text" && block.text === "" &&
+    block.startIndex >= range.startIndex && block.endIndex <= range.endIndex));
+  return current.map(block => {
+    if (block.type !== "text" || !["TITLE", "SUBTITLE"].includes(block.paragraphStyle)) return block;
+    const matches = source.filter(other => other.type === "text" && other.text === block.text);
+    if (matches.length !== 1 || current.filter(other => other.text === block.text).length !== 1) return block;
+    return { ...block, nativeParagraphStyle: block.paragraphStyle, paragraphStyle: matches[0].paragraphStyle };
+  });
+}
+
+export function planHeadingLinkUpdate(document, markdown, { sourceMarkdown } = {}) {
+  const desired = parseMarkdown(markdown);
+  const current = projectedDocumentBlocks(document, desired, sourceMarkdown);
   if (current.length !== desired.length) {
     throw new Error("Google Docs content did not settle after its structural update.");
   }
@@ -1358,11 +1378,9 @@ function tableColumnWidthRequests(currentBlock, desiredBlock) {
   });
 }
 
-export function planTableColumnWidthUpdate(document, markdown) {
+export function planTableColumnWidthUpdate(document, markdown, { sourceMarkdown } = {}) {
   const desired = parseMarkdown(markdown);
-  const current = withoutNativeTocStructuralSpacers(
-    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
-  );
+  const current = projectedDocumentBlocks(document, desired, sourceMarkdown);
   if (current.length !== desired.length) return [];
   return desired.flatMap((desiredBlock, index) => {
     if (desiredBlock.type !== "table" || current[index]?.type !== "table") return [];
@@ -1669,6 +1687,41 @@ function incrementalTableRequests(document, current, desired) {
   return requests;
 }
 
+function headingStyleRequests(document, block, namedStyleType) {
+  const findParagraph = (content) => {
+    for (const element of content ?? []) {
+      if (element.startIndex === block.startIndex && element.paragraph) return element.paragraph;
+      if (element.table) for (const row of element.table.tableRows ?? []) {
+        for (const cell of row.tableCells ?? []) {
+          const found = findParagraph(cell.content);
+          if (found) return found;
+        }
+      }
+    }
+  };
+  const paragraph = findParagraph(bodyOf(document).content);
+  const range = { startIndex: block.startIndex, endIndex: block.endIndex };
+  const requests = [{ updateParagraphStyle: {
+    range, paragraphStyle: { namedStyleType }, fields: "namedStyleType",
+  } }];
+  // Applying a named style resets explicit text formatting in Google Docs,
+  // even with a namedStyleType-only field mask. Restore the API's explicit
+  // overrides in the same atomic batch; inherited properties stay inherited.
+  const { namedStyleType: _style, headingId: _id, ...overrides } = paragraph?.paragraphStyle ?? {};
+  if (Object.keys(overrides).length) requests.push({ updateParagraphStyle: {
+    range, paragraphStyle: overrides, fields: Object.keys(overrides).join(","),
+  } });
+  for (const element of paragraph?.elements ?? []) {
+    const textStyle = element.textRun?.textStyle;
+    if (!textStyle || !Object.keys(textStyle).length) continue;
+    requests.push({ updateTextStyle: {
+      range: { startIndex: element.startIndex, endIndex: element.endIndex },
+      textStyle, fields: Object.keys(textStyle).join(","),
+    } });
+  }
+  return requests;
+}
+
 export function planIncrementalUpdate(
   document,
   markdown,
@@ -1677,12 +1730,11 @@ export function planIncrementalUpdate(
     currentImageHashes,
     desiredImageHashes,
     imageUris,
+    sourceMarkdown,
   } = {},
 ) {
   const desired = parseMarkdown(markdown);
-  let current = withoutNativeTocStructuralSpacers(
-    withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
-  );
+  let current = projectedDocumentBlocks(document, desired, sourceMarkdown);
   if (ignoreManagedStatus) {
     current = withoutManagedStatusBlocks(current);
   }
@@ -1769,6 +1821,25 @@ export function planIncrementalUpdate(
       continue;
     }
     const { hunk } = action;
+    const oldBlocks = current.slice(hunk.currentStart, hunk.currentEnd);
+    const newBlocks = desired.slice(hunk.desiredStart, hunk.desiredEnd);
+    // A semantic style change does not require replacing text, its native
+    // heading ID, or direct character/paragraph formatting.
+    if (oldBlocks.length === newBlocks.length && oldBlocks.length &&
+        oldBlocks.every((old, index) => {
+          const next = newBlocks[index];
+          return old.type === "text" && next.type === "text" &&
+            !old.nativeTableOfContents && !blockHasImages(old) && !blockHasImages(next) &&
+            old.text === next.text && JSON.stringify(old.styles) === JSON.stringify(next.styles);
+        })) {
+      for (let index = 0; index < oldBlocks.length; index += 1) {
+        const old = oldBlocks[index], next = newBlocks[index];
+        if (old.paragraphStyle !== next.paragraphStyle) {
+          requests.push(...headingStyleRequests(document, old, next.paragraphStyle));
+        }
+      }
+      continue;
+    }
     const insertionIndex =
       hunk.currentStart < current.length
         ? current[hunk.currentStart].startIndex
@@ -1929,12 +2000,12 @@ async function currentDocument(services, documentId) {
   return response.data;
 }
 
-async function reconcileHeadingLinks(services, documentId, markdown) {
+async function reconcileHeadingLinks(services, documentId, markdown, sourceMarkdown) {
   const document = await currentDocument(services, documentId);
+  if (sourceMarkdown !== undefined) sourceMarkdown = await exportMarkdown(services, documentId, { document });
   const requests = [
-    ...planHeadingLinkUpdate(document, markdown),
-    ...planParagraphSpacingUpdate(document, markdown),
-    ...planTableColumnWidthUpdate(document, markdown),
+    ...planHeadingLinkUpdate(document, markdown, { sourceMarkdown }),
+    ...planTableColumnWidthUpdate(document, markdown, { sourceMarkdown }),
   ];
   if (requests.length) {
     await services.docs.documents.batchUpdate({
@@ -1952,7 +2023,7 @@ export async function updateDocumentFromMarkdown(services, documentId, markdown,
   const document = await currentDocument(services, documentId);
   const plan = planHeaderUpdate(document, header, options.imageSync);
   // Preflight both halves before making any mutation.
-  planIncrementalUpdate(document, body, options.imageSync);
+  planIncrementalUpdate(document, body, { ...options.imageSync, sourceMarkdown: options.sourceMarkdown });
   if (plan.create) {
     await services.docs.documents.batchUpdate({ documentId, requestBody: { requests: [{ createHeader: { type: "DEFAULT" } }], writeControl: { requiredRevisionId: document.revisionId } } });
   }
@@ -2016,22 +2087,10 @@ async function updateBodyFromMarkdown(
   services,
   documentId,
   markdown,
-  { onProgress, imageSync } = {},
+  { onProgress, imageSync, sourceMarkdown } = {},
 ) {
   let document = await currentDocument(services, documentId);
-  let plan = planIncrementalUpdate(document, markdown, imageSync);
-  const spacing = plan.mode === "incremental" ? planSpacingCleanup(document, markdown) : null;
-  if (spacing?.requests.length) {
-    await services.docs.documents.batchUpdate({
-      documentId,
-      requestBody: {
-        requests: spacing.requests,
-        writeControl: { requiredRevisionId: document.revisionId },
-      },
-    });
-    document = await currentDocument(services, documentId);
-    plan = planIncrementalUpdate(document, markdown, imageSync);
-  }
+  const plan = planIncrementalUpdate(document, markdown, { ...imageSync, sourceMarkdown });
   if (plan.mode === "full-rebuild") {
     const imageSizes = new Map();
     for (const desiredBlock of plan.desired.filter(blockHasImages)) {
@@ -2061,7 +2120,7 @@ async function updateBodyFromMarkdown(
       },
     });
   }
-  await reconcileHeadingLinks(services, documentId, markdown);
+  await reconcileHeadingLinks(services, documentId, markdown, sourceMarkdown);
   return getRemoteInfo(services, documentId);
 }
 
@@ -2073,7 +2132,6 @@ export async function updateDocumentFormatting(
 ) {
   const requests = [
     ...planInlineStyleUpdate(document, markdown),
-    ...planParagraphSpacingUpdate(document, markdown),
     ...planTableColumnWidthUpdate(document, markdown),
   ];
   if (!requests.length) return undefined;

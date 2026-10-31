@@ -447,9 +447,8 @@ async function plan(options) {
     getRemoteInfo(services, pairing.documentId),
   ]);
   let localContent = refreshGeneratedTableOfContents(stripDocumentStatus(markdown));
-  const remoteExport = documentHasNativeTableOfContents(remote.document)
-    ? await exportMarkdown(services, pairing.documentId, { document: remote.document })
-    : undefined;
+  const sourceMarkdown = await exportMarkdown(services, pairing.documentId, { document: remote.document });
+  const remoteExport = documentHasNativeTableOfContents(remote.document) ? sourceMarkdown : undefined;
   if (remoteExport) {
     localContent = representNativeTableOfContentsFromRemote(
       localContent,
@@ -463,7 +462,7 @@ async function plan(options) {
   const result = planIncrementalUpdate(
     remote.document,
     content,
-    { ignoreManagedStatus: true },
+    { ignoreManagedStatus: true, sourceMarkdown },
   );
   const summarize = (block) => ({
     type: block.type,
@@ -550,9 +549,8 @@ async function push(options) {
   let localContent = refreshGeneratedTableOfContents(stripDocumentStatus(markdown));
   const services = createGoogleServices(auth);
   const before = await getRemoteInfo(services, pairing.documentId);
-  const remoteExport = documentHasNativeTableOfContents(before.document)
-    ? await exportMarkdown(services, pairing.documentId, { document: before.document })
-    : undefined;
+  const sourceMarkdown = await exportMarkdown(services, pairing.documentId, { document: before.document });
+  const remoteExport = documentHasNativeTableOfContents(before.document) ? sourceMarkdown : undefined;
   if (remoteExport) {
     localContent = representNativeTableOfContentsFromRemote(
       localContent,
@@ -583,7 +581,7 @@ async function push(options) {
       services,
       pairing.documentId,
       content,
-      { imageSync },
+      { imageSync, sourceMarkdown },
     );
   } finally {
     await imageSync?.cleanup();

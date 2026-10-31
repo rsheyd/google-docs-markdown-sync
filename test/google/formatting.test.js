@@ -206,7 +206,7 @@ test("styles matching paragraphs while skipping API-only legacy blocks", () => {
   );
 });
 
-test("reconciles paragraph spacing when Markdown content is unchanged", async () => {
+test("preserves paragraph spacing when Markdown content is unchanged", async () => {
   const document = {
     revisionId: "revision-1",
     body: { content: [paragraph(1, "Paragraph\n"), paragraph(11, "Second\n")] },
@@ -225,14 +225,7 @@ test("reconciles paragraph spacing when Markdown content is unchanged", async ()
 
   await updateDocumentFromMarkdown(services, "document", "Paragraph\n\nSecond");
 
-  assert.equal(updates.length, 1);
-  assert.deepEqual(updates[0].requestBody.requests, [{
-    updateParagraphStyle: {
-      range: { startIndex: 1, endIndex: 11 },
-      paragraphStyle: { spaceBelow: { magnitude: 8, unit: "PT" } },
-      fields: "spaceBelow",
-    },
-  }]);
+  assert.deepEqual(updates, []);
 });
 
 test("does not write an unchanged document", () => {
@@ -333,7 +326,7 @@ test("spacing cleanup accepts only deletion of empty paragraphs", () => {
   assert.deepEqual(contentChange.requests, []);
 });
 
-test("normal Markdown updates remove excess Doc paragraphs before applying spacing", async () => {
+test("normal Markdown updates preserve empty paragraphs omitted by the remote export", async () => {
   const first = paragraph(1, "First\n");
   const blank = paragraph(first.endIndex, "\n");
   const second = paragraph(blank.endIndex, "Second\n");
@@ -353,22 +346,56 @@ test("normal Markdown updates remove excess Doc paragraphs before applying spaci
         }
       },
     } },
-    drive: { files: { get: async () => ({ data: {
+    drive: { files: { export: async () => ({ data: Buffer.from("First\n\nSecond") }), get: async () => ({ data: {
       modifiedTime: "2026-09-22T12:00:00Z",
       name: "Example",
       version: "2",
     } }) } },
   };
 
-  await updateDocumentFromMarkdown(services, "document", "First\n\nSecond");
+  await updateDocumentFromMarkdown(services, "document", "First\n\nSecond", {
+    sourceMarkdown: "First\n\nSecond",
+  });
+  assert.deepEqual(updates, []);
+});
 
-  assert.deepEqual(updates[0].requests, [{
-    deleteContentRange: {
-      range: { startIndex: blank.startIndex, endIndex: blank.endIndex },
-    },
-  }]);
-  assert.equal(updates[0].writeControl.requiredRevisionId, "revision-1");
-  assert.ok(updates.slice(1).some(({ requests }) => requests.some(
-    (request) => request.updateParagraphStyle?.paragraphStyle?.spaceBelow?.magnitude === 8,
-  )));
+test("heading-only changes preserve native titles, text styles and unexported paragraphs", () => {
+  const title = paragraph(1, "Guide\n", "TITLE");
+  const spacer = paragraph(title.endIndex, "\n");
+  const heading = paragraph(spacer.endIndex, "Section\n", "HEADING_2");
+  heading.paragraph.paragraphStyle = { namedStyleType: "HEADING_2", headingId: "original-heading", spaceBelow: { magnitude: 17, unit: "PT" } };
+  heading.paragraph.elements[0].textRun.textStyle = { fontSize: { magnitude: 15, unit: "PT" }, underline: true, weightedFontFamily: { fontFamily: "Georgia" } };
+  const body = paragraph(heading.endIndex, "Body\n");
+  body.paragraph.paragraphStyle.spaceBelow = { magnitude: 21, unit: "PT" };
+  const document = { body: { content: [title, spacer, heading, body] } };
+  // Here the spacer is explicit in both Markdown snapshots. The separate
+  // projection test covers an empty paragraph omitted by Drive's exporter.
+  const sourceMarkdown = "# Guide\n\n\n## Section\n\nBody";
+  const plan = planIncrementalUpdate(document, sourceMarkdown.replace("## Section", "### Section"), { sourceMarkdown });
+  assert.deepEqual(plan.requests[0], { updateParagraphStyle: {
+    range: { startIndex: heading.startIndex, endIndex: heading.endIndex },
+    paragraphStyle: { namedStyleType: "HEADING_3" }, fields: "namedStyleType",
+  } });
+  assert.equal(plan.requests.length, 3);
+  assert.deepEqual(plan.requests[1].updateParagraphStyle.paragraphStyle, { spaceBelow: { magnitude: 17, unit: "PT" } });
+  assert.deepEqual(plan.requests[2].updateTextStyle.textStyle, heading.paragraph.elements[0].textRun.textStyle);
+  assert.ok(plan.requests.every(request => !request.deleteContentRange && !request.insertText));
+
+});
+
+test("a native title can still deliberately change to a different heading level", () => {
+  const title = paragraph(1, "Guide\n", "TITLE");
+  const plan = planIncrementalUpdate({ body: { content: [title] } }, "## Guide", { sourceMarkdown: "# Guide" });
+  assert.deepEqual(plan.requests, [{ updateParagraphStyle: {
+    range: { startIndex: 1, endIndex: 7 }, paragraphStyle: { namedStyleType: "HEADING_2" }, fields: "namedStyleType",
+  } }]);
+});
+
+test("heading patches use descending indexes alongside unrelated text edits", () => {
+  const heading = paragraph(1, "Section\n", "HEADING_2");
+  const body = paragraph(heading.endIndex, "Old\n");
+  const plan = planIncrementalUpdate({ body: { content: [heading, body] } }, "### Section\n\nNew");
+  // Different text still uses a replacement; the planner must never swallow it
+  // into the style-only optimization.
+  assert.ok(plan.requests.some(request => request.insertText?.text.includes("New")));
 });

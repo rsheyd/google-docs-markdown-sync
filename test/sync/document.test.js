@@ -203,10 +203,8 @@ test("repairs formatting on an unchanged Markdown pairing and records the new re
     updates[0].requestBody.requests[0].updateTextStyle.textStyle,
     { bold: true, italic: false, strikethrough: false, link: null },
   );
-  assert.deepEqual(
-    updates[0].requestBody.requests[1].updateParagraphStyle.paragraphStyle,
-    { spaceBelow: { magnitude: 8, unit: "PT" } },
-  );
+  assert.equal(updates[0].requestBody.requests.length, 1);
+  assert.ok(!updates[0].requestBody.requests.some(request => request.updateParagraphStyle));
   await fs.rm(directory, { recursive: true, force: true });
 });
 

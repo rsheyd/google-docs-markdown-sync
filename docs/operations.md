@@ -376,7 +376,7 @@ one atomic Docs batch. Unchanged ranges and tables remain in place. A changed
 table structure falls back to a full body rebuild unless the document contains
 images, in which case GDMS refuses the unsafe rebuild.
 
-Ordinary Markdown paragraphs receive 8 pt of visual spacing in Google Docs without creating Markdown-visible blank paragraphs. Each additional consecutive blank line becomes an explicit empty Docs paragraph instead of combining that paragraph with the 8 pt gap. Markdown hard breaks become adjacent paragraphs without the added spacing. Headings, lists, tables, and managed status content retain their native spacing.
+New or replaced ordinary Markdown paragraphs receive 8 pt of visual spacing in Google Docs without creating Markdown-visible blank paragraphs. Each additional consecutive blank line becomes an explicit empty Docs paragraph instead of combining that paragraph with the 8 pt gap. Markdown hard breaks become adjacent paragraphs without the added spacing. Headings, lists, tables, and managed status content retain their native spacing.
 
 Markdown fragment links become native Docs heading links. New headings require
 a second atomic batch after Google assigns their heading IDs. A native Google
@@ -390,9 +390,7 @@ preserve anchors in unchanged ranges, but an anchor inside a replaced range can
 be affected. Content omitted by Google's native Markdown export can be lost if
 its surrounding range is later replaced from Markdown.
 
-When content and revision tracking indicate that a pairing is unchanged, GDMS
-still reconciles inline formatting and paragraph spacing from Markdown using
-format-only Docs API requests. This repairs style drift without replacing text.
+When a pairing needs a formatting reconciliation pass, GDMS can reconcile supported inline formatting and explicit table widths without replacing text. Normal synchronization preserves existing paragraph spacing and indentation. Heading-level-only changes preserve the existing heading ID and explicit text/paragraph formatting.
 
 ## Managed status artifacts
 
@@ -472,7 +470,7 @@ Other table changes still require a full Docs body rebuild, which GDMS refuses w
 
 ### Remove surplus spacing paragraphs
 
-Normal Markdown pushes now remove surplus empty Docs paragraphs where the surrounding content matches unambiguously. For a paired Doc that needs cleanup before another local edit, the cleanup command refuses to write when any non-spacing content differs:
+Normal Markdown pushes preserve empty Docs paragraphs omitted by the remote Markdown export. To explicitly remove surplus legacy spacing paragraphs, use the cleanup command; it refuses to write when any non-spacing content differs:
 
 ```sh
 gdms cleanup-spacing --document-id DOCUMENT_ID

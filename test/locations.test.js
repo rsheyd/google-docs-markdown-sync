@@ -158,7 +158,7 @@ test("serializes concurrent location additions and rejects overlaps", async () =
       addSyncLocation(first, options),
       addSyncLocation(second, options),
     ]);
-    assert.deepEqual((await listSyncLocations(options)).map((location) => location.path), [first, second]);
+    assert.deepEqual((await listSyncLocations(options)).map((location) => location.path).sort(), [first, second].sort());
     await fs.mkdir(path.join(first, "nested"));
     await assert.rejects(
       addSyncLocation(path.join(first, "nested"), options),

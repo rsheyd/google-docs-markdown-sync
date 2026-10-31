@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Preserve native heading IDs and explicit text/paragraph formatting on heading-level-only edits. Preserve unchanged native titles and export-omitted empty paragraphs, and stop normal synchronization from applying document-wide paragraph spacing or indentation normalization.
+
 - Update text and inline formatting in ordinary rectangular table cells, and insert a contiguous group of rows when existing rows are unchanged, without rebuilding the document or disturbing its native table of contents. Commit row insertion and content atomically with a revision check.
 
 - Compare remote inline images without writing local assets, recognize identical images under different filenames, and preserve edited files when downloaded asset names collide.

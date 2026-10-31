@@ -173,9 +173,8 @@ export async function pullDocument(services, pairing, remote) {
 }
 
 async function push(services, pairing, local, before) {
-  const remoteExport = documentHasNativeTableOfContents(before.document)
-    ? await exportMarkdown(services, pairing.documentId, { document: before.document })
-    : undefined;
+  const sourceMarkdown = await exportMarkdown(services, pairing.documentId, { document: before.document });
+  const remoteExport = documentHasNativeTableOfContents(before.document) ? sourceMarkdown : undefined;
   const localContent = remoteExport
     ? representNativeTableOfContentsFromRemote(local.content, remoteExport, before.document)
     : refreshGeneratedTableOfContents(local.content);
@@ -202,7 +201,7 @@ async function push(services, pairing, local, before) {
       services,
       pairing.documentId,
       content,
-      { imageSync },
+      { imageSync, sourceMarkdown },
     );
   } finally {
     await imageSync?.cleanup();

@@ -95,10 +95,7 @@ This applies to both newly inserted and already-existing list items; heading sty
 
 ## Headings and other paragraph styles
 
-Markdown headings use the corresponding native Google Docs named styles,
-`Heading 1` through `Heading 6`. The universal block-gap rule controls spacing
-below the heading when Markdown contains a blank line; other aspects of the
-heading's appearance come from the Google Doc's named-style definition.
+Markdown headings use the corresponding native Google Docs named styles, `Heading 1` through `Heading 6`. A heading-level-only edit changes the existing paragraph in place, preserves its heading ID, and restores explicit text and paragraph formatting in the same atomic update. Unchanged native Title and Subtitle paragraphs retain their native styles when their Markdown export is unambiguous. New or replaced paragraphs receive GDMS spacing; unchanged paragraphs retain their Google Docs spacing.
 
 Ordinary Markdown paragraphs use `Normal text`. Bold, italic, strikethrough,
 and links are applied as inline styles where supported.
@@ -151,12 +148,9 @@ GDMS stores visual block separation as Google Docs paragraph `space below`, not
 as generated empty paragraphs. This keeps list numbering stable and produces a
 cleaner two-way Markdown representation.
 
-When a simple Google Doc uses a uniform native 8-point gap after its text paragraphs but Google's Markdown export omits the blank lines, GDMS reconstructs those paragraph breaks in the paired Markdown from the Docs paragraph metadata. A later Markdown push removes only surplus empty Docs paragraphs whose surrounding content matches the Markdown, then applies the corresponding 8-point gap. Deliberate additional blank lines remain explicit empty paragraphs.
+When a simple Google Doc uses a uniform native 8-point gap after its text paragraphs but Google's Markdown export omits the blank lines, GDMS reconstructs those paragraph breaks in the paired Markdown from the Docs paragraph metadata. Ordinary pushes preserve empty paragraphs omitted by the remote export when their surrounding content matches unambiguously. Deliberate extra blank lines represented in Markdown remain editable.
 
-On a later synchronization pass, GDMS may reconcile supported paragraph spacing
-even when the text itself has not changed. Manual Google Docs spacing that
-disagrees with the paired Markdown blank lines can therefore be normalized. GDMS
-uses targeted paragraph or list ranges and does not rebuild unrelated content.
+Normal synchronization does not normalize paragraph spacing or indentation across the document. Existing paragraph spacing remains owned by Google Docs, including when only Markdown separator spacing changes without adding or removing an explicit paragraph. Use the explicit formatting migration and spacing-cleanup workflows when normalization is wanted. Supported inline-style and table-width reconciliation remains available.
 
 Formatting migrations apply newly introduced rules to existing pairs. Preview
 pending migrations before applying them:

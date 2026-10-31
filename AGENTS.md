@@ -51,6 +51,8 @@
 - `docs/images/`: User-facing documentation images referenced by project guides.
 - `local-only/`: Git-excluded personal drafts, outreach material, and other
   machine-local working files.
+- `local-only/heading-format-final-2026-10-31/`: Successful live preservation regression, paired Markdown, native snapshots, and `REPORT.md`; intermediate validation is in `local-only/heading-format-fix-2026-10-31/`.
+- `local-only/heading-format-test-2026-10-31/`: Isolated live Doc/Markdown formatting experiment, request captures, snapshots, and findings in `REPORT.md`.
 - `local-only/openmagpie-gdms-setup.md`: Local runbook for using OpenMagpie to
   find and review public discussions where GDMS may be relevant.
 - `local-only/github-traffic-archive.md`: Local runbook for the private scheduled GitHub traffic archive, token renewal, and verification links.
