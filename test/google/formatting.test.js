@@ -359,6 +359,20 @@ test("normal Markdown updates preserve empty paragraphs omitted by the remote ex
   assert.deepEqual(updates, []);
 });
 
+test("verifies an explicit blank paragraph omitted by the Drive export", () => {
+  const first = paragraph(1, "First\n");
+  const blank = paragraph(first.endIndex, "\n");
+  const second = paragraph(blank.endIndex, "Second\n");
+  const document = { body: { content: [first, blank, second] } };
+  const markdown = "First\n\n\nSecond";
+  const options = { sourceMarkdown: "First\n\nSecond" };
+
+  assert.deepEqual(planHeadingLinkUpdate(document, markdown, options), []);
+  assert.deepEqual(planIncrementalUpdate(document, markdown, options).requests, []);
+  const missingBlank = { body: { content: [first, paragraph(first.endIndex, "Second\n")] } };
+  assert.throws(() => planHeadingLinkUpdate(missingBlank, markdown, options), /did not settle/);
+});
+
 test("heading-only changes preserve native titles, text styles and unexported paragraphs", () => {
   const title = paragraph(1, "Guide\n", "TITLE");
   const spacer = paragraph(title.endIndex, "\n");

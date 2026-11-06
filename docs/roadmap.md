@@ -137,3 +137,7 @@ A second hosted offshoot could synchronize Google Docs and Sheets with ordinary 
 - Permanent public hosting of document images.
 - Pixel-perfect round-tripping of every Google Docs visual object.
 - Synchronizing unpaired documents or arbitrary files outside a registered sync location or explicitly configured folder auto-sync scope.
+
+## Deferred: Google Docs formatting sidecar
+
+An automatically created formatting sidecar could record fonts and named heading styles alongside Markdown. The [formatting sidecar proposal](design/docs-formatting-sidecar.md) records the staff-guide preservation findings, the preference for no manual enable/disable step, full and reduced-cost options, and unresolved detection and ownership rules. Implementation is deferred; neither variant has been selected.

@@ -35,6 +35,7 @@
 - `CHANGELOG.md`: User-visible changes organized by application release.
 - `docs/roadmap.md`: Ordered product and engineering direction, with links to
   detailed feature plans.
+- `docs/design/docs-formatting-sidecar.md`: Deferred automatic Docs formatting sidecar proposal, preservation evidence, scope options, unresolved creation rules, and usage considerations.
 - `docs/design/image-sync.md`: Design and phased implementation plan for R2-backed two-way
   inline image synchronization.
 - `docs/design/namespace-migration.md`: Compatibility and rollout plan for replacing the

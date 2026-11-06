@@ -1018,7 +1018,7 @@ function nativeTableOfContentsAlignment(current, desired) {
 // Use the remote Markdown projection only to recognize native content that the
 // exporter cannot represent. Never rewrite a native title or an omitted empty
 // paragraph merely because a different block was edited locally.
-function projectedDocumentBlocks(document, desired, sourceMarkdown) {
+function projectedDocumentBlocks(document, desired, sourceMarkdown, markdown) {
   let current = withoutNativeTocStructuralSpacers(
     withoutStructuralTableSpacers(blocksFromDocument(document, desired)),
   );
@@ -1026,9 +1026,17 @@ function projectedDocumentBlocks(document, desired, sourceMarkdown) {
   const source = parseMarkdown(sourceMarkdown);
   const omitted = planSpacingCleanup(document, sourceMarkdown).requests
     .map(request => request.deleteContentRange.range);
-  current = current.filter(block => !omitted.some(range =>
-    block.type === "text" && block.text === "" &&
-    block.startIndex >= range.startIndex && block.endIndex <= range.endIndex));
+  if (omitted.length) {
+    // Drive can omit an intentional blank that is still present in the Doc.
+    const excess = planSpacingCleanup(document, markdown).requests
+      .map(request => request.deleteContentRange.range);
+    const contains = (range, block) =>
+      block.startIndex >= range.startIndex && block.endIndex <= range.endIndex;
+    current = current.filter(block =>
+      block.type !== "text" || block.text !== "" ||
+      !omitted.some(range => contains(range, block)) ||
+      !excess.some(range => contains(range, block)));
+  }
   return current.map(block => {
     if (block.type !== "text" || !["TITLE", "SUBTITLE"].includes(block.paragraphStyle)) return block;
     const matches = source.filter(other => other.type === "text" && other.text === block.text);
@@ -1039,7 +1047,7 @@ function projectedDocumentBlocks(document, desired, sourceMarkdown) {
 
 export function planHeadingLinkUpdate(document, markdown, { sourceMarkdown } = {}) {
   const desired = parseMarkdown(markdown);
-  const current = projectedDocumentBlocks(document, desired, sourceMarkdown);
+  const current = projectedDocumentBlocks(document, desired, sourceMarkdown, markdown);
   if (current.length !== desired.length) {
     throw new Error("Google Docs content did not settle after its structural update.");
   }
@@ -1380,7 +1388,7 @@ function tableColumnWidthRequests(currentBlock, desiredBlock) {
 
 export function planTableColumnWidthUpdate(document, markdown, { sourceMarkdown } = {}) {
   const desired = parseMarkdown(markdown);
-  const current = projectedDocumentBlocks(document, desired, sourceMarkdown);
+  const current = projectedDocumentBlocks(document, desired, sourceMarkdown, markdown);
   if (current.length !== desired.length) return [];
   return desired.flatMap((desiredBlock, index) => {
     if (desiredBlock.type !== "table" || current[index]?.type !== "table") return [];
@@ -1734,7 +1742,7 @@ export function planIncrementalUpdate(
   } = {},
 ) {
   const desired = parseMarkdown(markdown);
-  let current = projectedDocumentBlocks(document, desired, sourceMarkdown);
+  let current = projectedDocumentBlocks(document, desired, sourceMarkdown, markdown);
   if (ignoreManagedStatus) {
     current = withoutManagedStatusBlocks(current);
   }
