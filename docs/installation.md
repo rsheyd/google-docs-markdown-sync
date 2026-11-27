@@ -227,9 +227,9 @@ gdms install-finder-action
 
 For Markdown, Control-click one or more `.md` files and choose **Quick Actions
 → Sync MDs with New Google Docs (GDMS)**. GDMS creates one Google Doc per file and
-registers each pairing. A single new Doc opens in the default browser. For a
-multi-file selection, GDMS avoids opening many tabs and instead shows a
-completion notification with the number of Docs created.
+registers each pairing. Finder shows a GDMS notification when creation starts. A single new Doc opens in the default browser, and a multi-file selection shows a completion notification with the number of Docs created.
+
+For local images, keep the Markdown and its sibling `<filename>.assets` folder together and [configure image staging](#configure-image-staging) once. Put each image outside a table in its own paragraph, with blank lines around it. GDMS checks and stages the images before creating each Doc. If there is a problem with an asset path, format, layout, or staging setup, Finder shows the error and how to address it.
 
 To synchronize existing pairings immediately, Control-click one or more paired `.md` or `.csv` files and choose **Quick Actions → Sync Paired File Now (GDMS)**. GDMS runs its normal two-way reconciliation only for the selected files, refreshes the successful-sync timestamp even when content is unchanged, and shows a completion dialog with the result. Failures show an error dialog, and an unpaired selection fails without creating a new Google Doc or Sheet. CSV selections reconcile the selected paired tabs with their existing Google Sheet. Re-run `gdms install-finder-action` to update an existing installation.
 

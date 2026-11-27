@@ -38,7 +38,7 @@ export function localImagePaths(markdownPath, markdown) {
     const relative = path.relative(directory, resolved);
     if (!relative || path.isAbsolute(relative) || relative.startsWith("..")) {
       throw new Error(
-        `Local Markdown images must stay inside ${path.basename(directory)}.`,
+        `Local Markdown images must stay inside ${path.basename(directory)}. Move "${url}" into that folder next to the Markdown and update its relative link.`,
       );
     }
     return resolved;
@@ -242,11 +242,24 @@ export async function prepareImagePush(
         markdownPath,
         `![image](${image.url})`,
       );
-      const bytes = await fs.readFile(imagePath);
+      if (!imagePath) {
+        throw new Error(`Image "${image.url}" needs a local relative path or an HTTP(S) URL.`);
+      }
+      const bytes = await fs.readFile(imagePath).catch((error) => {
+        throw new Error(
+          `Cannot read image "${imagePath}" (${error.code}). Restore the file or correct the Markdown link.`,
+          { cause: error },
+        );
+      });
       if (bytes.length > MAX_IMAGE_BYTES) {
         throw new Error(`Local image ${image.url} is larger than 50 MB.`);
       }
-      const format = imageFormat(bytes);
+      let format;
+      try {
+        format = imageFormat(bytes);
+      } catch (error) {
+        throw new Error(`Image "${image.url}" is unsupported. Save it as PNG, JPEG, or GIF and update the link.`, { cause: error });
+      }
       desiredImageHashes.set(image.url, sha256(bytes));
       if (!imageUris.has(image.url)) {
         const item = await stager.stage({ bytes, contentType: format.mimeType });

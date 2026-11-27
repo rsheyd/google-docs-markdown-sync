@@ -174,6 +174,16 @@ test("compares remote bytes, hashes local assets, stages them, and cleans up", a
     const assetPath = path.join(assetDirectory, "replacement.png");
     await fs.mkdir(assetDirectory);
     await fs.writeFile(assetPath, PNG);
+    await assert.rejects(
+      prepareImagePush(
+        { auth: { request: async () => assert.fail("No remote images to fetch") } },
+        markdownPath,
+        "![Screenshot](project.assets/missing.png)",
+        { body: { content: [] } },
+        { stage: async () => assert.fail("Missing images cannot be staged") },
+      ),
+      /missing\.png.*Restore the file or correct the Markdown link/,
+    );
     const staged = [];
     let cleaned = 0;
     const result = await prepareImagePush(

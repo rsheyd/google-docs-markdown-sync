@@ -163,6 +163,29 @@ test("creates one bullet range so ordered list numbering continues", () => {
   });
 });
 
+test("keeps ordered items in one numbered range when inserting an image", () => {
+  const document = { revisionId: "revision-1", body: { content: [paragraph(1, "\n")] } };
+  const url = "project.assets/example.png";
+  const plan = planIncrementalUpdate(
+    document,
+    `![Example](${url})\n\n1. First\n1. Second\n1. Third`,
+    { imageUris: new Map([[url, "https://signed.example/image"]]) },
+  );
+  const bulletRequests = plan.requests.filter((request) => request.createParagraphBullets);
+  assert.deepEqual(bulletRequests, [{
+    createParagraphBullets: {
+      range: { startIndex: 1, endIndex: 20 },
+      bulletPreset: "NUMBERED_DECIMAL_NESTED",
+    },
+  }]);
+  const imageIndex = plan.requests.findIndex((request) => request.insertInlineImage);
+  assert.ok(imageIndex >= 0);
+  const { index } = plan.requests[imageIndex].insertInlineImage.location;
+  assert.deepEqual(plan.requests[imageIndex + 1], {
+    deleteParagraphBullets: { range: { startIndex: index, endIndex: index + 1 } },
+  });
+});
+
 test("adds visual spacing after a list only when another block follows", () => {
   const first = bulletParagraph(1, "First\n", "numbered");
   const second = bulletParagraph(first.endIndex, "Second\n", "numbered");

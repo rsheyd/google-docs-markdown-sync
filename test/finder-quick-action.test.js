@@ -59,6 +59,9 @@ test("Finder Quick Action passes selected Markdown paths to GDMS create", () => 
   assert.match(command, /create --file "\$markdown_file"/);
   assert.match(command, /create --file "\$1" --open/);
   assert.match(command, /created_count/);
+  const startNotification = command.indexOf('display notification ("Creating "');
+  assert.ok(startNotification >= 0);
+  assert.ok(startNotification < command.indexOf("create --file"));
   assert.match(command, /display notification/);
   assert.match(command, /'\/path with spaces\/node'/);
   assert.match(command, /'\/project'"'"'s\/src\/cli\.js'/);

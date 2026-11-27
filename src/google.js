@@ -194,25 +194,32 @@ export async function createDocumentFromMarkdown(
   services,
   title,
   markdown,
-  { onProgress } = {},
+  { imageSync, onProgress } = {},
 ) {
+  if (imageSync) {
+    const { header, body } = splitHeader(markdown);
+    const blankDocument = { body: { content: [] } };
+    planHeaderUpdate(blankDocument, header, imageSync);
+    planIncrementalUpdate(blankDocument, body, imageSync);
+  }
   const response = await services.docs.documents.create({
     requestBody: { title },
   });
   const documentId = response.data.documentId;
   if (!documentId) throw new Error("Google Docs did not return a document ID.");
   onProgress?.({ type: "writing-content" });
-  const remote = await updateDocumentFromMarkdown(
-    services,
-    documentId,
-    markdown,
-    { onProgress },
-  );
-  return {
-    documentId,
-    documentUrl: `https://docs.google.com/document/d/${documentId}/edit`,
-    remote,
-  };
+  const documentUrl = `https://docs.google.com/document/d/${documentId}/edit`;
+  try {
+    const remote = await updateDocumentFromMarkdown(
+      services,
+      documentId,
+      markdown,
+      { imageSync, onProgress },
+    );
+    return { documentId, documentUrl, remote };
+  } catch (error) {
+    throw new Error(`Could not finish writing ${documentUrl}: ${error.message}`, { cause: error });
+  }
 }
 
 function bodyOf(document) {
@@ -758,7 +765,7 @@ function assertSupportedImageMutation(current, desired, hunks, imageUris) {
     if (changedBlocks.some((block) => !supportedImageBlock(block))) {
       throw new Error(
         "Only standalone image paragraphs and one image per table cell can " +
-          "be changed from Markdown.",
+          "be changed from Markdown. Put images outside tables on their own line with blank lines around them.",
       );
     }
     for (const block of desired) {
@@ -1415,9 +1422,21 @@ function insertionRequests(
       const block = blocks[index];
       const blockAppend = append && index === 0;
       if (!blockHasImages(block)) {
+        let first = index;
+        while (
+          block.type === "listItem" &&
+          blocks[first - 1]?.type === "listItem" &&
+          blocks[first - 1].ordered === block.ordered &&
+          !blockHasImages(blocks[first - 1])
+        ) {
+          first -= 1;
+        }
         requests.push(
-          ...insertionRequests(startIndex, [block], { append: blockAppend }),
+          ...insertionRequests(startIndex, blocks.slice(first, index + 1), {
+            append: append && first === 0,
+          }),
         );
+        index = first;
         continue;
       }
       if (!standaloneImage(block)) {
@@ -1434,17 +1453,31 @@ function insertionRequests(
           },
         });
       }
+      const imageIndex = startIndex + (reuseParagraph ? 0 : leadingSeparation.length);
       requests.push({
         insertInlineImage: {
-          location: {
-            index: startIndex + (reuseParagraph ? 0 : leadingSeparation.length),
-          },
+          location: { index: imageIndex },
           uri: imageUris.get(image.url),
           ...(imageSizes.get(image.url)
             ? { objectSize: imageSizes.get(image.url) }
             : {}),
         },
       });
+      if (blocks[index + 1]?.type === "listItem") {
+        // Splitting a list paragraph can carry its bullet onto the image.
+        requests.push({
+          deleteParagraphBullets: {
+            range: { startIndex: imageIndex, endIndex: imageIndex + 1 },
+          },
+        });
+        requests.push({
+          updateParagraphStyle: {
+            range: { startIndex: imageIndex, endIndex: imageIndex + 1 },
+            paragraphStyle: {},
+            fields: "indentStart,indentFirstLine",
+          },
+        });
+      }
     }
     return requests;
   }

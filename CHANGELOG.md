@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.14] - Unreleased
+
+### Added
+
+- Show a start notification when the Finder Quick Action creates Google Docs from Markdown.
+
+### Fixed
+
+- Stage Markdown images before creating a Google Doc from Finder or the CLI. Show actionable errors for missing or unsupported assets and image staging failures.
+
+- Keep consecutive list items together when inserting Markdown with images so that ordered numbering continues.
+
 ## [0.8.13] - 2026-11-08
 
 ### Fixed

@@ -35,6 +35,15 @@ if (( $# == 0 )); then
   echo "GDMS requires at least one Markdown file." >&2
   exit 64
 fi
+doc_label="Google Doc"
+if (( $# > 1 )); then
+  doc_label="Google Docs"
+fi
+/usr/bin/osascript \
+  -e 'on run argv' \
+  -e 'display notification ("Creating " & (item 1 of argv) & "…") with title "GDMS"' \
+  -e 'end run' \
+  "$doc_label" >/dev/null 2>&1 || true
 if (( $# == 1 )); then
   case "$1" in
     *.md) ${shellQuote(nodePath)} ${shellQuote(cliPath)} create --file "$1" --open ;;

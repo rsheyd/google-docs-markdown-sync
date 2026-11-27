@@ -2,7 +2,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { authorize, getAuthClient } from "./auth.js";
-import { writeJsonAtomic, writeTextAtomic, sha256 } from "./files.js";
+import { writeJsonAtomic, writeTextAtomic } from "./files.js";
 import {
   hashMarkdownWithAssets,
   hasImagesForSync,
@@ -278,12 +278,39 @@ async function create(options) {
   if (!stat.isFile()) throw new Error(`${absolutePath} is not a file.`);
   const title = options.name ?? defaultDocumentTitle(absolutePath);
   const services = createGoogleServices(auth);
-  console.log("Creating Google Doc…");
-  const created = await createDocumentFromMarkdown(
-    services,
-    title,
-    markdown,
-    {
+  const blankDocument = { body: { content: [] } };
+  let stager;
+  let imageSync;
+  let created;
+  let localHash;
+  try {
+    if (hasImagesForSync(blankDocument, markdown)) {
+      imageSync = await prepareImagePush(services, absolutePath, markdown, blankDocument, {
+        async stage(image) {
+          if (!stager) {
+            try {
+              stager = createR2Stager(loadR2Configuration());
+            } catch (error) {
+              throw new Error(
+                `${error.message} Follow “Configure image staging” in the GDMS installation guide.`,
+                { cause: error },
+              );
+            }
+          }
+          try {
+            return await stager.stage(image);
+          } catch (error) {
+            throw new Error(
+              `Could not upload an image to Cloudflare R2: ${error.message}. Check the network connection and R2 bucket settings, then retry.`,
+              { cause: error },
+            );
+          }
+        },
+      });
+    }
+    localHash = await hashMarkdownWithAssets(absolutePath, stripGeneratedTableOfContents(markdown));
+    created = await createDocumentFromMarkdown(services, title, markdown, {
+      imageSync,
       onProgress(progress) {
         if (progress.type === "writing-content") {
           console.log("Writing content…");
@@ -291,8 +318,12 @@ async function create(options) {
           console.log(`Writing table ${progress.current} of ${progress.total}…`);
         }
       },
-    },
-  );
+    });
+  } catch (error) {
+    throw new Error(`${path.basename(absolutePath)}: ${error.message}`, { cause: error });
+  } finally {
+    await imageSync?.cleanup();
+  }
   console.log("Registering pairing…");
   const pairing = await registerPairing({
     syncLocation,
@@ -314,7 +345,7 @@ async function create(options) {
   const refreshedStat = await fs.stat(pairing.absolutePath);
   const state = await loadState();
   state.documents[stateKey(pairing)] = {
-    localHash: sha256(markdown),
+    localHash,
     localModifiedTime: refreshedStat.mtimeMs,
     remoteRevisionId: finalRemote.revisionId,
     remoteModifiedTime: finalRemote.modifiedTime,

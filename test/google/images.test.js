@@ -416,3 +416,43 @@ test("refuses more than one image in a rebuilt table cell before writing", async
   );
   assert.equal(writes, 0);
 });
+
+test("creates a Doc with staged images and rejects unsupported layouts before creation", async () => {
+  const calls = [];
+  const document = {
+    revisionId: "revision-1",
+    body: { content: [paragraph(1, "\n")] },
+  };
+  const services = {
+    docs: { documents: {
+      create: async () => {
+        calls.push("create");
+        return { data: { documentId: "new-document" } };
+      },
+      get: async () => ({ data: document }),
+      batchUpdate: async ({ requestBody }) => {
+        calls.push(...requestBody.requests);
+        document.body.content = [imageParagraph(1)];
+      },
+    } },
+    drive: { files: { get: async () => ({ data: { id: "new-document" } }) } },
+  };
+  const imageSync = {
+    currentImageHashes: new Map(),
+    desiredImageHashes: new Map([["project.assets/example.png", "image-hash"]]),
+    imageUris: new Map([["project.assets/example.png", "https://signed.example/image"]]),
+  };
+  const image = "![Example](project.assets/example.png)";
+  await assert.rejects(
+    createDocumentFromMarkdown(services, "Example", `See ${image}`, { imageSync }),
+    /on their own line with blank lines/,
+  );
+  assert.deepEqual(calls, []);
+
+  await createDocumentFromMarkdown(services, "Example", image, { imageSync });
+  assert.equal(calls[0], "create");
+  assert.equal(
+    calls.find((request) => request.insertInlineImage)?.insertInlineImage.uri,
+    "https://signed.example/image",
+  );
+});
